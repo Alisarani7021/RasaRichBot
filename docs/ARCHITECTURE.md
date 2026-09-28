@@ -2,20 +2,27 @@
 
 ## Overview
 
-RasaRichBot is a **dual-app Cloudflare Worker** that preserves the original Post Studio 100% while additively mounting Rasa Mini App.
+RasaRichBot is a dual-app Cloudflare Worker built with a clean separation of concerns. The core Post Studio remains fully stable while Rasa Mini App is mounted additively.
 
 ## Entry Point
 
 ```js
-// index.js — only 2 additive lines
-import { tryRasaApp } from "./rasa-src/glue.js"; // LINE 1
+// Lightweight router integration
+import { tryRasaApp } from "./src/glue.js";
 
-// inside fetch handler after new URL(request.url)
-const rasaResponse = await tryRasaApp(request, env, ctx, url)
-  .catch(e => new Response('rasa app error: '+e.message, {status:500}));
-if (rasaResponse) return rasaResponse; // LINE 2
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    
+    // Try Rasa routes first
+    const rasaResponse = await tryRasaApp(request, env, ctx, url)
+      .catch(e => new Response('Error: '+e.message, {status:500}));
+    if (rasaResponse) return rasaResponse;
 
-// ... rest is original Post Studio bundle (2,517,846B) untouched
+    // Fallback to Post Studio core
+    // ... original bundle logic
+  }
+}
 ```
 
 ## Storage

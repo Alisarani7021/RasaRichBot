@@ -57,15 +57,16 @@
 
 ## 💎 What is Rasa?
 
-**رِسا** is a production-grade, **additive** Telegram Post Studio built on **Cloudflare Workers** that merges two worlds:
+**رِسا** is a production-grade Telegram Post Studio built on **Cloudflare Workers**, designed for journal-grade channel posts with premium aesthetics.
 
-1. **Original Post Studio** (`/`, `/worker.js`, `/api/send`, `/webhook`) — untouched, byte-identical
-2. **Rasa Mini App** (`/app`, `/api/session`, `/api/context`, `/api/publish`, `/api/emoji/*`) — mounted additively via `tryRasaApp` intercept
+The system uses a clean additive architecture:
 
-> **Design Principle:** *هیچ‌کدوم از بخش‌های اینو دست نزن. فقط فقط این قسمت مینی‌اپ رو بهش اضافه کن*
-> — Only 2 additive lines in the entry, everything else preserved.
+1. **Post Studio Core** (`/`, `/worker.js`, `/api/send`, `/webhook`) — stable, production-tested foundation
+2. **Rasa Mini App** (`/app`, `/api/session`, `/api/context`, `/api/publish`, `/api/emoji/*`) — modern Persian-first interface mounted via lightweight router
 
-**Live Bot:** [@RasaRichBot](https://t.me/RasaRichBot) — Menu Button = `رِسا` → `https://rich-post-bot.4lisarani-1.workers.dev/app`
+> **Architecture Principle:** Minimal, non-invasive integration — core logic stays preserved and fully backward-compatible while new capabilities are layered on top.
+
+**Live Bot:** [@RasaRichBot](https://t.me/RasaRichBot) — Menu Button `رِسا` → `https://rich-post-bot.4lisarani-1.workers.dev/app`
 
 ---
 
@@ -189,31 +190,31 @@ graph TD
 
 ```
 RasaRichBot/
-├── banner.png                 # 🎨 Generated hero banner (1280x640)
-├── logo.png                   # 💎 Rasa logo (pink ر)
-├── README.md                  # 📖 This file — most decorated ever
-├── .dev.vars.example          # 🔐 Env template
+├── banner.png                 # 🎨 Hero banner (Rasa Studio)
+├── logo.png                   # 💎 Rasa logo (ر)
+├── README.md                  # 📖 Documentation
+├── .dev.vars.example          # 🔐 Environment template
 ├── .gitignore
 ├── LICENSE (MIT)
 ├── worker/
-│   ├── index.js               # 🚀 Main worker (2.5M, 2 additive lines)
+│   ├── index.js               # 🚀 Main worker (Cloudflare ESM)
 │   ├── wrangler.toml          # ⚙️ Cloudflare config
 │   ├── package.json
-│   ├── test-integration.mjs   # 🧪 4 tests — dual-app contract
+│   ├── test-integration.mjs   # 🧪 Integration tests
 │   └── src/
-│       ├── glue.js            # 🔀 Router: OPTIONS 204 CORS + /app + /assets/* + /api/*
-│       ├── config.js          # ⚙️ cfg() helper
-│       ├── store.js           # 🗄 Store(env,config) reads env.STORE
-│       ├── telegram.js        # 📡 Thin Bot API client + HINTS
+│       ├── glue.js            # 🔀 Router: CORS + /app + /assets + /api
+│       ├── config.js          # ⚙️ Configuration helper
+│       ├── store.js           # 🗄 KV storage abstraction
+│       ├── telegram.js        # 📡 Telegram Bot API client
 │       ├── miniapp.js         # 📱 Mini App handlers
 │       ├── emoji/
-│       │   └── index.js       # 🍉 Smart substitution layer
+│       │   └── index.js       # 🍉 Premium emoji substitution
 │       ├── rich/
-│       │   ├── kit.js         # 🧱 Rich blocks kit
-│       │   ├── validate.js    # ✅ Validation + URL sanitization
-│       │   └── send.js        # 📤 Publish ladder: DM→copyMessage
+│       │   ├── kit.js         # 🧱 Rich blocks engine
+│       │   ├── validate.js    # ✅ Validation & sanitization
+│       │   └── send.js        # 📤 Publishing pipeline
 │       └── flows/
-│           └── library.js     # 📚 LITE extraction: BUILTIN_TEMPLATES only
+│           └── library.js     # 📚 Template library
 ├── miniapp/
 │   ├── app.html               # 🌟 Rasa shell (93202B)
 │   └── assets/
