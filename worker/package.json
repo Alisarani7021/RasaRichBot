@@ -1,0 +1,11 @@
+{
+  "name": "rasa-rich-bot-worker",
+  "version": "2.0.0",
+  "description": "رِسا — Telegram Post Studio with Premium Emoji Engine",
+  "type": "module",
+  "scripts": {
+    "test": "node test-integration.mjs",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {}
+}
