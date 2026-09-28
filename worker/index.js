@@ -1511,17 +1511,17 @@ async function authorizeChat(env, identity, chatId) {
 __name(authorizeChat, "authorizeChat");
 __name2(authorizeChat, "authorizeChat");
 function getStartRichHtml() {
-  return `<b>\u{1F48E} Telegram Post Studio</b>
-\u0633\u06CC\u0633\u062A\u0645\u200C\u0639\u0627\u0645\u0644 \u0647\u0648\u0634\u0645\u0646\u062F \u0633\u0627\u062E\u062A \u0648 \u0637\u0631\u0627\u062D\u06CC \u067E\u0633\u062A\u200C\u0647\u0627\u06CC \u0698\u0648\u0631\u0646\u0627\u0644\u06CC \u062A\u0644\u06AF\u0631\u0627\u0645
+  return `<b>\u{1F48E} رِسا — استودیوی ژورنالی تلگرام</b>
+ساخت، چیدمان و انتشار پست‌های Rich با استاندارد تحریریه — از تیتر و جدول تا اموجی پرمیوم و دکمه‌ی شیشه‌ای.
 
 <table bordered striped compact>
-<tr><td>\u0647\u0648\u0634 \u0645\u0635\u0646\u0648\u0639\u06CC \u{1F916}</td><td>\u0645\u0639\u0645\u0627\u0631\u06CC \u0631\u06CC\u0686\u200C\u0645\u0633\u06CC\u062C\u060C \u062C\u062F\u0648\u0644\u200C\u0633\u0627\u0632 \u0648 \u0628\u062F\u0648\u0646 \u062A\u063A\u06CC\u06CC\u0631 \u0645\u062A\u0646</td></tr>
-<tr><td>\u0627\u0645\u0648\u062C\u06CC \u067E\u0631\u06CC\u0645\u06CC\u0648\u0645 \u{1F3A8}</td><td>\u0627\u062A\u0627\u0642 \u0639\u0645\u0644 \u062A\u0639\u0648\u06CC\u0636 \u062F\u0627\u0646\u0647\u200C\u0627\u06CC \u0648 \u0627\u0631\u062A\u0642\u0627\u06CC \u062E\u0648\u062F\u06A9\u0627\u0631</td></tr>
-<tr><td>\u0628\u0644\u0648\u06A9\u200C\u0647\u0627 \u{1F4DC}</td><td>\u0646\u0642\u0644\u200C\u0642\u0648\u0644\u200C\u0647\u0627\u06CC \u062A\u0627\u0634\u0648\u060C \u062E\u0637\u0648\u0637 \u0644\u0648\u06A9\u0633 \u0648 \u0627\u0633\u067E\u0648\u06CC\u0644\u0631</td></tr>
-<tr><td>\u06A9\u0627\u0646\u0627\u0644 \u{1F4E2}</td><td>\u0627\u0646\u062A\u0634\u0627\u0631 \u0645\u0633\u062A\u0642\u06CC\u0645 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u0647\u0627\u06CC \u0634\u06CC\u0634\u0647\u200C\u0627\u06CC \u0627\u062E\u062A\u0635\u0627\u0635\u06CC</td></tr>
+<tr><td>\u2728 طراحی</td><td>بلوک‌های تاشو، نقل‌قول لوکس، اسپویلر، فرمول و هایلایت</td></tr>
+<tr><td>\u{1F3A8} پرمیوم</td><td>۷۳۳ اموجی با تعویض دانه‌ای و آیکون اختصاصی دکمه</td></tr>
+<tr><td>\u{1F4CA} داده</td><td>جدول حرفه‌ای، ادغام سلول، کپشن و ارجاع تمیز</td></tr>
+<tr><td>\u{1F4E2} انتشار</td><td>مسیر امن DM → copyMessage برای کانال (Bot API 9.4)</td></tr>
 </table>
 
-\u{1F447} <b>\u0628\u0631\u0627\u06CC \u0634\u0631\u0648\u0639\u060C \u0645\u062A\u0646\u060C \u062A\u0635\u0648\u06CC\u0631 \u06CC\u0627 \u0644\u06CC\u0646\u06A9 \u067E\u06A9 \u0627\u0645\u0648\u062C\u06CC \u062E\u0648\u062F \u0631\u0627 \u0645\u0633\u062A\u0642\u06CC\u0645\u0627\u064B \u0628\u0641\u0631\u0633\u062A\u06CC\u062F:</b>`;
+\u{1F447} <b>برای شروع، متن، عکس یا لینک پک اموجی‌ات را همین‌جا بفرست — یا از پایین «رِسا» را باز کن:</b>`;
 }
 __name(getStartRichHtml, "getStartRichHtml");
 __name2(getStartRichHtml, "getStartRichHtml");
@@ -1574,22 +1574,20 @@ __name(richGuideMenuMarkup, "richGuideMenuMarkup");
 __name2(richGuideMenuMarkup, "richGuideMenuMarkup");
 function teleRichGuideMenuHtml() {
   const counts = TELE_RICH_GUIDE_GROUPS.map((group) => {
-    const count = TELE_RICH_GUIDES.filter((g) => g.group === group).length;
-    return `<tr><td>${escapeHtml(group)}</td><td align="center">${count}</td><td>${group === "Media" ? "\u0631\u0633\u0627\u0646\u0647\u060C \u06A9\u0644\u0627\u0698\u060C \u0627\u0633\u0644\u0627\u06CC\u062F\u0634\u0648 \u0648 \u0646\u0642\u0634\u0647" : group === "Blocks" ? "\u0628\u0644\u0648\u06A9\u200C\u0647\u0627\u06CC \u0633\u0627\u062E\u062A\u0627\u0631\u06CC\u060C \u062C\u062F\u0648\u0644\u060C \u0633\u0646\u062F \u0648 \u062F\u06A9\u0645\u0647" : "\u062A\u06AF\u200C\u0647\u0627\u060C entity\u0647\u0627\u060C \u0644\u06CC\u0646\u06A9 \u0648 \u0645\u062A\u0646"}</td></tr>`;
+    return `<tr><td>${escapeHtml(group)}</td><td>${group === "Media" ? "رسانه، کلاژ، اسلایدشو و نقشه" : group === "Blocks" ? "بلوک‌های ساختاری، جدول، سند و دکمه" : "تگ‌ها، entityها، لینک و متن"}</td></tr>`;
   }).join("");
-  return `<h1>\u{1F4DA} \u0631\u0627\u0647\u0646\u0645\u0627\u06CC \u06A9\u0627\u0645\u0644 TeleRich</h1>
-<p>\u0627\u06CC\u0646 \u0628\u062E\u0634 \u0627\u0632 \u0631\u0627\u0647\u0646\u0645\u0627\u06CC \u0641\u0639\u0644\u06CC TeleRich \u0645\u0646\u062A\u0642\u0644 \u0634\u062F\u0647 \u0627\u0633\u062A. \u0647\u0631 \u0645\u0648\u0631\u062F \u062A\u0648\u0636\u06CC\u062D\u060C \u06A9\u062F \u0627\u0635\u0644\u06CC \u0648 \u06AF\u0632\u06CC\u0646\u0647\u0654 \xAB\u0627\u062C\u0631\u0627\u06CC \u0645\u062B\u0627\u0644\xBB \u062F\u0627\u0631\u062F. \u0635\u0641\u062D\u0647\u200C\u0628\u0646\u062F\u06CC \u0648 \u0627\u062C\u0631\u0627\u06CC \u0645\u062B\u0627\u0644 \u0631\u0648\u06CC \u0647\u0645\u0627\u0646 \u067E\u06CC\u0627\u0645 \u0627\u0646\u062C\u0627\u0645 \u0645\u06CC\u200C\u0634\u0648\u062F\u061B Mini App \u062F\u0631 \u0627\u06CC\u0646 \u0645\u0633\u06CC\u0631 \u0627\u0633\u062A\u0641\u0627\u062F\u0647 \u0646\u0645\u06CC\u200C\u0634\u0648\u062F.</p>
-<table bordered striped compact><tr><th>\u06AF\u0631\u0648\u0647</th><th align="center">\u062A\u0639\u062F\u0627\u062F</th><th>\u0645\u062D\u062A\u0648\u0627</th></tr>${counts}</table>
-<p>\u06CC\u06A9 \u06AF\u0631\u0648\u0647 \u0631\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u060C \u0633\u067E\u0633 \u0642\u0627\u0628\u0644\u06CC\u062A \u0631\u0627 \u0628\u0628\u06CC\u0646 \u06CC\u0627 \u0647\u0645\u0627\u0646 \u0645\u062B\u0627\u0644 \u0631\u0627 \u062F\u0631 \u0647\u0645\u06CC\u0646 \u067E\u06CC\u0627\u0645 \u0627\u062C\u0631\u0627 \u06A9\u0646.</p>`;
+  return `<h1>\u{1F4DA} راهنمای کامل رِسا</h1>
+<p>راهنمای زنده‌ی قابلیت‌های Rich — هر قابلیت یک بلوک مستقل است: توضیح فارسی، کد اصلی و اجرای همان لحظه روی همین پیام. برای تجربه‌ی بصری کامل، کتابخانه‌ی مینی‌اپ «رِسا» را باز کن.</p>
+<table bordered striped compact><tr><th>گروه</th><th>محتوا</th></tr>${counts}</table>
+<p>یک گروه را انتخاب کن تا قابلیت‌هایش را ببینی. اجرای مثال، همان پیام را به نسخه‌ی Rich تبدیل می‌کند.</p>`;
 }
 __name(teleRichGuideMenuHtml, "teleRichGuideMenuHtml");
 __name2(teleRichGuideMenuHtml, "teleRichGuideMenuHtml");
 function teleRichGuideMenuMarkup() {
-  const rows = TELE_RICH_GUIDE_GROUPS.map((group) => [{ text: `${group === "Rich text" ? "\u{1F524}" : group === "Blocks" ? "\u{1F9F1}" : "\u{1F5BC}"} ${group} (${TELE_RICH_GUIDES.filter((g) => g.group === group).length})`, callback_data: `trgroup:${encodeURIComponent(group)}` }]);
-  rows.push([{ text: "\u{1F3A8} \u062F\u0645\u0648 \u06A9\u0627\u0645\u0644 \u0642\u0627\u0628\u0644 \u0627\u062C\u0631\u0627", callback_data: "trdemo:0" }]);
-  rows.push([{ text: "\u2728 \u062A\u0627\u0632\u0647\u200C\u0647\u0627\u06CC Bot API", callback_data: "trupdates" }]);
-  rows.push([{ text: "\u{1F9E9} \u0642\u0627\u0644\u0628\u200C\u0647\u0627\u06CC \u0622\u0645\u0627\u062F\u0647", callback_data: "nav:templates" }]);
-  rows.push([{ text: "\u{1F3E0} \u0645\u0646\u0648\u06CC \u0627\u0635\u0644\u06CC", callback_data: "nav:home" }]);
+  const rows = TELE_RICH_GUIDE_GROUPS.map((group) => [{ text: `${group === "Rich text" ? "\u{1F524}" : group === "Blocks" ? "\u{1F9F1}" : "\u{1F5BC}"} ${group}`, callback_data: `trgroup:${encodeURIComponent(group)}` }]);
+  rows.push([{ text: "دمو کامل قابل اجرا", callback_data: "trdemo:0" }]);
+  rows.push([{ text: "قالب‌های آماده", callback_data: "nav:templates" }]);
+  rows.push([{ text: "منوی اصلی", callback_data: "nav:home" }]);
   return { inline_keyboard: rows };
 }
 __name(teleRichGuideMenuMarkup, "teleRichGuideMenuMarkup");
@@ -1790,7 +1788,7 @@ function richTemplatesMenuMarkup() {
   const keys = Object.keys(RICH_TEMPLATE_LABELS);
   const rows = [];
   for (let i = 0; i < keys.length; i += 2) rows.push(keys.slice(i, i + 2).map((key) => ({ text: RICH_TEMPLATE_LABELS[key], callback_data: `tpl:${key}` })));
-  rows.push([{ text: "\u{1F4A1} \u0631\u0627\u0647\u0646\u0645\u0627\u06CC \u06A9\u0627\u0645\u0644 Rich", callback_data: "nav:help" }]);
+  rows.push([{ text: "\u0631\u0627\u0647\u0646\u0645\u0627\u06CC \u06A9\u0627\u0645\u0644 Rich", callback_data: "nav:help" }]);
   rows.push([{ text: "\u25C0\uFE0F \u0628\u0627\u0632\u06AF\u0634\u062A \u0628\u0647 \u0645\u0646\u0648\u06CC \u0627\u0635\u0644\u06CC", callback_data: "nav:home" }]);
   return { inline_keyboard: rows };
 }
@@ -1899,22 +1897,22 @@ function getStartKeyboard(origin) {
   return {
     inline_keyboard: [
       [
-        { text: "\u{1F3A8} \u0637\u0631\u0627\u062D\u06CC \u062F\u0633\u062A\u06CC \u067E\u0644\u0647\u200C\u0627\u06CC", callback_data: "act:manual_new", style: "success", icon_custom_emoji_id: "4981190958369474742" },
-        { text: "\u270D\uFE0F \u0637\u0631\u0627\u062D\u06CC \u067E\u0633\u062A \u062C\u062F\u06CC\u062F", callback_data: "act:new_post", style: "success", icon_custom_emoji_id: "5307891786088227313" }
+        { text: "\u0637\u0631\u0627\u062D\u06CC \u062F\u0633\u062A\u06CC \u067E\u0644\u0647\u200C\u0627\u06CC", callback_data: "act:manual_new", style: "success", icon_custom_emoji_id: "4981190958369474742" },
+        { text: "\u0637\u0631\u0627\u062D\u06CC \u067E\u0633\u062A \u062C\u062F\u06CC\u062F", callback_data: "act:new_post", style: "success", icon_custom_emoji_id: "5307891786088227313" }
       ],
       [
-        { text: "\u{1F31F} \u0631\u0650\u0633\u0627", web_app: { url: `${origin}/app` }, style: "primary", icon_custom_emoji_id: "5339209399120465044" }
+        { text: "\u0631\u0650\u0633\u0627", web_app: { url: `${origin}/app` }, style: "primary", icon_custom_emoji_id: "5339209399120465044" }
       ],
       [
-        { text: "\u{1F4E2} \u0645\u062F\u06CC\u0631\u06CC\u062A \u0648 \u0627\u062A\u0635\u0627\u0644 \u06A9\u0627\u0646\u0627\u0644", callback_data: "nav:channel", icon_custom_emoji_id: "4981474026779051847" },
-        { text: "\u{1F3A8} \u067E\u06A9\u200C\u0647\u0627\u06CC \u0627\u0645\u0648\u062C\u06CC \u0630\u062E\u06CC\u0631\u0647\u200C\u0634\u062F\u0647", callback_data: "nav:packs", icon_custom_emoji_id: "4981190958369474742" }
+        { text: "\u0645\u062F\u06CC\u0631\u06CC\u062A \u0648 \u0627\u062A\u0635\u0627\u0644 \u06A9\u0627\u0646\u0627\u0644", callback_data: "nav:channel", icon_custom_emoji_id: "4981474026779051847" },
+        { text: "\u067E\u06A9\u200C\u0647\u0627\u06CC \u0627\u0645\u0648\u062C\u06CC \u0630\u062E\u06CC\u0631\u0647\u200C\u0634\u062F\u0647", callback_data: "nav:packs", icon_custom_emoji_id: "4981190958369474742" }
       ],
       [
-        { text: "\u{1F3A7} \u067E\u062E\u0634 \u0632\u0646\u062F\u0647 \u0642\u0627\u0628\u0644\u06CC\u062A\u200C\u0647\u0627", callback_data: "trdemo:0", style: "primary", icon_custom_emoji_id: "4981420507191575973" }
+        { text: "\u067E\u062E\u0634 \u0632\u0646\u062F\u0647 \u0642\u0627\u0628\u0644\u06CC\u062A\u200C\u0647\u0627", callback_data: "trdemo:0", style: "primary", icon_custom_emoji_id: "4981420507191575973" }
       ],
       [
-        { text: "\u{1F9E9} \u0642\u0627\u0644\u0628\u200C\u0647\u0627\u06CC \u0622\u0645\u0627\u062F\u0647", callback_data: "nav:templates", icon_custom_emoji_id: "5337079048097002546" },
-        { text: "\u{1F4A1} \u0631\u0627\u0647\u0646\u0645\u0627\u06CC \u06A9\u0627\u0645\u0644 Rich", callback_data: "nav:help", icon_custom_emoji_id: "5422439311196834318" }
+        { text: "\u0642\u0627\u0644\u0628\u200C\u0647\u0627\u06CC \u0622\u0645\u0627\u062F\u0647", callback_data: "nav:templates", icon_custom_emoji_id: "5337079048097002546" },
+        { text: "\u0631\u0627\u0647\u0646\u0645\u0627\u06CC \u06A9\u0627\u0645\u0644 Rich", callback_data: "nav:help", icon_custom_emoji_id: "5422439311196834318" }
       ]
     ]
   };

@@ -18,8 +18,5 @@ id = "f7714cd6f0e74ae0b55d73107fa8d88e"
 name = "STATE"
 class_name = "State"
 
-[durable_objects]
-bindings = [{ name = "STATE", class_name = "State" }]
-
 [vars]
 WEBHOOK_PATH = "/telegram/webhook"

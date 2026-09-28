@@ -240,6 +240,18 @@ body.typing .nav,body.typing .fab{display:none}
 #fmt.inl{position:static;transform:none;left:auto;top:auto;bottom:auto;margin-top:10px;box-sizing:border-box;width:0;min-width:100%;max-width:100%;overflow:hidden;gap:0;justify-content:space-between;box-shadow:none;background:var(--s2);padding:4px}
 #fmt.inl.on{display:flex}#fmt.inl button{flex:1 1 0;min-width:0;height:38px;padding:0;font-size:14px}#fmt.inl input{flex:1;min-width:0;width:auto}
 #canvas,.blk{min-width:0;max-width:100%}
+
+.guide-card{cursor:pointer;transition:.2s}
+.guide-card .guide-head{display:flex;align-items:center;gap:12px;padding:2px 0}
+.guide-card .guide-head div{flex:1}
+.guide-card .guide-head small{display:block;color:var(--mu);font-size:12px;margin-top:2px}
+.guide-card .chev{transition:.2s;color:var(--mu);font-size:18px}
+.guide-card.open .chev{transform:rotate(180deg)}
+.guide-card .guide-body{max-height:0;overflow:hidden;transition:max-height .28s ease, margin .2s}
+.guide-card.open .guide-body{max-height:800px;margin-top:12px}
+.guide-card .chips{display:flex;flex-wrap:wrap;gap:6px}
+.guide-chip{background:var(--card2);border:1px solid var(--line);padding:6px 10px;border-radius:10px;font-size:13px}
+
 </style>
 </head>
 <body data-view="home">
@@ -687,6 +699,218 @@ $('#v-home').addEventListener('click',function(e){var b=e.target.closest('[data-
   if(b.dataset.dr){loadDraft(b.dataset.dr);return}
   var h=b.dataset.h;if(h==='new')newDoc();else if(h==='scratch')newDoc(1);else if(h==='tpl')setView('library');else if(h==='cont')loadDraft(S.drafts[0].id)});
 function loadDraft(id){api('/api/draft/load',{id:id}).then(function(r){if(!r.ok){hap('err');toast('پیش‌نویس باز نشد');return}loadDoc(r.html,'پیش‌نویس بازگردانی شد');hap('ok')})}
+
+/* ── rich guide data moved from bot chat to library ── */
+var GUIDE_DATA = {
+  "Rich text": [
+    {
+      "fa": "متن ضخیم",
+      "name": "RichTextBold"
+    },
+    {
+      "fa": "ایتالیک",
+      "name": "RichTextItalic"
+    },
+    {
+      "fa": "زیرخط",
+      "name": "RichTextUnderline"
+    },
+    {
+      "fa": "خط‌خورده",
+      "name": "RichTextStrikethrough"
+    },
+    {
+      "fa": "اسپویلر",
+      "name": "RichTextSpoiler"
+    },
+    {
+      "fa": "تاریخ و زمان",
+      "name": "RichTextDateTime"
+    },
+    {
+      "fa": "منشن کاربر",
+      "name": "RichTextTextMention"
+    },
+    {
+      "fa": "زیرنویس",
+      "name": "RichTextSubscript"
+    },
+    {
+      "fa": "بالانویس",
+      "name": "RichTextSuperscript"
+    },
+    {
+      "fa": "هایلایت",
+      "name": "RichTextMarked"
+    },
+    {
+      "fa": "کد",
+      "name": "RichTextCode"
+    },
+    {
+      "fa": "ایموجی سفارشی",
+      "name": "RichTextCustomEmoji"
+    },
+    {
+      "fa": "فرمول ریاضی",
+      "name": "RichTextMathematicalExpression"
+    },
+    {
+      "fa": "پیوند",
+      "name": "RichTextUrl"
+    },
+    {
+      "fa": "ایمیل",
+      "name": "RichTextEmailAddress"
+    },
+    {
+      "fa": "شماره تلفن",
+      "name": "RichTextPhoneNumber"
+    },
+    {
+      "fa": "شماره کارت",
+      "name": "RichTextBankCardNumber"
+    },
+    {
+      "fa": "نام کاربری",
+      "name": "RichTextMention"
+    },
+    {
+      "fa": "هشتگ",
+      "name": "RichTextHashtag"
+    },
+    {
+      "fa": "نماد سهام",
+      "name": "RichTextCashtag"
+    },
+    {
+      "fa": "دستور ربات",
+      "name": "RichTextBotCommand"
+    },
+    {
+      "fa": "دکمه ریچ",
+      "name": "RichTextButton"
+    },
+    {
+      "fa": "لنگر",
+      "name": "RichTextAnchor"
+    },
+    {
+      "fa": "پیوند لنگر",
+      "name": "RichTextAnchorLink"
+    },
+    {
+      "fa": "پاورقی",
+      "name": "RichTextReference"
+    },
+    {
+      "fa": "ارجاع پاورقی",
+      "name": "RichTextReferenceLink"
+    }
+  ],
+  "Blocks": [
+    {
+      "fa": "عنوان‌ها",
+      "name": "RichBlockSectionHeading"
+    },
+    {
+      "fa": "پاراگراف",
+      "name": "RichBlockParagraph"
+    },
+    {
+      "fa": "فهرست",
+      "name": "RichBlockList"
+    },
+    {
+      "fa": "نقل‌قول تو در تو",
+      "name": "RichBlockBlockQuotation"
+    },
+    {
+      "fa": "نقل‌قول برجسته",
+      "name": "RichBlockPullQuotation"
+    },
+    {
+      "fa": "نقل‌قول بازشونده",
+      "name": "RichBlockExpandableBlockQuotation"
+    },
+    {
+      "fa": "بخش بازشونده",
+      "name": "RichBlockDetails"
+    },
+    {
+      "fa": "جدول",
+      "name": "RichBlockTable"
+    },
+    {
+      "fa": "بلوک فرمول",
+      "name": "RichBlockMathematicalExpression"
+    },
+    {
+      "fa": "بلوک کد",
+      "name": "RichBlockPreformatted"
+    },
+    {
+      "fa": "جداکننده",
+      "name": "RichBlockDivider"
+    },
+    {
+      "fa": "پانویس",
+      "name": "RichBlockFooter"
+    },
+    {
+      "fa": "دکمه‌ها",
+      "name": "RichBlockButtons"
+    },
+    {
+      "fa": "در حال فکر کردن",
+      "name": "RichBlockThinking"
+    }
+  ],
+  "Media": [
+    {
+      "fa": "نقشه",
+      "name": "RichBlockMap"
+    },
+    {
+      "fa": "عکس",
+      "name": "RichBlockPhoto"
+    },
+    {
+      "fa": "ویدیو",
+      "name": "RichBlockVideo"
+    },
+    {
+      "fa": "صوت",
+      "name": "RichBlockAudio"
+    },
+    {
+      "fa": "پیام صوتی",
+      "name": "RichBlockVoiceNote"
+    },
+    {
+      "fa": "انیمیشن",
+      "name": "RichBlockAnimation"
+    },
+    {
+      "fa": "کلاژ",
+      "name": "RichBlockCollage"
+    },
+    {
+      "fa": "اسلایدشو",
+      "name": "RichBlockSlideshow"
+    },
+    {
+      "fa": "سند",
+      "name": "RichBlockDocument"
+    }
+  ]
+};
+var GUIDE_META = {
+  "Rich text": {icon:'text', desc:'تگ‌ها، entityها، لینک و متن'},
+  "Blocks": {icon:'box', desc:'بلوک‌های ساختاری، جدول، سند و دکمه'},
+  "Media": {icon:'image', desc:'رسانه، کلاژ، اسلایدشو و نقشه'}
+};
+
 /* ── library ── */
 function lc(ic_,title,sub,acts,i){return '<div class="lc" style="animation-delay:'+(i*.04)+'s"><div class="th">'+ic(ic_,24)+'</div><b>'+esc(title)+'</b><small>'+esc(sub)+'</small><div class="ac">'+acts+'</div></div>'}
 function paintLib(){var h='';
@@ -694,7 +918,24 @@ function paintLib(){var h='';
   h+='<h2 class="sec">'+ic('box',18)+'پیش‌نویس‌ها</h2>'+(S.drafts.length?'<div class="lgrid">'+S.drafts.map(function(d,i){return lc('text',d.title,ago(d.at),'<button class="btn pri" data-a="ld" data-id="'+d.id+'">بازگردانی</button><button class="btn red" data-a="dd" data-id="'+d.id+'">حذف</button>',i)}).join('')+'</div>':'<div class="empty"><b>پیش‌نویسی نیست</b>اولین پیامت را بساز و ذخیره کن.</div>');
   h+='<h2 class="sec">'+ic('bolt',18)+'قالب‌ها</h2>'+(S.templates.length?'<div class="lgrid">'+S.templates.map(function(t,i){return lc('spark',t.title,t.builtin?'قالب رِسا':ago(t.at),'<button class="btn pri" data-a="lt" data-id="'+t.id+'">استفاده</button>',i)}).join('')+'</div>':'<div class="empty"><b>قالبی نیست</b></div>');
   h+='<h2 class="sec">'+ic('image',18)+'رسانه‌ها</h2>'+(S.media.length?'<div class="lgrid">'+S.media.map(function(m,i){return lc(m.kind==='photo'?'image':'eye',m.name,m.kind,(m.kind==='photo'||m.kind==='video')?'<button class="btn pri" data-a="lm" data-i="'+i+'">درج در پیام</button>':'<small>فقط عکس و ویدیو قابل درج است</small>',i)}).join('')+'</div>':'<div class="empty"><b>رسانه‌ای نیست</b>عکس یا ویدیو برای ربات بفرست.</div>');
-  $('#v-library').innerHTML=h}
+  // ── راهنمای Rich منتقل شده از چت به کتابخانه (هر گروه در باکس خودش) ──
+  h+='<h2 class="sec">'+ic('book',18)+'راهنمای Rich</h2><div class="note">هر قابلیت یک بلوک مستقل است — بدون شلوغی چت، همه‌چیز اینجاست. روی هر باکس بزن تا باز شود.</div>';
+  var groups=["Rich text","Blocks","Media"];
+  for(var gi=0;gi<groups.length;gi++){
+    var gname=groups[gi];
+    var meta=GUIDE_META[gname]||{icon:'box',desc:''};
+    var items=GUIDE_DATA[gname]||[];
+    h+='<div class="card guide-card" data-g="'+gname+'"><div class="guide-head"><span class="ti g'+(gi+1)+'">'+ic(meta.icon,20)+'</span><div><b>'+esc(gname)+'</b><small>'+esc(meta.desc)+' — '+items.length+' قابلیت</small></div><span class="chev">⌄</span></div><div class="guide-body"><div class="chips">'+items.map(function(it){return '<span class="chip guide-chip" title="'+qa(it.name)+'">'+esc(it.fa)+'</span>'}).join('')+'</div></div></div>';
+  }
+  $('#v-library').innerHTML=h;
+  // bind toggle
+  $$('.guide-card .guide-head').forEach(function(head){
+    head.onclick=function(){
+      var card=head.parentElement;
+      card.classList.toggle('open');
+    }
+  });
+}
 $('#v-library').addEventListener('click',function(e){var b=e.target.closest('[data-a]');if(!b)return;hap();var a=b.dataset.a,id=b.dataset.id;
   if(a==='ld')loadDraft(id);
   else if(a==='dd')api('/api/draft/delete',{id:id}).then(function(r){if(r&&r.ok===false){toast('حذف نشد');return}S.drafts=S.drafts.filter(function(x){return String(x.id)!==id});paintLib();toast('حذف شد')});
