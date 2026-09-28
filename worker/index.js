@@ -491,20 +491,42 @@ async function sendPostMessage(env, chatId, { text, html, media, replyMarkup }) 
     method = "sendVoice";
     paramKey = "voice";
   }
-  const res = await tgCall(env, method, {
-    chat_id: chatId,
-    caption: sanitizeTelegramHtml(caption),
-    parse_mode: "HTML",
-    [paramKey]: fileId,
-    ...replyMarkup ? { reply_markup: effectiveReplyMarkup } : {}
-  });
-  if (res && res.ok) return res;
-  return await tgCall(env, method, {
-    chat_id: chatId,
-    caption: caption.replace(/<[^>]*>/g, ""),
-    [paramKey]: fileId,
-    ...replyMarkup ? { reply_markup: effectiveReplyMarkup } : {}
-  });
+  try{
+    const res = await tgCall(env, method, {
+      chat_id: chatId,
+      caption: sanitizeTelegramHtml(caption),
+      parse_mode: "HTML",
+      [paramKey]: fileId,
+      ...replyMarkup ? { reply_markup: effectiveReplyMarkup } : {}
+    });
+    if (res && res.ok) return res;
+  }catch(e){
+    console.warn("media send with html caption failed", e?.message);
+  }
+  try{
+    const res2 = await tgCall(env, method, {
+      chat_id: chatId,
+      caption: caption.replace(/<[^>]*>/g, ""),
+      [paramKey]: fileId,
+      ...replyMarkup ? { reply_markup: effectiveReplyMarkup } : {}
+    });
+    if (res2 && res2.ok) return res2;
+  }catch(e){
+    console.warn("media send plain caption failed, trying without markup", e?.message);
+  }
+  // final fallback without reply_markup (premium emoji icons can cause failure)
+  try{
+    const res3 = await tgCall(env, method, {
+      chat_id: chatId,
+      caption: caption.replace(/<[^>]*>/g, "").slice(0,1024),
+      [paramKey]: fileId
+    });
+    if (res3 && res3.ok) return res3;
+  }catch(e){
+    console.error("media send final fallback failed", e?.message);
+    throw e;
+  }
+  return null;
 }
 __name(sendPostMessage, "sendPostMessage");
 __name2(sendPostMessage, "sendPostMessage");

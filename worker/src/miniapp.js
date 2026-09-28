@@ -365,6 +365,46 @@ export async function handleMiniAppApi(request, env, url) {
     });
   }
 
+  // ── media upload from mini app gallery ──
+  if (path === '/api/media/upload' && request.method === 'POST') {
+    try {
+      // accept multipart/form-data
+      const form = await request.formData();
+      const file = form.get('file');
+      if (!file || typeof file === 'string') return bad('file missing');
+      const mime = file.type || '';
+      let kind = 'photo';
+      let method = 'sendPhoto';
+      let param = 'photo';
+      if (mime.startsWith('video')) { kind='video'; method='sendVideo'; param='video'; }
+      else if (mime.startsWith('audio')) { kind='audio'; method='sendAudio'; param='audio'; }
+      else if (mime === 'image/gif') { kind='animation'; method='sendAnimation'; param='animation'; }
+      // Telegram file upload via FormData
+      const fd = new FormData();
+      fd.append('chat_id', String(uid));
+      fd.append(param, file, file.name || 'upload');
+      // disable notification to avoid spam
+      fd.append('disable_notification', 'true');
+      const tgRes = await fetch(`https://api.telegram.org/bot${token}/${method}`, { method:'POST', body: fd });
+      const tj = await tgRes.json();
+      if (!tj.ok) return bad(`telegram ${method}: ${tj.description || 'failed'}`);
+      let fileId = null;
+      if (kind === 'photo') {
+        const arr = tj.result.photo || [];
+        fileId = arr.length ? arr[arr.length-1].file_id : null;
+      } else if (kind === 'video') fileId = tj.result.video?.file_id || tj.result.document?.file_id;
+      else if (kind === 'audio') fileId = tj.result.audio?.file_id || tj.result.voice?.file_id;
+      else if (kind === 'animation') fileId = tj.result.animation?.file_id || tj.result.document?.file_id;
+      if (!fileId) return bad('no file_id from telegram');
+      const item = { name: file.name || `media-${Date.now()}`, kind, fileId, at: Date.now(), size: file.size || 0 };
+      await store.saveMedia(uid, item);
+      return json({ ok:true, media: item });
+    } catch (e) {
+      console.error('media upload error', e);
+      return bad(`upload: ${String(e.message||e).slice(0,200)}`);
+    }
+  }
+
   let body = {};
   if (request.method === 'POST') { try { body = await request.json(); } catch { return bad('body'); } }
 
