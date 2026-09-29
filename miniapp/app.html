@@ -701,24 +701,7 @@ $('#v-home').addEventListener('click',function(e){var b=e.target.closest('[data-
 function loadDraft(id){api('/api/draft/load',{id:id}).then(function(r){if(!r.ok){hap('err');toast('پیش‌نویس باز نشد');return}loadDoc(r.html,'پیش‌نویس بازگردانی شد');hap('ok')})}
 
 /* ── rich guide data moved from bot chat to library ── */
-var GUIDE_DATA = {"Rich text": [{"fa": "متن ضخیم", "name": "RichTextBold", "code": "<b>Bold text</b>"}, {"fa": "ایتالیک", "name": "RichTextItalic", "code": "<i>Italic text</i>"}, {"fa": "زیرخط", "name": "RichTextUnderline", "code": "<u>underlined text</u>, <ins>underlined text</ins>"}, {"fa": "خط‌خورده", "name": "RichTextStrikethrough", "code": "<s>Old idea</s> New idea"}, {"fa": "اسپویلر", "name": "RichTextSpoiler", "code": "<tg-spoiler>A little secret</tg-spoiler>"}, {"fa": "تاریخ و زمان", "name": "RichTextDateTime", "code": ""}, {"fa": "منشن کاربر", "name": "RichTextTextMention", "code": ""}, {"fa": "زیرنویس", "name": "RichTextSubscript", "code": "H<sub>2</sub>O"}, {"fa": "بالانویس", "name": "RichTextSuperscript", "code": "x<sup>2</sup> + y<sup>2</sup>"}, {"fa": "هایلایت", "name": "RichTextMarked", "code": "<mark>Something worth highlighting.</mark>"}, {"fa": "کد", "name": "RichTextCode", "code": ""}, {"fa": "ایموجی سفارشی", "name": "RichTextCustomEmoji", "code": ""}, {"fa": "فرمول ریاضی", "name": "RichTextMathematicalExpression", "code": "<tg-math>\frac{a^2 + b^2}{c}</tg-math>"}, {"fa": "پیوند", "name": "RichTextUrl", "code": ""}, {"fa": "ایمیل", "name": "RichTextEmailAddress", "code": ""}, {"fa": "شماره تلفن", "name": "RichTextPhoneNumber", "code": ""}, {"fa": "شماره کارت", "name": "RichTextBankCardNumber", "code": "4111 1111 1111 1111"}, {"fa": "نام کاربری", "name": "RichTextMention", "code": "@telegram"}, {"fa": "هشتگ", "name": "RichTextHashtag", "code": "#TeleRich"}, {"fa": "نماد سهام", "name": "RichTextCashtag", "code": "$TELE"}, {"fa": "دستور ربات", "name": "RichTextBotCommand", "code": "/start"}, {"fa": "دکمه ریچ", "name": "RichTextButton", "code": ""}, {"fa": "لنگر", "name": "RichTextAnchor", "code": ""}, {"fa": "پیوند لنگر", "name": "RichTextAnchorLink", "code": ""}, {"fa": "پاورقی", "name": "RichTextReference", "code": "A useful fact[^note].
-
-[^note]: The supporting explanation."}, {"fa": "ارجاع پاورقی", "name": "RichTextReferenceLink", "code": "Read the source[^source].
-
-[^source]: https://core.telegram.org/bots/api"}], "Blocks": [{"fa": "عنوان‌ها", "name": "RichBlockSectionHeading", "code": "<h1>Heading 1</h1>
-<h2>Heading 2</h2>
-<h3>Heading 3</h3>
-<h4>Heading 4</h4>
-<h5>Heading 5</h5>
-<h6>Heading 6</h6>"}, {"fa": "پاراگراف", "name": "RichBlockParagraph", "code": "<p>A paragraph with <b>rich text</b>.</p>"}, {"fa": "فهرست", "name": "RichBlockList", "code": "- milk
-- eggs
-- [ ] todo
-- [x] done
-
-1. wake up
-2. ship it"}, {"fa": "نقل‌قول تو در تو", "name": "RichBlockBlockQuotation", "code": "<blockquote>A quote<blockquote>A nested thought</blockquote></blockquote>"}, {"fa": "نقل‌قول برجسته", "name": "RichBlockPullQuotation", "code": "<aside>Pull quote<cite>The Author</cite></aside>"}, {"fa": "نقل‌قول بازشونده", "name": "RichBlockExpandableBlockQuotation", "code": "<blockquote expandable>Click to expand this quotation.
-More content inside.</blockquote>"}, {"fa": "بخش بازشونده", "name": "RichBlockDetails", "code": "<details><summary>Closed by default</summary>Hidden content</details>
-<details open><summary>Open by default</summary>Visible content</details>"}, {"fa": "جدول", "name": "RichBlockTable", "code": ""}, {"fa": "بلوک فرمول", "name": "RichBlockMathematicalExpression", "code": "<tg-math-block>E = mc^2</tg-math-block>"}, {"fa": "بلوک کد", "name": "RichBlockPreformatted", "code": ""}, {"fa": "جداکننده", "name": "RichBlockDivider", "code": "<hr>"}, {"fa": "پانویس", "name": "RichBlockFooter", "code": "<footer>Made with TeleRich · 2026</footer>"}, {"fa": "دکمه‌ها", "name": "RichBlockButtons", "code": ""}, {"fa": "در حال فکر کردن", "name": "RichBlockThinking", "code": "<tg-thinking>Working on a thoughtful answer…</tg-thinking>"}], "Media": [{"fa": "نقشه", "name": "RichBlockMap", "code": ""}, {"fa": "عکس", "name": "RichBlockPhoto", "code": ""}, {"fa": "ویدیو", "name": "RichBlockVideo", "code": ""}, {"fa": "صوت", "name": "RichBlockAudio", "code": ""}, {"fa": "پیام صوتی", "name": "RichBlockVoiceNote", "code": "![](https://telegram.org/example/audio.ogg)"}, {"fa": "انیمیشن", "name": "RichBlockAnimation", "code": ""}, {"fa": "کلاژ", "name": "RichBlockCollage", "code": ""}, {"fa": "اسلایدشو", "name": "RichBlockSlideshow", "code": ""}, {"fa": "سند", "name": "RichBlockDocument", "code": ""}]};
+var GUIDE_DATA = {"Rich text": [{"fa": "متن ضخیم", "name": "RichTextBold", "code": "<b>Bold text</b>"}, {"fa": "ایتالیک", "name": "RichTextItalic", "code": "<i>Italic text</i>"}, {"fa": "زیرخط", "name": "RichTextUnderline", "code": "<u>underlined text</u>, <ins>underlined text</ins>"}, {"fa": "خط‌خورده", "name": "RichTextStrikethrough", "code": "<s>Old idea</s> New idea"}, {"fa": "اسپویلر", "name": "RichTextSpoiler", "code": "<tg-spoiler>A little secret</tg-spoiler>"}, {"fa": "تاریخ و زمان", "name": "RichTextDateTime", "code": ""}, {"fa": "منشن کاربر", "name": "RichTextTextMention", "code": ""}, {"fa": "زیرنویس", "name": "RichTextSubscript", "code": "H<sub>2</sub>O"}, {"fa": "بالانویس", "name": "RichTextSuperscript", "code": "x<sup>2</sup> + y<sup>2</sup>"}, {"fa": "هایلایت", "name": "RichTextMarked", "code": "<mark>Something worth highlighting.</mark>"}, {"fa": "کد", "name": "RichTextCode", "code": ""}, {"fa": "ایموجی سفارشی", "name": "RichTextCustomEmoji", "code": ""}, {"fa": "فرمول ریاضی", "name": "RichTextMathematicalExpression", "code": "<tg-math>\\frac{a^2 + b^2}{c}</tg-math>"}, {"fa": "پیوند", "name": "RichTextUrl", "code": ""}, {"fa": "ایمیل", "name": "RichTextEmailAddress", "code": ""}, {"fa": "شماره تلفن", "name": "RichTextPhoneNumber", "code": ""}, {"fa": "شماره کارت", "name": "RichTextBankCardNumber", "code": "4111 1111 1111 1111"}, {"fa": "نام کاربری", "name": "RichTextMention", "code": "@telegram"}, {"fa": "هشتگ", "name": "RichTextHashtag", "code": "#TeleRich"}, {"fa": "نماد سهام", "name": "RichTextCashtag", "code": "$TELE"}, {"fa": "دستور ربات", "name": "RichTextBotCommand", "code": "/start"}, {"fa": "دکمه ریچ", "name": "RichTextButton", "code": ""}, {"fa": "لنگر", "name": "RichTextAnchor", "code": ""}, {"fa": "پیوند لنگر", "name": "RichTextAnchorLink", "code": ""}, {"fa": "پاورقی", "name": "RichTextReference", "code": "A useful fact[^note].\n\n[^note]: The supporting explanation."}, {"fa": "ارجاع پاورقی", "name": "RichTextReferenceLink", "code": "Read the source[^source].\n\n[^source]: https://core.telegram.org/bots/api"}], "Blocks": [{"fa": "عنوان‌ها", "name": "RichBlockSectionHeading", "code": "<h1>Heading 1</h1>\n<h2>Heading 2</h2>\n<h3>Heading 3</h3>\n<h4>Heading 4</h4>\n<h5>Heading 5</h5>\n<h6>Heading 6</h6>"}, {"fa": "پاراگراف", "name": "RichBlockParagraph", "code": "<p>A paragraph with <b>rich text</b>.</p>"}, {"fa": "فهرست", "name": "RichBlockList", "code": "- milk\n- eggs\n- [ ] todo\n- [x] done\n\n1. wake up\n2. ship it"}, {"fa": "نقل‌قول تو در تو", "name": "RichBlockBlockQuotation", "code": "<blockquote>A quote<blockquote>A nested thought</blockquote></blockquote>"}, {"fa": "نقل‌قول برجسته", "name": "RichBlockPullQuotation", "code": "<aside>Pull quote<cite>The Author</cite></aside>"}, {"fa": "نقل‌قول بازشونده", "name": "RichBlockExpandableBlockQuotation", "code": "<blockquote expandable>Click to expand this quotation.\nMore content inside.</blockquote>"}, {"fa": "بخش بازشونده", "name": "RichBlockDetails", "code": "<details><summary>Closed by default</summary>Hidden content</details>\n<details open><summary>Open by default</summary>Visible content</details>"}, {"fa": "جدول", "name": "RichBlockTable", "code": ""}, {"fa": "بلوک فرمول", "name": "RichBlockMathematicalExpression", "code": "<tg-math-block>E = mc^2</tg-math-block>"}, {"fa": "بلوک کد", "name": "RichBlockPreformatted", "code": ""}, {"fa": "جداکننده", "name": "RichBlockDivider", "code": "<hr>"}, {"fa": "پانویس", "name": "RichBlockFooter", "code": "<footer>Made with TeleRich · 2026</footer>"}, {"fa": "دکمه‌ها", "name": "RichBlockButtons", "code": ""}, {"fa": "در حال فکر کردن", "name": "RichBlockThinking", "code": "<tg-thinking>Working on a thoughtful answer…</tg-thinking>"}], "Media": [{"fa": "نقشه", "name": "RichBlockMap", "code": ""}, {"fa": "عکس", "name": "RichBlockPhoto", "code": ""}, {"fa": "ویدیو", "name": "RichBlockVideo", "code": ""}, {"fa": "صوت", "name": "RichBlockAudio", "code": ""}, {"fa": "پیام صوتی", "name": "RichBlockVoiceNote", "code": "![](https://telegram.org/example/audio.ogg)"}, {"fa": "انیمیشن", "name": "RichBlockAnimation", "code": ""}, {"fa": "کلاژ", "name": "RichBlockCollage", "code": ""}, {"fa": "اسلایدشو", "name": "RichBlockSlideshow", "code": ""}, {"fa": "سند", "name": "RichBlockDocument", "code": ""}]};
 var GUIDE_META = {
   "Rich text": {icon:'text', desc:'تگ‌ها، entityها، لینک و متن'},
   "Blocks": {icon:'box', desc:'بلوک‌های ساختاری، جدول، سند و دکمه'},
@@ -755,7 +738,6 @@ function paintLib(){var h='';
       e.stopPropagation();
       var name=ch.dataset.n||'', fa=ch.dataset.fa||'';
       hap('ok');
-      // map guide name to actual block insertion
       var inserted=false;
       if(/SectionHeading|Heading/.test(name)){insertBlock(mk('heading')); inserted=true;}
       else if(/Paragraph|Text/.test(name) && /Block/.test(name)){insertBlock(mk('text')); inserted=true;}
@@ -769,49 +751,33 @@ function paintLib(){var h='';
       else if(/Footer/.test(name)){insertBlock(mk('text')); inserted=true;}
       else if(/Thinking/.test(name)){insertBlock(mk('text')); inserted=true;}
       else if(/Photo|Video|Audio|Voice|Animation|Map|Collage|Slideshow|Document|Media/.test(name)){
-        // for media types, open media picker or insert placeholder
         if(S.media && S.media.length){
-          // if we have media, use first
           var m=S.media.find(function(x){return x.kind===(/Photo/.test(name)?'photo':/Video/.test(name)?'video':'photo')})||S.media[0];
           if(m) insertMedia(m);
           else toast('اول یک عکس از گالری اضافه کن');
         } else {
-          // open file picker
           var inp=document.getElementById('libFile');
           if(inp) inp.click();
           toast('از گالری یک فایل انتخاب کن تا درج شود');
         }
         inserted=true;
       } else {
-        // rich text inline: insert text with sample
         var code=(GUIDE_DATA[Object.keys(GUIDE_DATA).find(function(k){return GUIDE_DATA[k].some(function(x){return x.name===name})})]||[]).find(function(x){return x.name===name})||{}).code||'';
-        var txt=fa||name;
         if(code){
-          // strip html tags for plain insertion but keep as formatted sample
-          var sample=code.replace(/<[^>]+>/g,'').trim().slice(0,120) || fa;
-          var blk=mk('text');
-          blk.t=code; // keep original html code as block content, will be parsed via render
-          // Actually use raw html insertion via parseAny
           try{
             var parsed=parseAny(code);
             if(parsed && parsed.length){parsed.forEach(function(pb){insertBlock(pb,1)}); inserted=true;}
-            else {insertBlock(blk); inserted=true;}
-          }catch(e){insertBlock(blk); inserted=true;}
+            else {var blk=mk('text'); blk.t=code; insertBlock(blk); inserted=true;}
+          }catch(e){var blk=mk('text'); blk.t=code; insertBlock(blk); inserted=true;}
         } else {
-          var blk2=mk('text');
-          blk2.t=txt;
-          insertBlock(blk2); inserted=true;
+          var blk2=mk('text'); blk2.t=fa||name; insertBlock(blk2); inserted=true;
         }
       }
-      if(inserted){
-        setView('build');
-        toast(fa+' اضافه شد ✓');
-      }
+      if(inserted){setView('build'); toast(fa+' اضافه شد ✓');}
     }
   });
 }
 $('#v-library').addEventListener('click',function(e){
-  // media pick button
   if(e.target.closest('#libPickBtn')){var inp=document.getElementById('libFile'); if(inp) inp.click(); return;}
   var b=e.target.closest('[data-a]');if(!b)return;hap();var a=b.dataset.a,id=b.dataset.id;
   if(a==='ld')loadDraft(id);
@@ -827,7 +793,6 @@ document.addEventListener('change',function(e){
     if(file.size>20*1024*1024){toast('فایل بیش از ۲۰ مگابایت است'); return;}
     hap('ok'); toast('در حال آپلود…');
     var fd=new FormData(); fd.append('file', file, file.name);
-    // use raw fetch to keep FormData
     fetch('/api/media/upload', {method:'POST', headers:{'x-rasa-token': token}, body: fd}).then(function(r){return r.json()}).then(function(j){
       if(!j.ok){toast('آپلود نشد: '+(j.error||'خطا')); hap('err'); return;}
       S.media.unshift({name:j.media.name, kind:j.media.kind, fileId:j.media.fileId});
@@ -836,6 +801,7 @@ document.addEventListener('change',function(e){
     e.target.value='';
   }
 });
+
 /* about view is static, no extra paint needed */
 /* ── publish flow ── */
 var PS=['پیام آماده است','انتخاب کانال','بررسی نهایی','انتشار'];
