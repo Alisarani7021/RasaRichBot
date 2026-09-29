@@ -454,9 +454,20 @@ function setStatus(){var p=$('#status'),c='',t='';
 function hasContent(){return D.blocks.some(function(b){return b.type!=='text'&&b.type!=='heading'||(b.t||'').trim()})}
 /* ── preview (rendered only from D.blocks) ── */
 var JC={left:'flex-end',center:'center',right:'flex-start'};
-function kbBtn(x){var st=(x.style?' '+x.style:'')+(x.type==='disabled'?' disabled':''),l=esc(lblPlain(x.label)||'دکمه'),
-  ex=x.type==='url'?ic('link',14):x.type==='copy_text'?ic('copy',14):'';
-  return (x.type==='url'&&/^(https?|tg):\/\//.test(x.val||''))?'<a class="kbtn'+st+'" href="'+qa(x.val)+'" target="_blank" rel="noopener">'+l+ex+'</a>':'<span class="kbtn'+st+'">'+l+ex+'</span>'}
+function kbBtn(x){
+  var st=(x.style?' '+x.style:'')+(x.type==='disabled'?' disabled':''), raw=x.label||'';
+  // If label contains tg-emoji tag, render it as premium image
+  var hasCustom = /<tg-emoji emoji-id="(\d+)"/.test(raw);
+  var l;
+  if(hasCustom){
+    l=raw.replace(/<tg-emoji emoji-id="(\d+)"[^>]*>([\s\S]*?)<\/tg-emoji>/g, function(_,id,e){ return '<img class="ce" style="width:20px;height:20px;vertical-align:middle" src="'+emImg(id)+'" alt="'+esc(e)+'">'; }).replace(/<[^>]+>/g,'');
+    l=esc(l)||'دکمه';
+  } else {
+    l=esc(lblPlain(raw)||'دکمه');
+  }
+  var ex=x.type==='url'?ic('link',14):x.type==='copy_text'?ic('copy',14):'';
+  return (x.type==='url'&&/^(https?|tg):\/\//.test(x.val||''))?'<a class="kbtn'+st+'" href="'+qa(x.val)+'" target="_blank" rel="noopener">'+l+ex+'</a>':'<span class="kbtn'+st+'">'+l+ex+'</span>'
+}
 function pv(b){var t=b.t||'';switch(b.type){
   case'text':return t.trim()?'<p>'+inl(t)+'</p>':'';case'heading':return t.trim()?'<h2>'+inl(t)+'</h2>':'';case'quote':return t.trim()?'<blockquote>'+inl(t)+'</blockquote>':'';
   case'list':var tg=b.ord?'ol':'ul';return '<'+tg+'>'+t.split('\n').filter(function(x){return x.trim()}).map(function(x){return '<li>'+inl(x)+'</li>'}).join('')+'</'+tg+'>';
@@ -593,7 +604,7 @@ var TYPES=[['url','لینک','link'],['copy_text','کپی','copy'],['callback_da
 var VL={url:'لینک (https:// یا tg://)',copy_text:'متنی که کپی می‌شود',callback_data:'دیتای کال‌بک',disabled:'—'};
 var STY=[['','معمولی','var(--kb)'],['success','سبز','linear-gradient(135deg,#1e9e6a,#2ecc8f)'],['primary','آبی','linear-gradient(135deg,#2a7de1,#3CC8FF)'],['danger','مرجانی','linear-gradient(135deg,#e5484d,#FF7B72)']];
 var CAT=[
- ['دکمهٔ لینک','باز کردن یک آدرس','link',['رایج','لینک'],{label:'ورود به رِسا',type:'url',val:'https://t.me/Guts_game_bot',style:'success'}],
+ ['دکمهٔ لینک','باز کردن یک آدرس','link',['رایج','لینک'],{label:'ورود به رِسا',type:'url',val:'https://t.me/RasaRichBot',style:'success'}],
  ['لینک ساده','آدرس بدون رنگ','link',['لینک'],{label:'باز کردن',type:'url',val:'https://t.me',style:''}],
  ['کپی متن','کپی سریع متن','copy',['رایج','کپی'],{label:'کپی متن',type:'copy_text',val:'متنِ آمادهٔ شما',style:'primary'}],
  ['کال‌بک','تعامل با پیام','chat',['رایج','تعامل'],{label:'باز کردن منو',type:'callback_data',val:'open_menu',style:''}],
@@ -602,7 +613,7 @@ var CAT=[
  ['اینلاین انتخاب چت','ارسال به چت دلخواه','search',['تلگرام','پیشرفته'],{label:'این را بفرست به…',type:'switch_inline_query_chosen_chat',val:'',style:''}],
  ['غیرفعال','دکمهٔ خاموش','x',['پیشرفته'],{label:'به‌زودی',type:'disabled',val:'',style:''}],
  ['زمان‌دار','ساعت زندهٔ تلگرام','bolt',['پیشرفته'],{label:'<tg-time format="HH:mm"> </tg-time> همین حالا',type:'url',val:'https://t.me',style:''}],
- ['اموجی سفارشی','اموجی پرمیوم در دکمه','spark',['پیشرفته'],{label:'<tg-emoji emoji-id="5870171369371418705">🌟</tg-emoji> رِسا',type:'url',val:'https://t.me/Guts_game_bot',style:'danger'}]];
+ ['اموجی سفارشی','اموجی پرمیوم در دکمه','spark',['پیشرفته'],{label:'<tg-emoji emoji-id="5870171369371418705">🌟</tg-emoji> رِسا',type:'url',val:'https://t.me/RasaRichBot',style:'danger'}]];
 var CF='همه';
 function openCatalog(){var cats=['همه','رایج','تعامل','لینک','کپی','تلگرام','پیشرفته'];
   sheet('<h3>کتابخانهٔ دکمه‌ها</h3><div class="rec">'+cats.map(function(c){return '<button class="chip'+(c===CF?' on':'')+'" data-cf="'+c+'">'+c+'</button>'}).join('')+'</div>'+CAT.map(function(c,i){return (CF==='همه'||c[3].indexOf(CF)>-1)?'<button class="kc" data-ci="'+i+'"><span class="ti">'+ic(c[2],20)+'</span><span><b>'+c[0]+'</b><small>'+c[1]+'</small></span><span class="mp">'+kbBtn(c[4]).replace('href=','data-h=')+'</span></button>':''}).join(''));
@@ -625,7 +636,17 @@ function openBuilder(bid,r,i,preset){var blk=bid?find(bid):null,btn=(blk&&i!=nul
   L.oninput=function(){btn.label=L.value;paint()};Va.oninput=function(){btn.val=Va.value;paint()};
   $('#bTy').onclick=function(e){var c=e.target.closest('.chip');if(!c)return;hap('pick');btn.type=c.dataset.ty;paint()};
   $('#bSt').onclick=function(e){var d=e.target.closest('.dot');if(!d)return;hap('pick');btn.style=d.dataset.st;paint()};
-  $('#bEm').onclick=function(){L.value+='<tg-emoji emoji-id="5870171369371418705">🌟</tg-emoji>';L.oninput()};$('#bTm').onclick=function(){L.value+='<tg-time format="HH:mm"> </tg-time>';L.oninput()};
+  $('#bEm').onclick=function(){
+    // Insert premium emoji char at cursor — will become icon_custom_emoji_id via decorateReplyMarkup
+    var start=L.selectionStart||L.value.length, end=L.selectionEnd||start;
+    var em='🌟';
+    L.value=L.value.slice(0,start)+em+' '+L.value.slice(end);
+    L.selectionStart=L.selectionEnd=start+em.length+1;
+    L.oninput(); L.focus();
+    // Also open premium emoji picker for more choices
+    try{ emMount(document.getElementById('sheet'), function(id,e){ var p=L.selectionStart; L.value=L.value.slice(0,p)+e+' '+L.value.slice(p); L.oninput(); }) }catch(e){}
+  };
+  $('#bTm').onclick=function(){L.value+='<tg-time format="HH:mm"> </tg-time>';L.oninput()};
   function commit(){var b=find(BS.bid);if(!b)return false;return b}
   $('#bOk').onclick=function(){var x=btn;if(!x.label.trim()){hap('err');toast('متن دکمه خالی است');return}
     if(x.type==='url'&&!/^(https?|tg):\/\//.test(x.val||'')){hap('err');toast('لینک باید با https:// یا tg:// شروع شود');return}
