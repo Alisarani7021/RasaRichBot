@@ -1,3 +1,5 @@
+# یادداشت: شناسه‌های KV زیر مربوط به همین دیپلوی هستند؛
+# اگر فورک می‌کنی، شناسه‌های فضای خودت را بگذار (wrangler kv namespace create ...).
 name = "rich-post-bot"
 main = "index.js"
 compatibility_date = "2026-09-28"

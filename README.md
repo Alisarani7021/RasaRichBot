@@ -1,653 +1,836 @@
-# 🌟 رِسا — RasaRichBot
+<div align="center">
 
-<p align="center">
-  <img src="./banner.png" alt="Rasa Studio Banner" width="100%" style="border-radius:16px;"/>
-</p>
+<img src="./banner.png" alt="Rasa Studio — Telegram Post Studio" width="100%" />
 
-<p align="center">
-  <img src="./logo.png" alt="Rasa Logo" width="120" style="border-radius:50%;"/>
-</p>
+<br/>
 
-<h3 align="center">Telegram Post Studio + Premium Emoji Engine + Rich Buttons + Mini App</h3>
-<h4 align="center">استودیوی هوشمند ساخت و طراحی پست‌های ژورنالی تلگرام</h4>
+<img src="./logo.png" alt="رِسا" width="110" />
 
-<p align="center">
-  <a href="https://core.telegram.org/bots/api"><img src="https://img.shields.io/badge/Telegram%20Bot%20API-10.3-26A5E4?style=for-the-badge&logo=telegram&logoColor=white" /></a>
-  <a href="https://workers.cloudflare.com"><img src="https://img.shields.io/badge/Cloudflare-Workers-F38020?style=for-the-badge&logo=cloudflare&logoColor=white" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/Premium%20Emoji-733%20Custom-FF6B9D?style=for-the-badge" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/Rich%20Buttons-Bot%20API%209.4%2B-7C3AED?style=for-the-badge" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/Mini%20App-Telegram%20WebApp-2DD4BF?style=for-the-badge" /></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-10B981?style=for-the-badge" /></a>
-</p>
+# رِسا — Rasa Studio
 
-<p align="center">
-  <a href="#-english">English</a> • <a href="#-فارسی">فارسی</a> • <a href="#-features">Features</a> • <a href="#-architecture">Architecture</a> • <a href="#-quick-start">Quick Start</a> • <a href="#-api">API</a>
-</p>
+### استودیوی ساخت، طراحی و انتشار پست‌های ژورنالی تلگرام
+**Telegram Rich Post Studio · Premium Emoji Engine · Mini App · on Cloudflare Workers**
 
----
+<a href="https://t.me/RasaRichBot">
+  <img src="https://img.shields.io/badge/Bot-@RasaRichBot-26A5E4?style=for-the-badge&logo=telegram&logoColor=white" />
+</a>
+<a href="https://rich-post-bot.4lisarani-1.workers.dev/app">
+  <img src="https://img.shields.io/badge/Mini%20App-Live-2DD4BF?style=for-the-badge&logo=googlechrome&logoColor=white" />
+</a>
+<a href="./LICENSE">
+  <img src="https://img.shields.io/badge/License-MIT-10B981?style=for-the-badge" />
+</a>
 
-## 📑 Table of Contents
+<br/>
 
-<details>
-<summary><b>Click to expand TOC</b></summary>
+<img src="https://img.shields.io/badge/Telegram%20Bot%20API-10.3-26A5E4?style=flat-square&logo=telegram&logoColor=white" />
+<img src="https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white" />
+<img src="https://img.shields.io/badge/Runtime-ESM%20%2F%20Edge-7C3AED?style=flat-square" />
+<img src="https://img.shields.io/badge/Storage-3×KV%20%2B%20Durable%20Objects-FF6B9D?style=flat-square" />
+<img src="https://img.shields.io/badge/Emoji-1%2C600%2B%20Premium%20Mappings-9333EA?style=flat-square" />
+<img src="https://img.shields.io/badge/API-30%20Routes-0EA5E9?style=flat-square" />
+<img src="https://img.shields.io/badge/UI-Persian%20First%20(RTL)-F59E0B?style=flat-square" />
+<img src="https://img.shields.io/badge/PRs-Welcome-22C55E?style=flat-square" />
 
-- [🌟 رِسا — RasaRichBot](#-رِسا--rasarichbot)
-  - [📑 Table of Contents](#-table-of-contents)
-  - [💎 What is Rasa?](#-what-is-rasa)
-  - [🚀 Features — قابلیت‌ها](#-features--قابلیت‌ها)
-  - [🏗 Architecture — معماری](#-architecture--معماری)
-  - [🧰 Tech Stack](#-tech-stack)
-  - [📁 Project Structure](#-project-structure)
-  - [⚡ Quick Start](#-quick-start)
-  - [🤖 BotFather Setup](#-botfather-setup)
-  - [🔐 Environment Variables](#-environment-variables)
-  - [🌐 API Routes](#-api-routes)
-  - [🍉 Premium Emoji Engine](#-premium-emoji-engine)
-  - [🔘 Rich Buttons Engine](#-rich-buttons-engine)
-  - [📱 Mini App — مینی‌اپ رِسا](#-mini-app--مینیاپ-رِسا)
-  - [🧪 Testing](#-testing)
-  - [🚢 Deployment](#-deployment)
-  - [🛣 Roadmap](#-roadmap)
-  - [🤝 Contributing](#-contributing)
-  - [📄 License](#-license)
+<br/><br/>
 
-</details>
+<img src="https://readme-typing-svg.demolab.com?font=Vazirmatn&weight=700&size=22&pause=900&color=3DF2C0&center=true&vCenter=true&width=720&lines=%D9%BE%D8%B3%D8%AA%E2%80%8C%D9%87%D8%A7%DB%8C%20%D8%B1%DB%8C%DA%86%D8%8C%20%D8%A7%D9%85%D9%88%D8%AC%DB%8C%20%D9%BE%D8%B1%D9%85%DB%8C%D9%88%D9%85%D8%8C%20%DA%A9%D8%A7%D9%86%D8%A7%D9%84%E2%80%8C%D9%87%D8%A7%DB%8C%20%D8%B2%DB%8C%D8%A8%D8%A7;Rich%20Messages%2C%20Premium%20Emoji%2C%20Beautiful%20Channels;%DB%8C%DA%A9%20%D9%88%D8%B1%DA%A9%D8%B1%D8%8C%20%D8%A8%D8%AF%D9%88%D9%86%20%D8%B3%D8%B1%D9%88%D8%B1%D8%8C%20%D8%A8%D8%AF%D9%88%D9%86%20%D8%AF%DB%8C%D8%AA%D8%A7%D8%A8%DB%8C%D8%B3" alt="typing" />
+
+<br/>
+
+[![fa](https://img.shields.io/badge/%D9%81%D8%A7%D8%B1%D8%B3%DB%8C-%D9%85%D8%B3%D8%AA%D9%86%D8%AF%D8%A7%D8%AA-10B981?style=for-the-badge)](#-رِسا-چیست) · [![en](https://img.shields.io/badge/English-Docs-0EA5E9?style=for-the-badge)](#-english-overview) · [![arch](https://img.shields.io/badge/معماری-Architecture-7C3AED?style=for-the-badge)](#-معماری--architecture)
+
+</div>
 
 ---
 
-## 💎 What is Rasa?
+<div dir="rtl">
 
-**رِسا** is a production-grade Telegram Post Studio built on **Cloudflare Workers**, designed for journal-grade channel posts with premium aesthetics.
+## 💎 رِسا چیست؟
 
-The system uses a clean additive architecture:
+**رِسا** یک استودیوی کامل برای ساختن **پست‌های ریچ تلگرام** است — همان پست‌هایی که در کانال‌ها با تیتر، جدول، نقل‌قول بازشونده، دکمه‌های شیشه‌ای، فرمول ریاضی و اموجی پرمیوم دیده می‌شوند.
 
-1. **Post Studio Core** (`/`, `/worker.js`, `/api/send`, `/webhook`) — stable, production-tested foundation
-2. **Rasa Mini App** (`/app`, `/api/session`, `/api/context`, `/api/publish`, `/api/emoji/*`) — modern Persian-first interface mounted via lightweight router
+کل سیستم روی **Cloudflare Workers** اجرا می‌شود: بدون سرور، بدون دیتابیس، بدون هزینه‌ی نگهداری. فقط یک ورکر، سه فضای KV و یک Durable Object.
 
-> **Architecture Principle:** Minimal, non-invasive integration — core logic stays preserved and fully backward-compatible while new capabilities are layered on top.
+دو رابط کاربری کاملاً مستقل روی یک ورکر سوار شده‌اند:
 
-**Live Bot:** [@RasaRichBot](https://t.me/RasaRichBot) — Menu Button `رِسا` → `https://rich-post-bot.4lisarani-1.workers.dev/app`
+| | رابط | چه‌کار می‌کند |
+|---|---|---|
+| 🤖 | **ربات تلگرام** | ساخت پله‌پله‌ی پست با دکمه و راهنمای زنده، آپلود مدیا، ذخیره‌ی پک اموجی، انتشار در کانال |
+| 📱 | **مینی‌اپ وب** (`/app`) | ادیتور بلوکی تصویری، پیش‌نمایش زنده، کتابخانه، زمان‌بندی، هوش مصنوعی، برند، دعوت دوستان |
+
+> اصل معماری: لایه‌ی جدید **افزایشی** روی هسته‌ی پایدار سوار می‌شود. مسیرهای قدیمی دست‌نخورده می‌مانند (`/`, `/api/send`, `/webhook`) و رابط مینی‌اپ از مسیرهای خودش (`/app`, `/assets/*`, `/api/*`) سرو می‌شود. هیچ‌چیز نمی‌شکند، هیچ‌چیز دوباره نوشته نمی‌شود.
+
+<div align="center">
+
+**🔗 لینک‌های زنده**
+
+ربات: [`t.me/RasaRichBot`](https://t.me/RasaRichBot) · مینی‌اپ: [`…workers.dev/app`](https://rich-post-bot.4lisarani-1.workers.dev/app)
+
+</div>
 
 ---
 
-## 🚀 Features — قابلیت‌ها
+## ✨ قابلیت‌ها — یک نگاه
+
+</div>
 
 <table>
 <tr>
-<td width="50%">
+<td width="50%" valign="top">
 
-### 🎨 Post Studio
-- **طراحی دستی پله‌ای** — Step-by-step manual builder
-- **طراحی پست جدید** — New post from text/media
-- **بلوک‌ها**: عنوان، پاراگراف، فهرست، چک‌لیست، نقل‌قول، بخش بازشونده، کد، جدول، جداکننده، فرمول، پاورقی، نقشه، عکس، ویدیو، صدا، ویس، انیمیشن، کلاژ، اسلایدشو، HTML خام، اموجی پرمیوم
-- **فقط نمونه** — No verbose help, just `<code>sample</code>` + *این‌طوری بفرست*
+<div dir="rtl">
+
+### 🧱 ادیتور بلوکی
+- **۱۵ نوع بلوک** در پالت: متن، عنوان، تصویر، جدول، فرمول، کارت محصول، جدول قیمت، تایمر آفری، نظرسنجی، نقل‌قول، بخش بازشونده، فهرست، دکمه، گروه دکمه، جداکننده
+- جابه‌جایی بلوک‌ها، ویرایش درجا، حالت **HTML خام**
+- پالت دستور (`Ctrl/⌘ + K`) + undo/redo
+- تبدیل خودکار Markdown یا HTML یا متن قاطی → بلوک‌های ساخت‌یافته
+
+</div>
 
 </td>
-<td width="50%">
+<td width="50%" valign="top">
 
-### 🍉 Premium Emoji Engine
-- **733 Custom Emojis** across 25 packs
-- **Smart Substitution**: `map` + `variants_map` + `packs`
-- **Apple-style lookalikes** with premium rendering
-- **Channel-safe**: DM → `copyMessage` ladder (Bot API 9.4 rule: custom emoji only in private/group/supergroup if owner has Premium, channels need DM copy)
-- **Icon for buttons**: `icon_custom_emoji_id` on every inline button
+<div dir="rtl">
+
+### 👁 پیش‌نمایش زنده
+- رندر همان لحظه در شبیه‌ساز موبایل/دسکتاپ
+- رنگ‌بندی واقعی تلگرام، حالت روشن و تاریک
+- استفاده از صفحه‌کلید دکمه‌ها و آشکارسازی متن ریچ
+- خروجی گرفتن سورس (HTML/Markdown) با یک کلیک
+
+</div>
 
 </td>
 </tr>
 <tr>
-<td>
+<td valign="top">
 
-### 🔘 Rich Buttons
-- **Inside message**: `<tg-button-row><tg-button type="url|callback_data|copy_text|switch_inline_query|disabled" style="primary|success|danger|link">`
-- **Channel publish**: Always tries `sendRichMessage` first (fixed from private-only)
-- **Builder**: Type → Style → Label → Value flow, 8 buttons per row max
+<div dir="rtl">
+
+### 🍉 موتور اموجی پرمیوم
+- **۱٬۶۰۰+ نگاشت اموجی** و **۲۵ پک** آماده
+- جایگزینی هوشمند با درنظرگرفتن هر دو حالت `⚡` و `⚡️`
+- نردبان امن برای کانال: پیام موقت در DM → `copyMessage` → انتشار (قانون Bot API 9.4)
+- ذخیره‌ی پک جدید فقط با فوروارد یک استیکر به ربات
+
+</div>
 
 </td>
-<td>
+<td valign="top">
 
-### 📱 Mini App — رِسا
-- **WebApp at `/app`** — 93KB shell, Persian-first
-- **Auth**: `WebAppData` HMAC + `BOT_TOKEN::rasa-app` token
-- **Context**: channels, drafts, 6 builtin templates
-- **Assets**: Vazirmatn fonts, brand hero, logo, audio
-- **Menu Button**: `رِسا` → `/app` via `setChatMenuButton`
+<div dir="rtl">
+
+### 🔘 دکمه‌های ریچ
+- دکمه‌ی شیشه‌ای داخل متن: `url` · `callback_data` · `copy_text` · `switch_inline_query` · `web_app` · `disabled`
+- استایل‌ها: `primary` · `success` · `danger` · `link`
+- سازنده‌ی دکمه با چیدمان راست/وسط/چپ و آیکن اموجی پرمیوم
+- کیبورد اینلاین کلاسیک هم پشتیبانی می‌شود
+
+</div>
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+<div dir="rtl">
+
+### 🖼 کتابخانه‌ی رسانه
+- آپلود از گالری گوشی، مستقیم از داخل مینی‌اپ
+- فشرده‌سازی هوشمند عکس‌های سنگین (> ۸MB) قبل از ارسال
+- استفاده‌ی مجدد از `file_id` — آپلود دوباره لازم نیست
+- درج در پست، حذف، و مدیریت ویدیو/صدا/گیف
+
+</div>
+
+</td>
+<td valign="top">
+
+<div dir="rtl">
+
+### 🗂 پیش‌نویس، قالب و آرشیو
+- پیش‌نویس با **تگ**، **پوشه** و **ستاره**
+- جستجو در عنوان/تگ/محتوای هر پیش‌نویس
+- **۶ قالب آماده**: خوش‌آمد، پروموشن، آموزشی، گزارش، دکمه‌دار، مدیایی
+- ذخیره‌ی قالب شخصی و بازیابی یک‌کلیکی
+
+</div>
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+<div dir="rtl">
+
+### ⏰ زمان‌بندی و انتشار
+- انتخاب کانال از لیست (با بررسی خودکار دسترسی ربات)
+- زمان‌بندی انتشار + حذف خودکار بعد از مدت مشخص
+- صف کارها با تخلیه‌ی تنبل (lazy) و ایندکس جهانی برای cron
+- انتشار با امضای «رِسا» یا بدون امضا (اعتبار)
+
+</div>
+
+</td>
+<td valign="top">
+
+<div dir="rtl">
+
+### ✨ استودیوی هوش مصنوعی
+- **۸ پرووایدر** آماده: Cloudflare Workers AI، Gemini، Groq، OpenRouter، Cerebras، Mistral، GitHub Models و هر سرویس سازگار با OpenAI
+- کلید هر کاربر فقط در فضای خودش ذخیره می‌شود
+- سبک‌های تولید: ویروسی، رسمی، محصولی، استاندارد
+- انتخاب خودکار «مدل نویسنده» (مدل‌های دسته‌بندی و صوتی رد می‌شوند)
+
+</div>
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+<div dir="rtl">
+
+### 🎨 کیت برند
+- رنگ، فوتر و استایل دکمه برای هر کانال
+- اعمال یک‌کلیکی روی کل پست
+- تا ۲۰ برند ذخیره‌شده در هر حساب
+
+</div>
+
+</td>
+<td valign="top">
+
+<div dir="rtl">
+
+### 🎁 دعوت، اعتبار و اتصال کانال
+- **لینک دعوت**: هر نفری که وارد شود → `+۲` برای تو و `+۲` برای خودش
+- **لینک فوروارد**: هر فوروارد → `+۱` همان لحظه (بدون نیاز به ورود کسی)
+- توکن یک‌بارمصرف ضدتکرار + سقف روزانه + فاصله‌ی زمانی
+- اتصال کانال با فوروارد یک پست یا زدن `@username`
+
+</div>
 
 </td>
 </tr>
 </table>
 
-### ✨ Extra Highlights
-
-- 📢 **مدیریت و اتصال کانال** — Channel connect via forward
-- 🎨 **پک‌های اموجی ذخیره‌شده** — Gallery of 25 packs
-- 🎧 **پخش زنده قابلیت‌ها** — Live demo of all Bot API 10.3 features
-- 🧩 **قالب‌های آماده** — 6 builtin templates
-- 💡 **راهنمای کامل Rich** — Full guide for rich text, blocks, media, buttons
-- 🔒 **Security**: `WEBHOOK_SECRET` header check, `ADMIN_KEY` optional, `ADMINS_ID` whitelist
+<div dir="rtl">
 
 ---
 
-## 🏗 Architecture — معماری
+## 🏗 معماری — Architecture
+
+سه لایه، یک ورکر. هر لایه کار خودش را می‌کند و مرزهایشان دقیق است.
 
 ```mermaid
-graph TD
-    A[Telegram Client] -->|/start + Menu Button رِسا| B[Cloudflare Worker<br/>rich-post-bot.4lisarani-1.workers.dev]
-    B --> C{Router: 2 additive lines}
-    C -->|/ , /worker.js , /api/send , /webhook| D[Original Post Studio<br/>Byte-identical]
-    C -->|/app , /assets/* , /api/session , /api/context , /api/publish , /api/emoji/*| E[Rasa Mini App<br/>tryRasaApp]
-    E --> F[RASA_KV<br/>f7714cd6...<br/>app.html + assets + emoji map]
-    D --> G[KV 8eff5bd6...<br/>map/packs/variants_map<br/>733 premium emojis]
-    D --> H[KV_FRESH 320758...<br/>posts + templates + channels]
-    D --> I[Durable Object STATE<br/>c191ec21...<br/>Global state]
-    E --> J[Telegram Bot API 10.3<br/>sendRichMessage / copyMessage / getStickerSet]
-    J --> K[Channel @gjjgjjkmnmk<br/>via premium-dm-copy ladder]
+flowchart TB
+    subgraph TG["☁️ تلگرام"]
+        U["👤 کاربر / ادمین کانال"]
+        CH["📢 کانال"]
+        TGA["🛰️ Bot API 10.3<br/>sendRichMessage · copyMessage · getStickerSet"]
+    end
 
-    style B fill:#7C3AED,stroke:#fff,stroke-width:2px,color:#fff
-    style E fill:#FF6B9D,stroke:#fff,stroke-width:2px,color:#fff
-    style D fill:#26A5E4,stroke:#fff,stroke-width:2px,color:#fff
+    subgraph CF["⚡ Cloudflare Edge — یک Worker"]
+        direction TB
+        R{"🚦 روتر اصلی<br/>URL + Method"}
+
+        subgraph CORE["🧱 هسته‌ی استودیو (پایدار)"]
+            L["🖥 صفحه‌ی وب استودیو"]
+            WS["🔌 /api/send · /api/render<br/>آپلود مدیا · ذخیره‌ی پک اموجی"]
+            EN["🍉 موتور اموجی<br/>نگاشت + واریانت + پک"]
+            PM["📤 خط لوله‌ی انتشار<br/>اعتبارسنجی → پرمیوم‌سازی → ارسال"]
+        end
+
+        subgraph APP["📱 مینی‌اپ رِسا (افزایشی)"]
+            SH["🖼 پوسته‌ی SPA — RTL فارسی"]
+            API["🔐 ۳۰ مسیر JSON<br/>با امضای initData"]
+        end
+
+        WH["📥 /telegram/webhook<br/>+ بررسی secret_token"]
+        SCH["⏰ cron / تخلیه‌ی صف زمان‌بندی"]
+    end
+
+    subgraph ST["🗄 حافظه"]
+        K1[("KV — اموجی پرمیوم<br/>map · packs · variants")]
+        K2[("KV-FRESH — پست‌ها<br/>قالب‌ها · کانال‌ها · مدیا")]
+        K3[("RASA-KV — دارایی‌های مینی‌اپ<br/>app.html · فونت · لوگو")]
+        DO[("Durable Object «State»<br/>خواندن/نوشتن سازگار")]
+    end
+
+    U -->|"منو باتن «رِسا»"| SH
+    U -->|"دستور /start"| TGA
+    TGA -->|"webhook"| WH
+    SH -->|"fetch /api/*"| API
+    R --> CORE
+    R --> APP
+    R --> WH
+    WH --> CORE
+    SCH --> PM
+    API --> ST
+    CORE --> ST
+    PM -->|"sendRichMessage"| TGA
+    TGA --> CH
+    EN -.->|"icon_custom_emoji_id"| PM
+
+    style R fill:#7C3AED,color:#fff
+    style CORE fill:#0EA5E9,color:#fff
+    style APP fill:#F59E0B,color:#fff
+    style DO fill:#FF6B9D,color:#fff
 ```
 
-### 🔀 Dual-App Contract (Live-Verified)
+<div align="center">
 
-| Route | Expected | Status |
-|-------|----------|--------|
-| `GET /` | 200 Post Studio 2,162,260B | ✅ |
-| `GET /worker.js` | 200 | ✅ |
-| `POST /api/send` no-auth | 400 with THEIR exact error | ✅ |
-| `POST /webhook` wrong secret | 403 | ✅ |
-| `GET /app` | 200 Rasa shell 93,202B | ✅ |
-| `POST /api/session` junk | 401 | ✅ |
-| `GET /api/context` valid token | 200 channels/drafts/templates | ✅ |
-| `GET /api/emoji/all` | 200 2 packs × 200 | ✅ |
-| `GET /api/emoji/img` | 200 webp + immutable cache | ✅ |
+### 🔀 نقشه‌ی مسیرها — Routing Map
 
----
+</div>
 
-## 🧰 Tech Stack
-
-<p>
-  <img src="https://img.shields.io/badge/Cloudflare_Workers-ESM-F38020?logo=cloudflare" />
-  <img src="https://img.shields.io/badge/Telegram_Bot_API-10.3-26A5E4?logo=telegram" />
-  <img src="https://img.shields.io/badge/JavaScript-ES2022-F7DF1E?logo=javascript" />
-  <img src="https://img.shields.io/badge/KV-3_Namespaces-FF6B9D" />
-  <img src="https://img.shields.io/badge/Durable_Objects-State-7C3AED" />
-  <img src="https://img.shields.io/badge/WebApp-HMAC_Secured-2DD4BF" />
-  <img src="https://img.shields.io/badge/Fonts-Vazirmatn-10B981" />
-</p>
-
-- **Runtime**: Cloudflare Workers (ESM, `compatibility_date: 2026-09-28`)
-- **Storage**: 3 KV Namespaces + 1 Durable Object
-  - `KV` (8eff5bd6...): Premium emoji map (44995B) + packs (12017B) + variants (112481B)
-  - `KV_FRESH` (3207...): Posts, drafts, channels
-  - `RASA_KV` (f7714cd6...): Mini App assets (app.html 93202B, hero 104673B, logo 202389B, etc.)
-  - `STATE` (c191ec21...): Global state
-- **Bot API**: 10.3 Rich Messages, 9.4 Custom Emoji + Button Styles
-- **Auth**: WebAppData HMAC-SHA256 + `BOT_TOKEN::rasa-app` HMAC token (32 hex)
+| مسیر | روش | لایه | توضیح |
+|---|---|:---:|---|
+| `/` | GET | هسته | صفحه‌ی وب استودیو (نسخه‌ی تک‌فایلی) |
+| `/worker.js` | GET | هسته | سورس ورکر برای مرجع |
+| `/api/send` · `/api/render` | POST | هسته | ساخت و ارسال پست از وب |
+| `/api/emoji/all` · `/api/emoji/img` | GET | هسته | ایندکس پک‌ها + پروکسی تصویر اموجی با کش لبه |
+| `/telegram/webhook` | POST | هسته | دریافت آپدیت‌های تلگرام (بررسی هدر سکرت) |
+| `/app` | GET | مینی‌اپ | پوسته‌ی SPA از `RASA_KV` |
+| `/assets/*` | GET | مینی‌اپ | فونت، لوگو، تصویر و صدای برند با کش یک‌ساله |
+| `/api/session` | POST | مینی‌اپ | تبدیل `initData` به توکن نشست ۱۲ساعته |
+| `/api/context` | GET | مینی‌اپ | هیدراسیون اولیه: کانال، پیش‌نویس، قالب، مدیا |
+| `/api/publish` | POST | مینی‌اپ | انتشار در کانال با بررسی دسترسی |
+| `/api/media/*` | POST | مینی‌اپ | آپلود/حذف کتابخانه‌ی رسانه |
+| `/api/draft/*` · `/api/template/*` | POST | مینی‌اپ | ذخیره، بازیابی، تگ، پوشه، قالب |
+| `/api/brand/*` | POST | مینی‌اپ | کیت برند |
+| `/api/schedule/*` | POST | مینی‌اپ | ساخت و مدیریت صف زمان‌بندی |
+| `/api/ai/*` | POST | مینی‌اپ | تنظیم، تست و تولید با هوش مصنوعی |
+| `/api/invite/*` | POST | مینی‌اپ | اعتبار، لینک دعوت و لینک فوروارد |
+| `/api/channel/*` · `/api/import/*` | POST | مینی‌اپ | اتصال کانال و وارد کردن لینک |
 
 ---
 
-## 📁 Project Structure
+## 🤖 چرخه‌ی حیات یک پست — Publish Pipeline
+
+</div>
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as 📱 مینی‌اپ
+    participant A as ⚡ API (Worker)
+    participant E as 🍉 موتور اموجی
+    participant V as ✅ اعتبارسنجی
+    participant T as 🛰️ Telegram
+    participant C as 📢 کانال
+
+    W->>A: POST /api/publish { target, rich.html }
+    A->>A: بررسی دسترسی (getChat / getChatMember)
+    A->>V: ساختار HTML و تگ‌های مجاز
+    V-->>A: تحلیل + ترمیم خودکار (repair)
+    A->>E: پرمیوم‌سازی: هر اموجی → custom_emoji_id
+    E-->>A: HTML غنی‌شده + نگاشت مدیا
+    A->>T: sendRichMessage
+    alt ارسال موفق
+        T-->>A: message_id
+    else خطای دکمه یا اموجی در کانال
+        A->>T: نسخه‌ی ساده / DM → copyMessage
+        T-->>A: نشست موفق
+    end
+    A-->>W: { ok, message_id, link }
+    T->>C: پست نهایی
+```
+
+<div dir="rtl">
+
+نکته‌ی مهم: **نردبان افتادن (fallback ladder)** بخش سختِ کار است. اگر کانال اجازه‌ی دکمه یا اموجی پرمیوم ندهد، سیستم به‌جای شکست، مرحله‌به‌مرحله سبک‌تر می‌شود تا پست برسد:
+
+`sendRichMessage(کامل)` → `sendRichMessage(بدون آیکن دکمه)` → `نسخه‌ی ساده` → `DM + copyMessage`
+
+---
+
+## 🔐 امنیت و جریان احراز هویت
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant M as 📱 Mini App (WebView)
+    participant S as ⚡ /api/session
+    participant K as 🗄 KV
+
+    M->>S: POST initData (امضاشده توسط تلگرام)
+    S->>S: HMAC-SHA256("WebAppData", BOT_TOKEN)
+    S->>S: مقایسه‌ی hash + بررسی auth_date (۱ روز)
+    S->>S: ساخت توکن نشست: HMAC(BOT_TOKEN + "::rasa-app")
+    S->>K: اطمینان از وجود پرونده‌ی کاربر
+    S-->>M: { token, user } — عمر ۱۲ ساعت
+    M->>S: هر درخواست: هدر x-rasa-token
+```
+
+</div>
+
+| لایه | مکانیزم |
+|---|---|
+| 📥 وبهوک | هدر `X-Telegram-Bot-Api-Secret-Token` با مقایسه‌ی زمان‌ثابت |
+| 🔐 نشست مینی‌اپ | `initData` + HMAC-SHA256 روی `WebAppData`، سپس توکن ۱۲ساعته با کلید مشتق‌شده |
+| 👮 دسترسی ادمین | `ADMIN_KEY` (Bearer) و لیست سفید `ADMINS_ID` |
+| 🧼 اعتبارسنجی متن | تگ‌های مجاز، تحلیل ساختار، ترمیم خودکار قبل از ارسال |
+| 🕵️ سوءاستفاده از اعتبار | توکن یک‌بارمصرف، سقف روزانه، فاصله‌ی زمانی، محافظت از خود-دعوت |
+| 🔑 کلید هوش مصنوعی | فقط در فضای همان کاربر و صرفاً برای همان کاربر |
+
+> ⚠️ **هیچ‌وقت توکن واقعی را در ریپو نگذارید.** تمام نمونه‌ها در این مستندات جای‌نگهدار هستند. اگر توکنی لو رفت، همان لحظه در BotFather با `/revoke` باطل کنید و سکرت‌های Worker را تازه کنید.
+
+---
+
+<div dir="rtl">
+
+## 🧠 موتور اموجی پرمیوم
+
+قلب زیبایی «رِسا» اینجاست: هر اموجیِ داخل متن، قبل از ارسال به یک **اموجی پرمیوم تلگرام** نگاشت می‌شود.
+
+<br/>
+
+**جریان داده:**
+
+```
+┌──────────────┐     فوروارد استیکر     ┌──────────────┐
+│   کاربر      │ ─────────────────────▶ │   ربات       │
+└──────────────┘                        └──────┬───────┘
+                                               │ getStickerSet
+                                               ▼
+                                    ┌─────────────────────┐
+                                    │  harvest(entities)   │
+                                    │  اموجی → id          │
+                                    └──────┬──────────────┘
+                                           │  merge
+                     ┌─────────────────────┴─────────────────────┐
+                     ▼                                           ▼
+          ┌───────────────────┐                     ┌────────────────────┐
+          │  map              │                     │  variants_map      │
+          │  ✍️ → 53…27313   │                     │  ✍️ → [id1, id2…] │
+          └─────────┬─────────┘                     └──────────┬─────────┘
+                    └───────────────┬───────────────────────────┘
+                                    ▼
+                        ┌───────────────────────┐
+                        │  premiumize(html)     │
+                        │  <tg-emoji id="…">    │
+                        └───────────────────────┘
+```
+
+<br/>
+
+| مفهوم | مقدار در نسخه‌ی زنده |
+|---|---|
+| نگاشت‌های اموجی | **۱٬۶۰۰+** ردیف |
+| پک‌های شناسایی‌شده | **۲۵** پک |
+| کدهای کوتاه سمت مینی‌اپ | **۴۹۳** ورودی + **۲۴۶** واریانت |
+| پوشش دو حالت | `⚡` و `⚡️` جداگانه نگاشت می‌شوند |
+| بافر لبه | `/api/emoji/img` با `immutable, max-age=31536000` |
+
+---
+
+## 📦 چه چیزی کجا ذخیره می‌شود؟ — Storage Map
+
+</div>
+
+| کلید | شکل | محل | مصرف |
+|---|---|---|---|
+| `map` · `packs` · `pkl` | JSON | KV | دیتابیس اموجی پرمیوم |
+| `emoji:map` · `emoji:variants_map` | JSON | RASA-KV | ایندکس مینی‌اپ برای انتخابگر اموجی |
+| `post:<id>` | JSON | KV-FRESH | بدنه‌ی پست‌های در حال ویرایش |
+| `st:<uid>` | JSON | هر دو | وضعیت مکالمه‌ی کاربر در ربات |
+| `d:<uid>:<id>` + `d:<uid>:index` | JSON | KV-FRESH | پیش‌نویس‌ها و ایندکس آن‌ها |
+| `t:<uid>:<id>` | JSON | KV-FRESH | قالب‌های شخصی |
+| `m:<uid>` | JSON | KV-FRESH | کتابخانه‌ی رسانه (`file_id`ها) |
+| `appc:<uid>` | JSON | KV | کانال‌های وصل‌شده |
+| `brand:<uid>` | JSON | KV | کیت‌های برند |
+| `sched:<uid>` + `sched_global` | JSON | KV | صف زمان‌بندی |
+| `ai_cfg:<uid>` | JSON | KV | کلید و مدل هوش مصنوعی هر کاربر |
+| `invites:<uid>` | JSON | KV | اعتبار، دعوت‌ها، توکن‌های فوروارد |
+| `ref:<uid>` · `fwd:<uid>` | JSON | KV | اثرانگشت یک‌بارمصرف دعوت/فوروارد |
+| `asset:*` | binary | RASA-KV | `app.html`، فونت‌ها، لوگو، تصویر و صدای برند |
+
+> الگوی نام‌گذاری عمداً ساده و قابل‌حدس است: `<نوع>:<شناسه>`. همین باعث می‌شود دیباگ روی نسخه‌های KV سریع باشد و مهاجرت داده ساده بماند.
+
+---
+
+<div dir="rtl">
+
+## 🎁 سیستم اعتبار و دعوت
+
+سه راه برای گرفتن اعتبار وجود دارد و همه‌شان ضدتکرار طراحی شده‌اند:
+
+</div>
+
+| مسیر | پاداش | شرط |
+|---|---|---|
+| 🔗 کسی با **لینک دعوت** (`start=ref_<uid>`) وارد شود | **+۲ برای تو، +۲ برای او** | کاربر واقعی، یک‌بار برای هر نفر |
+| 📤 **فوروارد لینک** (`start=f_<uid>_<token>`) | **+۱ همان لحظه** | همین که بفرستی؛ لازم نیست کسی وارد شود |
+| ✍️ ماندن امضای «رِسا» روی پست | **+۱ هر ۵ پست** | دکمه‌ی امضا حفظ شود |
+
+```mermaid
+flowchart LR
+    A["🎬 دکمه‌ی فوروارد"] --> B["🔐 درخواست توکن یکتا<br/>f_ uid_token"]
+    B --> C["📤 اشتراک‌گذاری در تلگرام"]
+    C --> D["✅ ثبت +۱ اعتبار<br/>توکن می‌سوزد"]
+    D --> E{"کسی از لینک<br/>وارد ربات شود؟"}
+    E -->|"بله"| F["🔁 همان توکن<br/>دوباره اعتبار نمی‌دهد"]
+    E -->|"نه"| G["🏁 تمام — اعتبار گرفته شد"]
+
+    style D fill:#22C55E,color:#fff
+    style F fill:#F59E0B,color:#fff
+```
+
+<div dir="rtl">
+
+و اگر تعداد اعتبار کافی باشد، می‌توانی پست را **بدون امضا** منتشر کنی: هر پست بدون امضا یک اعتبار مصرف می‌کند.
+
+**تبدیل اعتبار به قدرت:** از تب «دوستان» می‌توانی اعتبار بگیری، از تب «انتشار» می‌توانی بی‌امضا بفرستی.
+
+---
+
+## 📱 معماری مینی‌اپ
+
+مینی‌اپ یک **تک‌فایل HTML** است (بدون باندلر، بدون فریم‌ورک) که از KV سرو می‌شود:
+
+</div>
+
+```
+miniapp/app.html
+├── 🎨 استایل        متغیرهای CSS + تم تاریک/روشن + فونت وزیرمتن
+├── 🧩 مدل بلاک      { id, type, … }  ← منبع حقیقت ادیتور
+├── 🔁 سه مسیر تبدیل  بلاک ⇄ HTML ⇄ Markdown
+├── 👁 رندرر پیش‌نمایش  شبیه‌ساز موبایل/دسکتاپ + دکمه‌ها
+├── 🍉 انتخابگر اموجی  از ایندکس سرور + لود تدریجی
+├── 🖼 خط لوله‌ی رسانه  فشرده‌سازی در مرورگر → FormData → file_id
+├── ✨ پنل هوش مصنوعی  کلید، تست، انتخاب مدل، تولید
+├── 🎁 پنل دوستان      لینک دعوت + لینک فوروارد + شمارنده
+└── 🔌 لایه‌ی API       fetch + هدر x-rasa-token + مدیریت خطای فارسی
+```
+
+<div dir="rtl">
+
+**اصول طراحی که رعایت شده:**
+
+- **حالت نمایشی (demo) بدون سرور:** اگر اپ بیرون تلگرام باز شود، همه‌ی رابط کار می‌کند و فقط نوشتن روی سرور غیرفعال می‌شود.
+- **پیام خطای انسانی:** هر خطای شبکه، حجم فایل، سقف تلگرام یا خطای پرووایدر به یک جمله‌ی فارسی قابل‌فهم تبدیل می‌شود.
+- **بازخورد لمسی:** `HapticFeedback` روی اکشن‌های مهم.
+- **کش‌شکنی هوشمند:** `app.html` با `no-store` سرو می‌شود تا آپدیت‌ها فوری بنشینند.
+
+---
+
+## 🧪 تست و کیفیت
+
+</div>
+
+```bash
+cd worker
+node test-integration.mjs     # 🧪 تست‌های یکپارچگی مسیرها و خط لوله‌ی انتشار
+```
+
+<div dir="rtl">
+
+مجموعه‌ی تست‌ها این قراردادها را تضمین می‌کنند:
+
+- ✅ مسیرهای هسته (`/`، `/api/send`، `/webhook`) بیت‌به‌بیت پایدار می‌مانند
+- ✅ پوسته‌ی مینی‌اپ و دارایی‌هایش از KV سرو می‌شوند و نشست با `initData` نامعتبر رد می‌شود
+- ✅ انتشار پرمیوم در کانال مسیر DM → `copyMessage` را می‌رود
+- ✅ متن خراب قبل از رسیدن به تلگرام ترمیم یا حذف می‌شود
+- ✅ اموجی کتابخانه در مسیر پیش‌نمایش به `tg-emoji` تبدیل می‌شود (و بلوک کد دست‌نخورده می‌ماند)
+- ✅ هر توکن فوروارد فقط یک بار اعتبار می‌دهد
+- ✅ مدل‌های دسته‌بندی/صوتی هرگز به‌عنوان «مدل نویسنده» انتخاب نمی‌شوند
+
+---
+
+## ⚙️ محدودیت‌ها — Limits
+
+</div>
+
+| مورد | سقف | منبع |
+|---|---|---|
+| متن پست ریچ | ۳۲٬۷۶۸ کاراکتر | Bot API |
+| کپشن مدیا | ۱٬۰۲۴ کاراکتر | Bot API |
+| عکس | ۱۰MB (فشرده‌سازی خودکار بالای ۸MB) | Bot API |
+| ویدیو / صدا / گیف | ۵۰MB | Bot API |
+| دسته‌ی کپشن | ۱۰۲۴ کاراکتر × ۱۰ | طراحی داخلی |
+| پیش‌نویس | ۲۰ در هر حساب | طراحی داخلی |
+| قالب شخصی | ۳۰ در هر حساب | طراحی داخلی |
+| برند | ۲۰ در هر حساب | طراحی داخلی |
+| صف زمان‌بندی | ۵۰ کار در هر حساب | طراحی داخلی |
+| اعتبار از فوروارد | ۲۰ در روز + فاصله‌ی ۱۰ ثانیه | ضدسوءاستفاده |
+
+---
+
+<div dir="rtl">
+
+## 📁 ساختار پروژه
+
+</div>
 
 ```
 RasaRichBot/
-├── banner.png                 # 🎨 Hero banner (Rasa Studio)
-├── logo.png                   # 💎 Rasa logo (ر)
-├── README.md                  # 📖 Documentation
-├── .dev.vars.example          # 🔐 Environment template
-├── .gitignore
-├── LICENSE (MIT)
-├── worker/
-│   ├── index.js               # 🚀 Main worker (Cloudflare ESM)
-│   ├── wrangler.toml          # ⚙️ Cloudflare config
+├── 📄 README.md                  همین فایل
+├── 🖼️ banner.png · logo.png       دارایی‌های برند
+├── 📜 LICENSE                    MIT
+├── 🔐 .dev.vars.example          نمونه‌ی متغیرهای محیطی (بدون مقدار واقعی)
+│
+├── ⚡ worker/
+│   ├── index.js                  بسته‌ی نهایی ورکر (همان چیزی که دیپلوی می‌شود)
+│   ├── wrangler.toml             بایندینگ‌های KV و Durable Object
 │   ├── package.json
-│   ├── test-integration.mjs   # 🧪 Integration tests
+│   ├── test-integration.mjs      تست‌های یکپارچگی
 │   └── src/
-│       ├── glue.js            # 🔀 Router: CORS + /app + /assets + /api
-│       ├── config.js          # ⚙️ Configuration helper
-│       ├── store.js           # 🗄 KV storage abstraction
-│       ├── telegram.js        # 📡 Telegram Bot API client
-│       ├── miniapp.js         # 📱 Mini App handlers
-│       ├── emoji/
-│       │   └── index.js       # 🍉 Premium emoji substitution
+│       ├── glue.js               🚦 روتر افزایشی مینی‌اپ
+│       ├── config.js             ⚙️ خواندن env و پرووایدرهای AI
+│       ├── store.js              🗄 لایه‌ی حافظه (KV + ایندکس‌ها)
+│       ├── telegram.js           🛰️ کلاینت Bot API
+│       ├── miniapp.js            🔐 ۳۰ مسیر JSON با احراز هویت
+│       ├── emoji/index.js        🍉 برداشت، نگاشت و پرمیوم‌سازی
 │       ├── rich/
-│       │   ├── kit.js         # 🧱 Rich blocks engine
-│       │   ├── validate.js    # ✅ Validation & sanitization
-│       │   └── send.js        # 📤 Publishing pipeline
-│       └── flows/
-│           └── library.js     # 📚 Template library
-├── miniapp/
-│   ├── app.html               # 🌟 Rasa shell (93202B)
-│   └── assets/
-│       ├── brand-hero.jpg
-│       ├── logo-mark.png
-│       ├── brand-audio.mp3
-│       └── fonts/
-│           ├── vazirmatn-regular.woff2
-│           └── vazirmatn-bold.woff2
-└── docs/
-    ├── ARCHITECTURE.md
-    ├── EMOJI_ENGINE.md
-    ├── RICH_BUTTONS.md
-    └── DEPLOYMENT.md
+│       │   ├── kit.js            🧱 ساخت بلوک‌های ریچ
+│       │   ├── validate.js       ✅ تحلیل، ترمیم و پاک‌سازی
+│       │   └── send.js           📤 خط لوله‌ی انتشار
+│       └── flows/library.js      📚 قالب‌های آماده
+│
+├── 📱 miniapp/
+│   ├── app.html                  پوسته‌ی کامل استودیو (تک‌فایل)
+│   └── assets/                   دارایی‌های سرو‌شده از KV
+│
+└── 📚 docs/
+    ├── ARCHITECTURE.md           معماری کامل
+    ├── MINIAPP.md                آناتومی مینی‌اپ
+    ├── CREDITS.md                سیستم اعتبار و دعوت
+    ├── EMOJI_ENGINE.md           موتور اموجی پرمیوم
+    ├── RICH_BUTTONS.md           دکمه‌های ریچ و کدهای زبان
+    └── DEPLOYMENT.md             استقرار، سکرت‌ها و برگرداندن نسخه
 ```
 
 ---
 
-## ⚡ Quick Start
+<div dir="rtl">
 
-### 1️⃣ Clone
+## ⚡ راه‌اندازی سریع
+
+### ۱️⃣ دریافت کد
 
 ```bash
 git clone https://github.com/Alisarani7021/RasaRichBot.git
 cd RasaRichBot
 ```
 
-### 2️⃣ Install Wrangler
+### ۲️⃣ ساخت ربات
 
-```bash
-npm install -g wrangler
-# or
-bun add -g wrangler
+در [@BotFather](https://t.me/BotFather): `/newbot` → نام و یوزرنیم دلخواه → توکن را نگه دار.
+
+سپس تنظیمات ظاهر:
+
+```
+/setdescription  🌟 رِسا — استودیوی ساخت پست‌های ژورنالی تلگرام
+/setabouttext    Rich posts · Premium emoji · Mini App · on Cloudflare
+/setcommands     start - شروع · app - مینی‌اپ · post - استودیو · guide - راهنما
 ```
 
-### 3️⃣ Env
+و در **Bot Settings → Menu Button** آدرس مینی‌اپ را بگذار: `https://<worker-domain>/app`
+
+### ۳️⃣ سکرت‌ها
 
 ```bash
 cp .dev.vars.example .dev.vars
-# Edit .dev.vars:
-# BOT_TOKEN="8826777931:AAFvXESKBXKhszHa-yyltah3JaOhQdh5oZg"
-# WEBHOOK_SECRET="d2d6884ddf2da4aa859fbf7e88cd25a810b1353477e565d8"
+# مقادیر را فقط داخل .dev.vars بگذارید — این فایل در .gitignore است
 ```
 
-### 4️⃣ Dev
+| متغیر | نوع | نقش |
+|---|---|---|
+| `BOT_TOKEN` | سکرت | توکن ربات از BotFather |
+| `WEBHOOK_SECRET` | سکرت | رشته‌ی تصادفی؛ همان `secret_token` وبهوک |
+| `ADMIN_KEY` | سکرت (اختیاری) | توکن اپراتور برای مسیرهای مدیریتی |
+| `ADMINS_ID` | متن (اختیاری) | لیست سفید شناسه‌های مدیر |
+| `WEBHOOK_PATH` | متن | پیش‌فرض `/telegram/webhook` |
+
+### ۴️⃣ دیپلوی
 
 ```bash
 cd worker
-wrangler dev --local
-# Open http://localhost:8787/app
+npx wrangler deploy
 ```
 
-### 5️⃣ Test
+یا با API چندبخشی (روشی که سکرت‌ها را دست‌نخورده نگه می‌دارد):
 
 ```bash
-node test-integration.mjs
-# ✅ original Post Studio routes stay bit-identical
-# ✅ rasa app shell + assets + session/context
-# ✅ premium channel publish routes DM→copy
-# ✅ publish ladder: rotten urls sanitized
+curl -X PUT \
+  "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/workers/scripts/rich-post-bot" \
+  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  -F 'metadata={"main_module":"index.js","compatibility_date":"2026-09-28",
+       "keep_bindings":["secret_text"],
+       "bindings":[ ... همان بایندینگ‌های wrangler.toml ... ]};type=application/json' \
+  -F "index.js=@worker/index.js;type=application/javascript+module"
 ```
 
----
+> 💡 کلید `keep_bindings: ["secret_text"]` باعث می‌شود `BOT_TOKEN`، `WEBHOOK_SECRET` و `ADMIN_KEY` بعد از هر آپدیت سرجایشان بمانند — بدون آن، هر دیپلوی سکرت‌ها را پاک می‌کند.
 
-## 🤖 BotFather Setup
-
-```
-1. @BotFather → /newbot → Name: رِسا → Username: @RasaRichBot (or @RasaStudioBot)
-2. /setdescription → 
-   🌟 رِسا — استودیوی هوشمند ساخت پست‌های ژورنالی تلگرام
-   Telegram Post Studio + Premium Emoji + Rich Buttons + Mini App
-
-3. /setabouttext → same
-
-4. Bot Settings → Menu Button → 
-   Text: رِسا
-   URL: https://rich-post-bot.4lisarani-1.workers.dev/app
-
-5. /setcommands →
-   start - شروع · home
-   post - استودیوی پست
-   app - مینی‌اپ رِسا
-
-6. Add bot to channel as Admin with Post Messages permission
-7. Send /start to bot to open DM (required for premium DM→copy)
-```
-
----
-
-## 🔐 Environment Variables
-
-| Var | Type | Description |
-|-----|------|-------------|
-| `BOT_TOKEN` | secret_text | New bot token from @BotFather (e.g. `8826777931:AAE...`) |
-| `WEBHOOK_SECRET` | secret_text | Random 24 hex, used as `secret_token` for Telegram webhook |
-| `ADMIN_KEY` | secret_text (optional) | Trusted operator bearer |
-| `ADMINS_ID` | plain_text (optional) | Comma-separated user IDs whitelist |
-| `WEBHOOK_PATH` | plain_text | `/telegram/webhook` |
-| `KV` | kv_namespace | `8eff5bd6b33a4a79ba3d869ef373065a` — emoji map |
-| `KV_FRESH` | kv_namespace | `32075883d0054d95ad579888f58ff613` — posts |
-| `RASA_KV` | kv_namespace | `f7714cd6f0e74ae0b55d73107fa8d88e` — miniapp assets |
-| `STATE` | durable_object_namespace | `c191ec2162cc449f876b8b4005cc1fdb` — global state |
-
-### Set Secrets
+### ۵️⃣ ثبت وبهوک
 
 ```bash
-wrangler secret put BOT_TOKEN
-wrangler secret put WEBHOOK_SECRET
-# or via API:
-curl -X PUT -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+curl -X POST "https://api.telegram.org/bot$BOT_TOKEN/setWebhook" \
   -H "Content-Type: application/json" \
-  -d '{"name":"BOT_TOKEN","text":"8826777931:AAE...","type":"secret_text"}' \
-  https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/workers/scripts/rich-post-bot/secrets
+  -d '{"url":"https://<worker-domain>/telegram/webhook",
+       "secret_token":"<WEBHOOK_SECRET>",
+       "allowed_updates":["message","callback_query","my_chat_member"]}'
 ```
 
-### Set Webhook
+### ۶️⃣ آپلود دارایی‌های مینی‌اپ
+
+پوسته و دارایی‌ها از KV خوانده می‌شوند؛ کافی است کلیدها را بنویسید:
 
 ```bash
-curl -X POST https://api.telegram.org/bot$BOT_TOKEN/setWebhook \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://rich-post-bot.4lisarani-1.workers.dev/webhook",
-    "secret_token": "'$WEBHOOK_SECRET'",
-    "allowed_updates": ["message","callback_query","my_chat_member"]
-  }'
-
-curl -X POST https://api.telegram.org/bot$BOT_TOKEN/setChatMenuButton \
-  -H "Content-Type: application/json" \
-  -d '{
-    "menu_button": {
-      "type": "web_app",
-      "text": "رِسا",
-      "web_app": {"url": "https://rich-post-bot.4lisarani-1.workers.dev/app"}
-    }
-  }'
+curl -X PUT "$CF_API/accounts/$ACCOUNT_ID/storage/kv/namespaces/$RASA_KV/values/asset%3Aapp.html" \
+  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  --data-binary @miniapp/app.html
 ```
 
----
+### ۷️⃣ بررسی سلامت
 
-## 🌐 API Routes
+```bash
+curl -I https://<worker-domain>/            # 200 → صفحه‌ی استودیو
+curl -I https://<worker-domain>/app         # 200 → مینی‌اپ
+curl -X POST https://<worker-domain>/api/session   # 401 → احراز هویت فعال است ✅
+```
 
-### Original Post Studio (Untouched)
-
-| Method | Route | Description |
-|--------|-------|-------------|
-| GET | `/` | Post Studio web (2,162,260B) |
-| GET | `/worker.js` | Embedded worker |
-| POST | `/api/connect` | getMe |
-| POST | `/api/channel` | authorizeChat |
-| POST | `/api/send` | sendRichMessage |
-| POST | `/api/edit` | editMessageText |
-| POST | `/api/delete` | deleteMessage |
-| POST | `/webhook` | Telegram updates (secret guard 403) |
-| POST | `/telegram/webhook` | Same as /webhook |
-
-### Rasa Mini App (Additive)
-
-| Method | Route | Auth | Description |
-|--------|-------|------|-------------|
-| GET | `/app` | none | Rasa shell (93,202B) |
-| GET | `/assets/*` | none | Fonts, images, audio (immutable cache) |
-| POST | `/api/session` | `X-Telegram-Init-Data` | Issues `x-rasa-token` |
-| GET | `/api/context` | `x-rasa-token` | channels, drafts, templates (6) |
-| GET | `/api/emoji/all` | `x-rasa-token` | 25 packs, 733 emojis |
-| GET | `/api/emoji/img?id=&t=` | token in query | WebP with `public, max-age=31536000, immutable` |
-| POST | `/api/render` | `x-rasa-token` | Rich preview |
-| POST | `/api/publish` | `x-rasa-token` | Ladder: validate → sanitize → DM→copy |
-| POST | `/api/draft/*` | `x-rasa-token` | Draft CRUD |
-| POST | `/api/template/*` | `x-rasa-token` | Template CRUD |
-| POST | `/api/channel/*` | `x-rasa-token` | Channel connect |
+</div>
 
 ---
 
-## 🍉 Premium Emoji Engine
+## 🌍 English Overview
+
+**Rasa** is a production-grade **Telegram Rich Post Studio** that runs entirely on **Cloudflare Workers** — no servers, no databases, no build step.
+
+It ships two interfaces on a single worker:
+
+- 🤖 **Bot interface** — a step-by-step post builder in Telegram with live previews, media upload, premium-emoji harvesting and channel publishing.
+- 📱 **Mini App** (`/app`) — a Persian-first SPA with a block editor, live preview, media library, drafts, scheduling, brand kits, AI studio and a referral/credits system.
+
+### Highlights
+
+| Area | What makes it interesting |
+|---|---|
+| 🍉 **Emoji engine** | Harvests `custom_emoji` entities from forwarded stickers, keeps base + VS16 variants, and rewrites plain emoji into `<tg-emoji>` before publishing. |
+| 🔘 **Rich buttons** | Full support for Bot API 9.4+ inline button styles and 10.3 rich-button rows, with a 4-step degradation ladder so a post always lands. |
+| 🔐 **Auth** | Telegram `initData` verified with HMAC-SHA256, exchanged for a 12-hour session token signed with a derived key. |
+| 🗄 **Storage** | Three KV namespaces for different lifecycles plus a Durable Object for consistent state reads, with a flat, predictable key scheme. |
+| ⏰ **Scheduling** | Per-user job queues with a global index, drained lazily and by cron — no external scheduler service. |
+| ✨ **AI studio** | Bring-your-own-key across 8 OpenAI-compatible providers, with server-side model hygiene so text classifiers can never be selected as writers. |
+| 🎁 **Credits** | Single-use forward tokens give +1 credit the moment a link is shared, while staying duplicate-proof and rate limited. |
+
+### Quick start
+
+```bash
+git clone https://github.com/Alisarani7021/RasaRichBot.git && cd RasaRichBot
+cp .dev.vars.example .dev.vars      # fill in BOT_TOKEN + WEBHOOK_SECRET
+cd worker && npx wrangler deploy
+```
+
+Full deployment guide: [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) · Architecture: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
+
+---
+
+<div dir="rtl">
+
+## 🛣 نقشه‌ی راه
+
+- [x] استودیوی پست + موتور اموجی پرمیوم + دکمه‌های ریچ
+- [x] مینی‌اپ تصویری با احراز هویت تلگرام
+- [x] کتابخانه‌ی رسانه با آپلود مستقیم و فشرده‌سازی
+- [x] زمان‌بندی، کیت برند، وارد‌کردن لینک
+- [x] استودیوی هوش مصنوعی چندپرووایدری
+- [x] سیستم اعتبار، دعوت و فوروارد
+- [ ] نظرسنجی و کوییز تعاملی در پست
+- [ ] آمار بازدید پست‌ها و A/B تست تیتر
+- [ ] حالت تیمی: چند ادمین روی یک کانال با نقش‌های جدا
+- [ ] خروجی PDF/تصویر از پیش‌نمایش پست
+
+---
+
+## ❓ پرسش‌های پرتکرار
 
 <details>
-<summary><b>Deep Dive — Click to expand</b></summary>
+<summary><b>چرا Cloudflare Workers و نه یک VPS؟</b></summary>
+<br/>
+چون این پروژه ماهیت «همیشه روشن، کم‌ترافیک و پرتعداد ریکوئست کوچک» دارد. ورکر در لبه اجرا می‌شود، پلن رایگانش برای یک ربات پرمصرف کافی است و هیچ سروری برای پچ‌زدن امنیتی نداری.
+</details>
 
-### Storage
+<details>
+<summary><b>داده‌ها کجا ذخیره می‌شوند؟ کسی به آن‌ها دسترسی دارد؟</b></summary>
+<br/>
+همه‌چیز در فضای KV و Durable Object خودت است؛ کلیدهای API کاربران هم فقط در فضای خودشان ذخیره می‌شود. هیچ درخواستی به سرور واسط فرستاده نمی‌شود.
+</details>
 
-- `map`: `{ "🎨": "4981190958369474742", ... }` — 733 entries
-- `packs`: `{ "twilightvibe2_by_TgEmojiBot": { title, count, sample, stickers, bases }, ... }` — 25 packs
-- `variants_map`: `{ "🖤": ["5307844038936800541", ...], ... }` — variants
+<details>
+<summary><b>اموجی پرمیوم در کانال کار نمی‌کند — مشکل چیست؟</b></summary>
+<br/>
+قانون Bot API 9.4: کانال‌ها اموجی پرمیوم را فقط از راه کپی از یک DM می‌پذیرند. ربات این را خودکار انجام می‌دهد؛ فقط کافی است یک‌بار به ربات `/start` داده باشی تا DM باز شود.
+</details>
 
-### Flow
+<details>
+<summary><b>اگر پست با دکمه ارسال نشد چه می‌شود؟</b></summary>
+<br/>
+نردبان fallback خودکار عمل می‌کند: نسخه‌ی بدون آیکن دکمه، بعد نسخه‌ی ساده، بعد DM + کپی. پست همیشه منتشر می‌شود.
+</details>
 
-1. **Extract**: `extractEmojis(text)` → `[{emoji, clean, count}]`
-2. **Map**: `map[clean] || map[emoji]` → `custom_emoji_id`
-3. **Decorate**: `decorateReplyMarkup` adds `icon_custom_emoji_id` to buttons
-4. **Apply**: `applyEmojiSubs(html, emojiSubs, map)` replaces `emoji` with `<tg-emoji emoji-id="...">`
+<details>
+<summary><b>چطور مدل هوش مصنوعی را عوض کنم؟</b></summary>
+<br/>
+در تب «هوش مصنوعی» کلید و آدرس سرویس سازگار با OpenAI را وارد کن و «تست اتصال» را بزن. سرور لیست مدل‌ها را می‌خواند، مدل‌های غیرنویسنده را رد می‌کند و مناسب‌ترین را انتخاب و ذخیره می‌کند.
+</details>
 
-### Channel Publishing (Bot API 9.4 Rule)
-
-> Official changelog Feb 9 2026: *"Allowed bots to use custom emoji in messages directly sent by the bot to private, group and supergroup chats if the owner of the bot has a Telegram Premium subscription"* — channels NOT included.
-
-**Ladder implemented in `rich/send.js`:**
-
-```js
-// 1. Full premium doc to DM (private)
-await tgCall(env, "sendRichMessage", {
-  chat_id: userId,
-  rich_message: { html: docWithPremium }
-});
-
-// 2. Copy to channel (preserves premium)
-await tgCall(env, "copyMessage", {
-  chat_id: channelId,
-  from_chat_id: userId,
-  message_id: dmMessageId
-});
-
-// 3. No unicode echo on channel
-// via: 'premium-dm-copy'
-```
-
-### Premium Button Icons
-
-Every button now has `icon_custom_emoji_id`:
-
-```js
-{ text: "🎨 طراحی دستی", callback_data: "act:manual_new", 
-  style: "success", icon_custom_emoji_id: "4981190958369474742" }
-```
-
+<details>
+<summary><b>می‌توانم بدون امضای «رِسا» منتشر کنم؟</b></summary>
+<br/>
+بله. یا ۵ پست با امضا منتشر کن تا یک اعتبار بگیری، یا از دوستانت دعوت کن. هر پست بدون امضا یک اعتبار مصرف می‌کند.
 </details>
 
 ---
 
-## 🔘 Rich Buttons Engine
+## 🤝 مشارکت
 
-<details>
-<summary><b>Deep Dive — Click to expand</b></summary>
+هر ایده، گزارش باگ یا پول‌ریکوئست خوش‌آمد است:
 
-### Types
+1. یک برنچ تازه بساز: `git checkout -b feature/نام-قابلیت`
+2. تغییر را با یک پیام کامیت گویا ثبت کن
+3. پول‌ریکوئست بزن و رفتار قبل/بعد را توضیح بده
 
-| Type | HTML | Example |
-|------|------|---------|
-| URL | `<tg-button type="url" url="https://t.me">` | باز کردن لینک |
-| Callback | `<tg-button type="callback_data" data="cb">` | کال‌بک |
-| Copy Text | `<tg-button type="copy_text" text="...">` | کپی متن |
-| Inline Query | `<tg-button type="switch_inline_query" query="...">` | سرچ اینلاین |
-| Disabled | `<tg-button type="disabled">` | غیرفعال |
-
-### Styles (Bot API 9.4+)
-
-- `primary` (blue), `success` (green), `danger` (red), `link` (for callback_data only)
-
-### Builder Flow
-
-```
-User clicks "➕ افزودن دکمه"
-  → state: manual_button_type
-  → asks: نوع دکمه را انتخاب کن (url/callback_data/copy_text/switch_inline_query/disabled)
-  → state: manual_button_style
-  → asks: رنگ دکمه را انتخاب کن (primary/success/danger/link)
-  → state: manual_button_label
-  → asks: متن دکمه را بفرست
-  → state: manual_button_value (if not disabled)
-  → asks: مقصد/مقدار را بفرست (https:// or cb: or text)
-  → pushes to buttonDraftRows[ rowIndex ]
-  → refreshPostInPlace view: manual_buttons
-  → "✅ اتمام و افزودن به پست" → appends <tg-button-row> to richHtml
-```
-
-### Fixed for Channels
-
-Previously `sendPostMessage` only tried `sendRichMessage` for private chats. Now always tries:
-
-```js
-try {
-  const richRes = await tgCall(env, "sendRichMessage", { chat_id: chatId, rich_message: { html: content }, ... });
-  if (richRes.ok) return richRes;
-} catch (e) {
-  console.warn("RichMessage path unavailable:", e.message);
-}
-// fallback to sendMessage with sanitized HTML
-```
-
-</details>
+اگر می‌خواهی قابلیت تازه‌ای اضافه کنی، پیشنهاد می‌کنم اول در [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) بخوانی که لایه‌ها کجا از هم جدا می‌شوند — رعایت همان مرزها کار را چند برابر ساده‌تر می‌کند.
 
 ---
 
-## 📱 Mini App — مینی‌اپ رِسا
+## 📄 مجوز
 
-<details>
-<summary><b>Deep Dive — Click to expand</b></summary>
+این پروژه زیر مجوز **MIT** منتشر شده است — می‌توانی آزادانه استفاده، تغییر و توزیع کنی. متن کامل: [`LICENSE`](./LICENSE)
 
-### Auth
+</div>
 
-1. Client sends `X-Telegram-Init-Data` (WebAppData)
-2. Server verifies HMAC-SHA256 with `BOT_TOKEN`
-3. Issues `x-rasa-token`: `base64(payload).hmac(BOT_TOKEN+'::rasa-app').slice(0,32)`
+<div align="center">
 
-```js
-const payload = b64(JSON.stringify({uid, name, user, exp: Date.now()+3600e3}));
-const token = payload + '.' + hmac(BOT_TOKEN+'::rasa-app', payload).slice(0,32);
-```
+<br/>
 
-### Glue Router (`src/glue.js`)
+**ساخته‌شده برای کانال‌هایی که محتوا را جدی می‌گیرند**
 
-```js
-export async function tryRasaApp(request, env, ctx, url) {
-  if (request.method === 'OPTIONS') return new Response(null, {status:204, headers: cors});
-  if (url.pathname === '/app') return asset('app.html');
-  if (url.pathname.startsWith('/assets/')) return asset(url.pathname.slice(1));
-  if (/^\/api\/(session|context|render|publish|emoji|draft|template|channel)/.test(url.pathname)) {
-    const shadow = Object.assign(Object.create(Object.getPrototypeOf(env)), env, {STORE: env.RASA_KV});
-    return handleRasaApi(request, shadow);
-  }
-  return null; // let original Post Studio handle
-}
-```
+<a href="https://t.me/RasaRichBot">
+  <img src="https://img.shields.io/badge/بازکردن%20ربات-@RasaRichBot-26A5E4?style=for-the-badge&logo=telegram&logoColor=white" />
+</a>
+<a href="https://rich-post-bot.4lisarani-1.workers.dev/app">
+  <img src="https://img.shields.io/badge/رفتن%20به%20استودیو-Mini%20App-2DD4BF?style=for-the-badge&logo=telegram&logoColor=white" />
+</a>
+<a href="https://github.com/Alisarani7021/RasaRichBot/stargazers">
+  <img src="https://img.shields.io/badge/⭐%20ستاره-بدهید-F59E0B?style=for-the-badge" />
+</a>
 
-### Assets in RASA_KV
+<br/><br/>
 
-| Key | Size | Type |
-|-----|------|------|
-| `asset:app.html` | 93,202B | text/html |
-| `asset:brand-hero.jpg` | 104,673B | image/jpeg |
-| `asset:logo-mark.png` | 202,389B | image/png |
-| `asset:brand-audio.mp3` | 137,108B | audio/mpeg |
-| `asset:fonts/vazirmatn-regular.woff2` | 50,684B | font/woff2 |
-| `asset:fonts/vazirmatn-bold.woff2` | 51,020B | font/woff2 |
+<img src="https://api.star-history.com/svg?repos=Alisarani7021/RasaRichBot&type=Date" alt="Star History" width="70%" />
 
-All served with `public, max-age=31536000, immutable`
+<br/>
 
-</details>
+<sub>ساخته‌شده توسط <a href="https://github.com/Alisarani7021">@Alisarani7021</a> · <code>رِسا</code> ❤️ تلگرام</sub>
 
----
+<br/><br/>
 
-## 🧪 Testing
-
-```bash
-# Unit + integration (4 tests)
-node worker/test-integration.mjs
-
-# Expected:
-# ✅ original Post Studio routes stay bit-identical
-# ✅ rasa app shell + assets + session/context serve from RASA_KV
-# ✅ premium channel publish routes DM→copy
-# ✅ publish ladder: rotten urls sanitized; mixed md→rich conversion
-
-# Live verification
-curl https://rich-post-bot.4lisarani-1.workers.dev/app -I
-# 200
-
-curl -X POST https://rich-post-bot.4lisarani-1.workers.dev/api/session \
-  -H "Content-Type: application/json" -d '{"initData":"x"}' -i
-# 401
-```
-
----
-
-## 🚢 Deployment
-
-### Via Wrangler
-
-```bash
-cd worker
-wrangler deploy
-```
-
-### Via API (multipart, preserves secrets)
-
-```js
-const form = new FormData();
-form.append('metadata', new Blob([JSON.stringify({
-  main_module: 'index.js',
-  compatibility_date: '2026-09-28',
-  bindings: [
-    {name:'KV', namespace_id:'8eff...', type:'kv_namespace'},
-    {name:'KV_FRESH', namespace_id:'3207...', type:'kv_namespace'},
-    {name:'RASA_KV', namespace_id:'f771...', type:'kv_namespace'},
-    {class_name:'State', name:'STATE', namespace_id:'c191...', type:'durable_object_namespace'},
-    {name:'WEBHOOK_PATH', text:'/telegram/webhook', type:'plain_text'}
-  ]
-})], {type:'application/json'}), 'metadata.json');
-
-form.append('index.js', new Blob([fs.readFileSync('index.js')], {type:'application/javascript+module'}), 'index.js');
-// + rasa-src/* files
-
-await fetch(`https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/workers/scripts/rich-post-bot`, {
-  method: 'PUT',
-  headers: {authorization: `Bearer ${CLOUDFLARE_API_TOKEN}`},
-  body: form
-});
-```
-
-Secrets persist if not sent in multipart.
-
----
-
-## 🛣 Roadmap
-
-- [x] ✅ Dual-app contract (Post Studio untouched + Rasa additive)
-- [x] ✅ Premium emoji DM→copy ladder
-- [x] ✅ Rich buttons fixed for channels
-- [x] ✅ Mini App Menu Button `رِسا`
-- [x] ✅ Premium button icons (733 custom)
-- [x] ✅ Manual builder simplified to sample-only
-- [x] ✅ AI buttons removed
-- [ ] 🔜 Inline query mode for emoji search
-- [ ] 🔜 Draft versioning
-- [ ] 🔜 Channel analytics
-- [ ] 🔜 Multi-language (EN/FA) toggle in Mini App
-- [ ] 🔜 Webhook retry queue with Durable Objects
-
----
-
-## 🤝 Contributing
-
-PRs welcome! Please:
-
-1. Keep Post Studio byte-identical except 2 additive lines
-2. Add tests to `test-integration.mjs`
-3. Use `icon_custom_emoji_id` for all new buttons
-4. Follow Persian-first UX
-
----
-
-## 📄 License
-
-MIT © 2026 Rasa Studio — [@RasaRichBot](https://t.me/RasaRichBot)
-
----
-
-<p align="center">
-  <b>ساخته شده با ❤️ برای کامیونیتی تلگرام فارسی</b><br/>
-  <i>Built with Cloudflare Workers, Telegram Bot API 10.3, and 733 premium emojis</i>
-</p>
-
-<p align="center">
-  <img src="./logo.png" width="80" style="border-radius:50%"/>
-  <br/>
-  <b>رِسا — جایی که پست‌های معمولی، ژورنالی می‌شن</b>
-</p>
+</div>

@@ -1,25 +1,81 @@
-# 🔘 Rich Buttons — Bot API 10.3
+# 🔘 دکمه‌های ریچ — Rich Buttons
 
-## HTML
+از Bot API 9.4 به بعد تلگرام دو قابلیت تازه داد: **استایل و آیکن دکمه** و **دکمه‌ی داخل متن (rich button)**. رِسا هر دو را کامل پشتیبانی می‌کند.
+
+---
+
+## ۱. کیبورد کلاسیک vs دکمه‌ی ریچ
+
+| | `reply_markup.inline_keyboard` | `<tg-button>` داخل متن |
+|---|---|---|
+| جای قرار گرفتن | زیر پیام | دقیقاً داخل متن ریچ |
+| اندازه | فقط متن | آیکن اموجی پرمیوم + استایل |
+| چیدمان | ردیف‌های معمولی | راست/وسط/چپ، تا ۳ در هر ردیف |
+| پشتیبانی | همه‌ی نسخه‌های تلگرام | نسخه‌های جدید + محدودیت کانال |
+
+رِسا هر دو را می‌سازد؛ کاربر در پنل انتخاب می‌کند.
+
+---
+
+## ۲. زبان ساخت دکمه
 
 ```html
-<tg-button-row>
-  <tg-button type="url" style="success" url="https://t.me">ورود</tg-button>
-  <tg-button type="callback_data" style="link" data="cb_demo">کال‌بک</tg-button>
-  <tg-button type="copy_text" text="RICH10">کپی</tg-button>
+<tg-button-row align="center">
+  <tg-button type="url" style="success" emoji-id="5368324170671202286"
+             url="https://example.com">ورود به سایت</tg-button>
+  <tg-button type="callback_data" style="primary" data="cb_buy">خرید</tg-button>
 </tg-button-row>
 ```
 
-## Builder States
+| ویژگی | مقدارها |
+|---|---|
+| `type` | `url` · `callback_data` · `copy_text` · `switch_inline_query` · `web_app` · `pay` · `disabled` |
+| `style` | `primary` (آبی) · `success` (سبز) · `danger` (قرمز) · `link` (ساده) |
+| `align` (روی ردیف) | `left` · `center` · `right` |
+| `emoji-id` | آی‌دی اموجی پرمیوم برای آیکن دکمه |
+| `data` | مقدار `callback_data` (تا ۶۴ بایت) |
+| `text` | متن دوم برای `copy_text` |
 
-- `manual_button_new` → type selection
-- `manual_btn_type` → style selection
-- `manual_btn_style` → label input
-- `manual_button_label` → value input
-- `manual_button_value` → push to draftRows
-- `manual_buttons_done` → append to richHtml
+---
 
-## Fix for Channels
+## ۳. سازنده‌ی گام‌به‌گام در ربات
 
-Before: only private chats tried sendRichMessage
-After: all chats try sendRichMessage first, then fallback
+```
+انتخاب نوع ──▶ انتخاب استایل ──▶ متن دکمه ──▶ مقدار ──▶ افزودن به ردیف ──▶ پایان
+   type          style          label        value        draftRows        richHtml
+```
+
+هر مرحله وضعیت خودش را در `st:<uid>` ذخیره می‌کند؛ کاربر می‌تواند وسط راه برگردد یا ردیف تازه‌ای بسازد. در مینی‌اپ همان کار با پنل «دکمه‌ها» و کشیدن‌ورهاکردن ردیف‌ها انجام می‌شود.
+
+---
+
+## ۴. محدودیت کانال و نردبان افتادن
+
+قبل از این نسخه، ارسال پیام ریچ فقط در چت خصوصی امتحان می‌شد و در کانال شکست می‌خورد. الان همه‌ی چت‌ها اول مسیر ریچ را امتحان می‌کنند و در صورت رد شدن، خودکار افت می‌کنند:
+
+```
+1. sendRichMessage  (دکمه + آیکن)
+2. sendRichMessage  (بدون icon_custom_emoji_id)
+3. پیام ساده + inline_keyboard کلاسیک
+4. DM موقت → copyMessage به کانال
+```
+
+علت‌های رایج رد شدن و کاری که نردبان می‌کند:
+
+| خطای تلگرام | کاری که انجام می‌شود |
+|---|---|
+| `BUTTON_TYPE_INVALID` | حذف دکمه‌ی ریچ، تبدیل به کیبورد کلاسیک |
+| `CUSTOM_EMOJI_INVALID` | حذف آیکن دکمه‌ها، حفظ بدنه‌ی متن |
+| `PREMIUM_EMOJI_REQUIRED` (کانال) | مسیر DM + `copyMessage` |
+| `ENTITY_TEXT_INVALID` | ترمیم ساختار و تلاش دوباره |
+
+نتیجه: پست هر بار **منتشر می‌شود**، حتی اگر تلگرام بعضی از تزئینات را قبول نکند.
+
+---
+
+## ۵. نکته‌های ظریف
+
+- `callback_data` بیشتر از ۶۴ بایت تلگرام را رد می‌کند؛ سازنده طول را قبل از ارسال بررسی می‌کند.
+- دکمه‌ی `disabled` برای نمایش «اتمام موجودی» بدون قابلیت کلیک استفاده می‌شود.
+- آیکن دکمه هم مثل اموجی متن از همان دیتابیس پرمیوم انتخاب می‌شود.
+- در پیش‌نمایش مینی‌اپ دکمه‌ها با همان استایل واقعی رندر می‌شوند تا تفاوت ظاهری پیش و پس از انتشار حداقل باشد.

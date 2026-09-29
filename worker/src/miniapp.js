@@ -8,6 +8,23 @@ import { analyze, repair } from './rich/validate.js';
 import { libraryMap, premiumize as premiumizeHtml } from './emoji/index.js';
 import { BUILTIN_TEMPLATES, builtinTemplate } from './flows/library.js';
 
+/* ------------------------------------------------------------- forward credit */
+// هر فوروارد لینک = ۱ اعتبار، با توکن یک‌بارمصرف تا تکراری حساب نشود.
+// این سقف‌ها فقط جلوی سوءاستفاده‌ی خودکار را می‌گیرند، نه کاربر واقعی.
+const FWD_DAILY_LIMIT = 20;      // حداکثر اعتبار روزانه از راه فوروارد
+const FWD_MINT_GAP_MS = 5000;    // فاصله بین دو درخواست لینک فوروارد
+const FWD_CREDIT_GAP_MS = 10000; // فاصله بین دو اعتبار فوروارد
+const FWD_TOKEN_TTL_MS = 30 * 86400000;
+
+/* ------------------------------------------------------------------ ai keys */
+// مدل‌های کلاسیفایر/تبدیل صدا/امبدینگ نمی‌توانند پست بنویسند؛ اگر اشتباهی
+// انتخاب شوند درخواست generate با خطای «text classification models» می‌خورد.
+const NON_CHAT_MODEL_RE = /(prompt-guard|safeguard|whisper|tts|orpheus|embed|moderation|rerank|classif|distilbert|bge-|e5-)/i;
+const CHAT_PREF = [
+  /gpt-oss-120b/i, /qwen3\.8-27b/i, /deepseek/i, /llama-4/i, /gpt-oss-20b/i,
+  /llama-3\.3-70b/i, /qwen3/i, /gpt-4o/i, /llama-3\.1-8b/i, /mixtral/i, /mistral/i, /gemma/i
+];
+
 /* ------------------------------------------------------------------ crypto */
 const te = new TextEncoder();
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -117,6 +134,15 @@ async function renderPayload(store, uid, body) {
 }
 
 /* ---------------------------------------------------------------- channels */
+function normalizeAiUrl(u) {
+  u = String(u || '').trim().replace(/\/$/, '');
+  if (/\/chat\/completions$/i.test(u)) return u;
+  if (/\/v1$/i.test(u) || /\/v1\/openai$/i.test(u) || /openai\/v1$/i.test(u)) return u + '/chat/completions';
+  if (/\/v1\/models$/i.test(u)) return u.replace(/\/models$/i, '/chat/completions');
+  if (!/\/v1/.test(u)) return u + '/v1/chat/completions';
+  return u + '/chat/completions';
+}
+
 function parseTarget(raw) {
   raw = String(raw || '').trim();
   if (/^@[A-Za-z0-9_]{4,}$/.test(raw)) return { chat: raw };
@@ -466,6 +492,298 @@ export async function handleMiniAppApi(request, env, url) {
     const verdict = await check.json();
     if (!verdict.ok) return json({ ok: false, error: 'permissions', verdict });
     return publishNow(tg, body?.target, body?.rich || { html: body?.html }, uid);
+  }
+  // ── invite / credits ──
+  if (path === '/api/invite/status' && request.method === 'POST') {
+    const data = await store.get(`invites:${uid}`, { invited: [], forwards: [], credits: 0, total: 0, used: 0, sigKept: 0 });
+    const log = data.fwdLog || { day: '', n: 0, last: 0 };
+    const today = new Date().toISOString().slice(0, 10);
+    return json({
+      ok: true,
+      invited: data.invited || [], forwards: data.forwards || [],
+      credits: data.credits || 0, total: data.total || 0,
+      used: data.used || 0, sigKept: data.sigKept || 0,
+      fwdDay: log.day === today ? log.n || 0 : 0,
+      fwdDayLimit: FWD_DAILY_LIMIT,
+      fwdCooldownSec: FWD_CREDIT_GAP_MS / 1000
+    });
+  }
+  if (path === '/api/invite/fwd-token' && request.method === 'POST') {
+    // یک توکن تازه برای «لینک فوروارد» می‌سازد؛ مصرف توکن همان لحظه‌ی فوروارد ثبت می‌شود.
+    const data = await store.get(`invites:${uid}`, { invited: [], forwards: [], credits: 0, total: 0, fwdTokens: [] });
+    const now = Date.now();
+    const log = data.fwdLog || { day: '', n: 0, last: 0 };
+    const today = new Date(now).toISOString().slice(0, 10);
+    if (log.day !== today) { log.day = today; log.n = 0; }
+    if (log.mintAt && now - log.mintAt < FWD_MINT_GAP_MS) {
+      return json({ ok: false, error: 'کمی صبر کن و دوباره بزن', retryIn: Math.ceil((FWD_MINT_GAP_MS - (now - log.mintAt)) / 1000) }, 429);
+    }
+    const token = (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : String(Math.random()).slice(2) + now).slice(0, 16);
+    const kept = (data.fwdTokens || []).filter((x) => x && !x.used && now - (x.at || 0) < FWD_TOKEN_TTL_MS).slice(-24);
+    kept.push({ t: token, at: now, used: 0 });
+    data.fwdTokens = kept;
+    log.mintAt = now;
+    data.fwdLog = log;
+    await store.put(`invites:${uid}`, data);
+    return json({ ok: true, token, link: `https://t.me/RasaRichBot?start=f_${uid}_${token}`, fwdDay: log.n || 0, fwdDayLimit: FWD_DAILY_LIMIT });
+  }
+  if (path === '/api/invite/fwd-credit' && request.method === 'POST') {
+    const token = String(body?.token || '').trim();
+    if (!token) return bad('token');
+    const data = await store.get(`invites:${uid}`, null);
+    if (!data) return bad('no record');
+    const rec = (data.fwdTokens || []).find((x) => x && x.t === token);
+    if (!rec) return json({ ok: false, error: 'این لینک معتبر نیست — دوباره دکمه‌ی فوروارد را بزن' }, 409);
+    if (rec.used) return json({ ok: false, error: 'این فوروارد قبلاً ثبت شده — تکراری حساب نمی‌شود' }, 409);
+    const now = Date.now();
+    const log = data.fwdLog || { day: '', n: 0, last: 0 };
+    const today = new Date(now).toISOString().slice(0, 10);
+    if (log.day !== today) { log.day = today; log.n = 0; }
+    if ((log.n || 0) >= FWD_DAILY_LIMIT) return json({ ok: false, error: `سقف امروز پر شد (${FWD_DAILY_LIMIT} اعتبار) — فردا دوباره بزن`, fwdDay: log.n, fwdDayLimit: FWD_DAILY_LIMIT }, 429);
+    if (log.last && now - log.last < FWD_CREDIT_GAP_MS) return json({ ok: false, error: `بین دو فوروارد ${FWD_CREDIT_GAP_MS / 1000} ثانیه صبر کن`, retryIn: Math.ceil((FWD_CREDIT_GAP_MS - (now - log.last)) / 1000) }, 429);
+    rec.used = 1;
+    log.n = (log.n || 0) + 1;
+    log.last = now;
+    data.fwdLog = log;
+    data.credits = (data.credits || 0) + 1;
+    data.total = (data.total || 0) + 1;
+    await store.put(`invites:${uid}`, data);
+    return json({ ok: true, credits: data.credits, fwdDay: log.n, fwdDayLimit: FWD_DAILY_LIMIT });
+  }
+  if (path === '/api/invite/forward' && request.method === 'POST') {
+    // legacy: ثبت دستی با آیدی چت — UI دیگر از این استفاده نمی‌کند، برای سازگاری نگه داشته شده
+    const targetRaw = String(body?.target || '').trim();
+    if (!targetRaw) return bad('target');
+    const norm = targetRaw.toLowerCase();
+    const data = await store.get(`invites:${uid}`, { invited: [], forwards: [], credits: 0, total: 0 });
+    const forwards = new Set(data.forwards || []);
+    if (forwards.has(norm)) return json({ ok: true, credits: data.credits || 0, message: 'این چت قبلاً حساب شده' });
+    try {
+      const chatId = /^@/.test(targetRaw) ? targetRaw : /^-100\d+/.test(targetRaw) ? Number(targetRaw) : targetRaw;
+      const chatInfo = await tg.getChat(chatId);
+      if (!chatInfo) throw new Error('no chat');
+    } catch {
+      return json({ ok: false, error: 'چت پیدا نشد — مطمئن شو ربات تو اون چت/گروه هست یا @username درسته' }, 400);
+    }
+    forwards.add(norm);
+    data.forwards = [...forwards];
+    data.credits = (data.credits || 0) + 1;
+    data.total = (data.total || 0) + 1;
+    await store.put(`invites:${uid}`, data);
+    return json({ ok: true, credits: data.credits, total: data.total, forwards: data.forwards });
+  }
+
+  // ── media library ──
+  if (path === '/api/media/delete' && request.method === 'POST') {
+    const name = String(body?.name || '').trim();
+    const idx = Number(body?.idx);
+    const lib = await store.get(`m:${uid}`, { items: [] });
+    if (!Number.isNaN(idx) && idx >= 0 && idx < lib.items.length) lib.items.splice(idx, 1);
+    else if (name) lib.items = lib.items.filter((it) => it.name !== name && it.fileId !== name);
+    else return bad('name or idx required');
+    await store.put(`m:${uid}`, lib);
+    return json({ ok: true, items: lib.items });
+  }
+
+  // ── draft metadata (tags / folder / favourite) ──
+  if (path === '/api/draft/update' && request.method === 'POST') {
+    const id = String(body?.id || '');
+    const draft = await store.getDraft(uid, id);
+    if (!draft) return bad('draft', 404);
+    const patch = {};
+    if (body?.title !== undefined) patch.title = String(body.title).slice(0, 80);
+    if (body?.tags !== undefined) patch.tags = String(body.tags).split(',').map((s) => s.trim()).filter(Boolean).slice(0, 10);
+    if (body?.folder !== undefined) patch.folder = String(body.folder).slice(0, 30);
+    if (body?.fav !== undefined) patch.fav = !!body.fav;
+    const updated = { ...draft, ...patch, at: Date.now() };
+    await store.put(`d:${uid}:${id}`, updated);
+    const idx = await store.get(`d:${uid}:index`, { items: [] });
+    const row = idx.items.find((x) => String(x.id) === String(id));
+    if (row) { row.title = updated.title || row.title; row.at = updated.at; await store.put(`d:${uid}:index`, idx); }
+    return json({ ok: true, draft: updated });
+  }
+
+  // ── brand kit ──
+  if (path === '/api/brand/list' && request.method === 'POST') {
+    const data = await store.get(`brand:${uid}`, { items: [] });
+    return json({ ok: true, brands: data.items || [] });
+  }
+  if (path === '/api/brand/save' && request.method === 'POST') {
+    const data = await store.get(`brand:${uid}`, { items: [] });
+    const id = String(body?.id || '') || `b${Date.now()}`;
+    const item = {
+      id,
+      name: String(body?.name || '').trim().slice(0, 40) || 'برند من',
+      colors: body?.colors || {},
+      footer: String(body?.footer || '').slice(0, 500),
+      btnStyle: String(body?.btnStyle || 'primary'),
+      at: Date.now()
+    };
+    const items = [item, ...(data.items || []).filter((x) => x.id !== id)].slice(0, 20);
+    await store.put(`brand:${uid}`, { items });
+    return json({ ok: true, brand: item, brands: items });
+  }
+  if (path === '/api/brand/delete' && request.method === 'POST') {
+    const data = await store.get(`brand:${uid}`, { items: [] });
+    data.items = (data.items || []).filter((x) => String(x.id) !== String(body?.id || ''));
+    await store.put(`brand:${uid}`, data);
+    return json({ ok: true, brands: data.items });
+  }
+
+  // ── scheduler ──
+  if (path === '/api/schedule/list' && request.method === 'POST') {
+    // job های رسیده همین‌جا (به‌صورت lazy) منتشر می‌شوند؛ cron هم همان تابع را صدا می‌زند
+    const data = await store.get(`sched:${uid}`, { jobs: [] });
+    const now = Date.now();
+    const pending = [];
+    const done = [];
+    for (const j of data.jobs || []) {
+      if (j.status === 'pending' && j.scheduledAt && j.scheduledAt <= now) {
+        try { await publishNow(tg, j.target, { html: j.html }, uid); j.status = 'done'; j.doneAt = now; done.push(j); }
+        catch { pending.push(j); }
+      } else pending.push(j);
+    }
+    if (done.length) { data.jobs = [...done, ...pending].slice(0, 50); await store.put(`sched:${uid}`, data); }
+    return json({ ok: true, jobs: data.jobs || [] });
+  }
+  if (path === '/api/schedule/create' && request.method === 'POST') {
+    const target = String(body?.target || '').trim();
+    const html = String(body?.html || '').trim();
+    const scheduledAt = Number(body?.scheduledAt || 0);
+    const deleteAfter = Number(body?.deleteAfter || 0);
+    if (!target || !html) return bad('target/html');
+    if (!scheduledAt || scheduledAt < Date.now()) return bad('scheduledAt must be future');
+    const data = await store.get(`sched:${uid}`, { jobs: [] });
+    const job = { id: `j${Date.now()}${Math.floor(Math.random() * 1000)}`, target, html: html.slice(0, 32000), scheduledAt, deleteAfter: deleteAfter || 0, status: 'pending', createdAt: Date.now() };
+    data.jobs = [job, ...(data.jobs || [])].slice(0, 50);
+    await store.put(`sched:${uid}`, data);
+    try {
+      const g = await store.get('sched_global', { ids: [] });
+      g.ids = [{ id: job.id, uid, at: scheduledAt }, ...(g.ids || [])].slice(0, 500);
+      await store.put('sched_global', g);
+    } catch { /* index is best-effort */ }
+    return json({ ok: true, job });
+  }
+  if (path === '/api/schedule/delete' && request.method === 'POST') {
+    const data = await store.get(`sched:${uid}`, { jobs: [] });
+    data.jobs = (data.jobs || []).filter((j) => String(j.id) !== String(body?.id || ''));
+    await store.put(`sched:${uid}`, data);
+    return json({ ok: true, jobs: data.jobs });
+  }
+
+  // ── link import (OG tags → rich blocks) ──
+  if (path === '/api/import/url' && request.method === 'POST') {
+    const urlStr = String(body?.url || '').trim();
+    if (!urlStr || !/^https?:\/\//i.test(urlStr)) return bad('url');
+    try {
+      const res = await fetch(urlStr, { headers: { 'user-agent': 'RasaBot/1.0' } });
+      const page = await res.text();
+      const title = (page.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1]?.trim().slice(0, 120) || '';
+      const desc = ((page.match(/<meta[^>]+property=["']og:description["'][^>]*content=["']([^"']+)["']/i)
+        || page.match(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']+)["']/i)) || [])[1] || '';
+      const image = (page.match(/<meta[^>]+property=["']og:image["'][^>]*content=["']([^"']+)["']/i) || [])[1] || '';
+      let out = '';
+      if (title) out += `<h2>${esc(title)}</h2>\n`;
+      if (desc) out += `<p>${esc(desc.slice(0, 800))}</p>\n`;
+      if (image) out += `<img src="${esc(image)}"/>\n`;
+      out += `<p><a href="${esc(urlStr)}">منبع اصلی</a></p>`;
+      return json({ ok: true, html: out, title, image });
+    } catch (e) {
+      return bad(`import failed: ${String(e.message || e).slice(0, 120)}`);
+    }
+  }
+
+  // ── AI studio (per-user key, OpenAI-compatible) ──
+  if (path === '/api/ai/config' && request.method === 'POST') {
+    const key = String(body?.key || '').trim().slice(0, 500);
+    const url = String(body?.url || '').trim().slice(0, 500);
+    const model = String(body?.model || '').trim().slice(0, 100) || 'gpt-4o-mini';
+    if (!body?.save) {
+      const cur = await store.get(`ai_cfg:${uid}`, { key: '', url: '', model: '' });
+      return json({ ok: true, config: { hasKey: !!cur.key, url: cur.url || '', model: cur.model || '', masked: cur.key ? cur.key.slice(0, 6) + '...' + cur.key.slice(-4) : '' } });
+    }
+    if (key) {
+      await store.put(`ai_cfg:${uid}`, { key, url, model, at: Date.now() });
+      return json({ ok: true, saved: true });
+    }
+    await store.put(`ai_cfg:${uid}`, { key: '', url: '', model: '' });
+    return json({ ok: true, cleared: true });
+  }
+  if (path === '/api/ai/test' && request.method === 'POST') {
+    // کلید را تست می‌کند، مدل‌های حساب را می‌خواند و یک «مدل نویسنده» انتخاب می‌کند
+    const key = String(body?.key || '').trim();
+    if (!key) return bad('key');
+    const urlAI = normalizeAiUrl(String(body?.url || '').trim() || 'https://api.openai.com/v1/chat/completions');
+    const requested = String(body?.model || '').trim() || 'gpt-4o-mini';
+    let bestModel = requested;
+    let modelsList = [];
+    try {
+      const mRes = await fetch(urlAI.replace(/\/chat\/completions$/i, '/models'), { headers: { authorization: `Bearer ${key}` } });
+      if (mRes.ok) {
+        const ids = ((await mRes.json()).data || []).map((x) => x.id).filter(Boolean);
+        modelsList = ids;
+        const score = (id) => {
+          let s = CHAT_PREF.some((rx) => rx.test(id)) ? 100 : 0;
+          if (/405b/i.test(id)) s += 40;
+          if (/70b|120b/i.test(id)) s += 25;
+          if (/mini|8b|7b/i.test(id)) s -= 5;
+          return s;
+        };
+        const usable = ids.filter((id) => !NON_CHAT_MODEL_RE.test(id));
+        const pool = usable.length ? usable : ids;
+        if (pool.length) bestModel = pool.slice().sort((a, b) => score(b) - score(a))[0];
+      }
+    } catch { /* provider without /models — keep the requested one */ }
+    try {
+      const testRes = await fetch(urlAI, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+        body: JSON.stringify({ model: bestModel, messages: [{ role: 'user', content: 'ping' }], max_tokens: 5 })
+      });
+      const txt = await testRes.text();
+      let data = {};
+      try { data = JSON.parse(txt); } catch { /* keep raw text for the error path */ }
+      if (!testRes.ok) return json({ ok: false, status: testRes.status, error: data.error?.message || txt.slice(0, 400), triedModel: bestModel, models: modelsList.slice(0, 20) });
+      return json({ ok: true, model: bestModel, requestedModel: requested, reply: data.choices?.[0]?.message?.content || 'ok', models: modelsList.slice(0, 30), bestModel });
+    } catch (e) {
+      return json({ ok: false, error: String(e.message || e).slice(0, 400), triedUrl: urlAI });
+    }
+  }
+  if (path === '/api/ai/generate' && request.method === 'POST') {
+    const prompt = String(body?.prompt || '').trim().slice(0, 3000);
+    const style = String(body?.style || '').trim();
+    if (!prompt) return bad('prompt');
+    const cfgAI = await store.get(`ai_cfg:${uid}`, null);
+    const apiKey = cfgAI?.key || '';
+    const apiUrl = normalizeAiUrl(cfgAI?.url || 'https://api.openai.com/v1/chat/completions');
+    const model = cfgAI?.model || body?.model || 'gpt-4o-mini';
+    if (!apiKey) {
+      return json({
+        ok: true,
+        via: 'fallback',
+        html: `<h2>${esc(prompt.slice(0, 80))}</h2>\n<p>${esc(prompt)}</p>\n<blockquote>این متن با هوش مصنوعی بهبود می‌یابد اگر کلید خود را در تنظیمات AI وارد کنید.</blockquote>`
+      });
+    }
+    const sysMap = {
+      viral: 'You are a Telegram Rich Message architect. Make the user text viral, engaging, with emojis, bold, tables if needed. Return only raw HTML (b,p,blockquote,table,ul).',
+      formal: 'You are a Telegram Rich Message architect. Rewrite formally, structured, with headings, bullet points. Return only raw HTML.',
+      product: 'You are a Telegram shop post creator. Create a product card HTML with title, description, price table, and a primary button. Return only raw HTML.',
+      default: 'You are a Telegram Rich Message architect. Format user text into Telegram Rich HTML (b, blockquote expandable, code, bullet points, table bordered striped compact if applicable) preserving 100% original words. Return only raw formatted HTML without code fences.'
+    };
+    try {
+      const aiRes = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({ model, temperature: 0.7, messages: [{ role: 'system', content: sysMap[style] || sysMap.default }, { role: 'user', content: prompt }] })
+      });
+      const j = await aiRes.json().catch(() => ({}));
+      if (!aiRes.ok) return json({ ok: false, error: j.error?.message || `AI ${aiRes.status}` });
+      const out = String(j.choices?.[0]?.message?.content || '').trim().replace(/^```html\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+      if (!out) return json({ ok: false, error: 'empty ai response' });
+      return json({ ok: true, html: out, via: 'ai' });
+    } catch (e) {
+      return json({ ok: false, error: String(e.message || e).slice(0, 400) });
+    }
   }
   return bad('route', 404);
 }

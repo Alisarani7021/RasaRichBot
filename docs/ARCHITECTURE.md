@@ -1,51 +1,165 @@
-# 🏗 Architecture — معماری رِسا
+# 🏗 معماری رِسا — Architecture
 
-## Overview
+> یک ورکر، سه لایه، دو رابط. این سند دقیقاً می‌گوید هر قطعه کجا نشسته و چرا.
 
-RasaRichBot is a dual-app Cloudflare Worker built with a clean separation of concerns. The core Post Studio remains fully stable while Rasa Mini App is mounted additively.
+---
 
-## Entry Point
+## ۱. تصویر کلی
+
+```mermaid
+flowchart LR
+    subgraph EDGE["⚡ Cloudflare Edge"]
+        R{"🚦 intake<br/>URL + Method"}
+        A["🧱 هسته‌ی استودیو"]
+        M["📱 لایه‌ی مینی‌اپ"]
+        W["📥 وبهوک تلگرام"]
+    end
+    U["👤 کاربر"] --> R
+    TG["🛰️ Bot API"] --> W
+    R --> A
+    R --> M
+    R --> W
+    W --> A
+    A --> S[("🗄 KV + DO")]
+    M --> S
+```
+
+سه مسیر ورودی وجود دارد و هیچ‌کدام دیگری را قفل نمی‌کند:
+
+| ورودی | مسیر | مسئول |
+|---|---|---|
+| کاربر وب | `/` ، `/worker.js` ، `/api/send` | هسته‌ی استودیو |
+| مینی‌اپ | `/app` ، `/assets/*` ، `/api/*` | لایه‌ی مینی‌اپ |
+| تلگرام | `/telegram/webhook` | پردازشگر آپدیت |
+
+---
+
+## ۲. روتر افزایشی
+
+لایه‌ی مینی‌اپ قبل از هسته بررسی می‌شود؛ اگر مسیر مال او نبود، `null` برمی‌گرداند و هسته پاسخ می‌دهد:
 
 ```js
-// Lightweight router integration
-import { tryRasaApp } from "./src/glue.js";
-
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    
-    // Try Rasa routes first
-    const rasaResponse = await tryRasaApp(request, env, ctx, url)
-      .catch(e => new Response('Error: '+e.message, {status:500}));
-    if (rasaResponse) return rasaResponse;
 
-    // Fallback to Post Studio core
-    // ... original bundle logic
+    const rasa = await tryRasaApp(request, env, ctx, url).catch(() => null);
+    if (rasa) return rasa;          // /app ، /assets/* ، /api/*
+
+    return core(request, env, ctx); // هسته‌ی پایدار — دست‌نخورده
   }
-}
+};
 ```
 
-## Storage
+**چرا این الگو؟** چون هسته‌ای که ماه‌ها در حال کار است نباید برای افزودن یک UI وب بازنویسی شود. مرزِ بین دو لایه فقط یک تابع است.
 
-| Binding | ID | Purpose | Size |
-|---------|----|---------|------|
-| KV | 8eff5bd6... | Emoji map/packs/variants | 44KB + 12KB + 112KB |
-| KV_FRESH | 320758... | Posts, drafts, channels | Dynamic |
-| RASA_KV | f7714cd6... | Mini App assets | 93KB + 500KB |
-| STATE | c191ec21... | Durable Object global | - |
+---
 
-## Request Flow
+## ۳. چرخه‌ی انتشار
+
+```mermaid
+sequenceDiagram
+    participant C as 🧑‍💻 کلاینت (ربات یا مینی‌اپ)
+    participant H as 🛡 لایه‌ی تأیید
+    participant V as ✅ اعتبارسنجی ساختار
+    participant E as 🍉 پرمیوم‌سازی
+    participant T as 🛰️ Bot API
+
+    C->>H: rich { html | markdown | blocks } + target
+    H->>H: نشست معتبر؟ دسترسی کانال تأیید شد؟
+    H->>V: تگ‌های مجاز، عمق، طول (≤ ۳۲٬۷۶۸)
+    V->>V: analyze() → اگر لازم شد repair()
+    V->>E: نگاشت اموجی + آی‌دی مدیا
+    E->>T: sendRichMessage
+    alt خطای مجوز یا دکمه
+        T-->>E: description
+        E->>T: نسخه‌ی سازگار (بدون آیکن / ساده)
+    end
+    T-->>C: message_id
+```
+
+نردبان افتادن در `rich/send.js` پیاده شده و ترتیبش این است:
 
 ```
-Telegram Update → /webhook (secret check 403) → handleCallback/handleMessage
-User opens Mini App → /app (from RASA_KV) → /api/session (HMAC) → token
-Mini App → /api/context (token) → channels/drafts/templates
-Publish → /api/publish → validateRich → sanitize URLs → sendRichMessage to DM → copyMessage to channel
+1. sendRichMessage + آیکن اموجی روی دکمه‌ها
+2. sendRichMessage بدون icon_custom_emoji_id
+3. نسخه‌ی ساده (متن + کیبورد کلاسیک)
+4. DM موقت + copyMessage به کانال (برای اموجی پرمیوم در کانال)
 ```
 
-## Security
+---
 
-- Webhook: `X-Telegram-Bot-Api-Secret-Token` must equal `WEBHOOK_SECRET`
-- Mini App: `WebAppData` HMAC with BOT_TOKEN
-- Rasa Token: HMAC of payload with `BOT_TOKEN::rasa-app`, 32 hex, 1h expiry
-- Admin: Optional `ADMIN_KEY` bearer or `ADMINS_ID` whitelist
+## ۴. لایه‌ی حافظه
+
+سه فضای KV با چرخه‌ی عمر متفاوت + یک Durable Object برای خواندن/نوشتن سازگار:
+
+| فضا | نوع داده | چرا جدا است |
+|---|---|---|
+| `KV` | دیتابیس اموجی، کانال‌ها، برند، زمان‌بندی، اعتبار، کلید AI | داده‌ی کم‌تغییر و پرخوان |
+| `KV_FRESH` | پست‌ها، پیش‌نویس‌ها، قالب‌ها، کتابخانه‌ی رسانه | داده‌ی پرتغییر کاربر |
+| `RASA_KV` | `app.html` و دارایی‌های استاتیک | فایل‌های دودویی با کش بلند |
+| `STATE` (DO) | وضعیت مکالمه و کلیدهای حساس به ترتیب | سازگاری قوی |
+
+```js
+// store.js — الگوی نام‌گذاری کلیدها
+await store.put(`st:${uid}`, state);              // وضعیت مکالمه
+await store.get(`d:${uid}:index`, { items: [] }); // ایندکس پیش‌نویس‌ها
+await store.put(`m:${uid}`, { items: media });    // کتابخانه‌ی رسانه
+await store.get(`invites:${uid}`, freshInvite()); // اعتبار و دعوت‌ها
+```
+
+هر نوشتن روی DO اول تلاش می‌شود و در صورت خطا به KV می‌افتد؛ همین باعث می‌شود رفتار در پلن رایگان هم پایدار بماند.
+
+---
+
+## ۵. احراز هویت مینی‌اپ
+
+```mermaid
+sequenceDiagram
+    participant W as WebView
+    participant S as /api/session
+    W->>S: initData (امضای تلگرام)
+    S->>S: secret = HMAC("WebAppData", BOT_TOKEN)
+    S->>S: مقایسه‌ی hash + تازگی auth_date
+    S->>S: session = HMAC(BOT_TOKEN + "::rasa-app", payload)
+    S-->>W: token (۱۲ ساعت)
+    W->>S: درخواست‌های بعدی + x-rasa-token
+```
+
+سه لایه‌ی دفاعی: امضای تلگرام، توکن نشست با عمر کوتاه، و بررسی مالکیت داده (`uid` از خود توکن خوانده می‌شود، نه از بدنه‌ی درخواست).
+
+---
+
+## ۶. زمان‌بندی
+
+هر کاربر صف خودش را دارد و یک ایندکس جهانی نگه داشته می‌شود:
+
+```
+sched:<uid>      → { jobs: [ { id, target, html, scheduledAt, status } ] }
+sched_global     → { ids: [ { id, uid, at } ] }
+```
+
+کارهای رسیده در همان درخواست `/api/schedule/list` (تخلیه‌ی تنبل) و همچنین با cron اجرا می‌شوند. مزیت: بدون سرویس بیرونی، بدون دیتابیس صف، و خطا در یک کار بقیه را متوقف نمی‌کند.
+
+---
+
+## ۷. مرزها و قواعد تغییر
+
+| می‌خواهی… | کجا دست ببر |
+|---|---|
+| قابلیت جدید در ربات (دستور، دکمه، فلوی گفتگو) | هسته + `flows/` |
+| اندپوینت جدید برای مینی‌اپ | `src/miniapp.js` + `glue.js` (فقط الگوی مسیر) |
+| بلوک یا دستور زبان ریچ تازه | `rich/kit.js` + `rich/validate.js` |
+| رفتار اموجی پرمیوم | `emoji/index.js` |
+| رابط کاربری استودیو | `miniapp/app.html` (تک‌فایل) |
+
+**قاعده‌ی طلایی:** هیچ‌وقت مسیرهای `/`، `/api/send` و `/webhook` را تغییر نده. آن‌ها قرارداد عمومی پروژه‌اند و چندین نسخه از کلاینت‌ها رویشان حساب می‌کنند.
+
+---
+
+## ۸. چرا این ساختار؟
+
+- **بدون بیلد:** نه باندلری در مسیر اجرا، نه مرحله‌ی کامپایل. ورکر و مینی‌اپ هر دو فایل‌های مستقیم‌اند.
+- **بدون دیتابیس:** KV کافی است چون الگوی دسترسی «کلید → سند JSON» است، نه کوئری رابطه‌ای.
+- **بدون سرور:** پلن رایگان Cloudflare برای یک ربات پرمصرف کافی است و سطح حمله کوچک می‌ماند.
+- **قابل بازگشت:** هر انتشار یک بسته‌ی مستقل است؛ برگشت با آپلود نسخه‌ی قبلی انجام می‌شود (بخش «برگرداندن نسخه» در `DEPLOYMENT.md`).

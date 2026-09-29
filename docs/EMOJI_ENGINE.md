@@ -1,33 +1,76 @@
-# 🍉 Premium Emoji Engine
+# 🍉 موتور اموجی پرمیوم
 
-## Packs (25)
+هدف: هر اموجی داخل متن، پیش از ارسال به یک **اموجی پرمیوم تلگرام** تبدیل شود — بدون اینکه کاربر لازم باشد چیزی از آی‌دی‌ها بداند.
 
-- twilightvibe2_by_TgEmojiBot (62)
-- llort_by_TgEmojiBot (90)
-- fatiimaa07_by_TgEmodziBot (61)
-- MeowieeeQ (95)
-- etc. — total 733 custom emojis
+---
 
-## Map Example
+## ۱. جریان کلی
 
-```json
-{
-  "🎨": "4981190958369474742",
-  "✍️": "5307891786088227313",
-  "🌟": "5339209399120465044",
-  "💡": "5422439311196834318"
-}
+```mermaid
+flowchart LR
+    A["📨 فوروارد استیکر یا پست حاوی اموجی پرمیوم"] --> B["harvest(text, entities)"]
+    B --> C{"جفت اموجی → id"}
+    C --> D[("map<br/>نگاشت ساده")]
+    C --> E[("variants_map<br/>چند آی‌دی برای یک شکل")]
+    C --> F[("packs<br/>اطلاعات پک")]
+    D --> G["premiumize(html)"]
+    E --> G
+    G --> H["<tg-emoji emoji-id=…>🍉</tg-emoji>"]
 ```
 
-## Why DM→Copy?
+---
 
-Bot API 9.4: Custom emoji allowed only in private/group/supergroup if owner has Premium. Channels require copy.
+## ۲. چرا دو حالت برای هر اموجی؟
+
+تلگرام یک اموجی را می‌تواند با یا بدون **VS16** بفرستد: `⚡` و `⚡️` از نظر بایت متفاوت‌اند ولی یک اموجی‌اند. موتور هر دو حالت را نگه می‌دارد:
+
+```js
+const strip = (s) => String(s).replace(/\uFE0F/g, '');
+const variants = (e) => [...new Set([strip(e), strip(e) + '\uFE0F', e])];
+```
+
+نتیجه: کاربر هر شکلی را تایپ کند، جایگزینی انجام می‌شود.
+
+---
+
+## ۳. پرمیوم‌سازی
+
+```js
+// ساده‌شده
+html.replace(emojiRegex, (ch) => {
+  const id = map[ch] || map[strip(ch)] || variantsMap[ch]?.[0];
+  return id ? `<tg-emoji emoji-id="${id}">${ch}</tg-emoji>` : ch;
+});
+```
+
+- اگر آی‌دی پیدا نشود، اموجی دست‌نخورده می‌ماند (هیچ‌وقت متن خراب نمی‌شود).
+- روی دکمه‌ها هم `icon_custom_emoji_id` ست می‌شود.
+
+---
+
+## ۴. نردبان امن برای کانال
+
+قانون Bot API 9.4: اموجی پرمیوم در کانال فقط از راه **کپی از یک پیام در DM** قابل استفاده است (اگر مالک پرمیوم داشته باشد). ربات این را خودکار مدیریت می‌کند:
 
 ```
-User DM (5982315292) ← sendRichMessage with <tg-emoji>
-Channel @gjjgjjkmnmk ← copyMessage from DM (preserves custom emoji)
+post در DM (با اموجی) → copyMessage به کانال → پاک کردن پیام موقت DM
 ```
 
-## Button Icons
+اگر کپی مجاز نباشد، نسخه‌ی ساده (بدون اموجی پرمیوم) ارسال می‌شود تا پست از دست نرود.
 
-All inline keyboards now use `icon_custom_emoji_id` for premium look, not just text emoji.
+---
+
+## ۵. اعداد نسخه‌ی زنده
+
+| مورد | مقدار |
+|---|---|
+| نگاشت اموجی | ۱٬۶۰۰+ |
+| پک‌های شناسایی‌شده | ۲۵ |
+| ایندکس سمت مینی‌اپ | ۴۹۳ کد کوتاه + ۲۴۶ واریانت |
+| بافر تصویر | `immutable, max-age=31536000` در لبه |
+
+---
+
+## ۶. افزودن پک تازه
+
+فقط یک استیکر از پک را به ربات فوروارد کن. ربات `getStickerSet` را می‌خواند، همه‌ی اموجی‌های پرمیوم پک را برداشت می‌کند و در `map`/`variants_map`/`packs` می‌نویسد. پک‌های ذخیره‌شده در استودیو هم قابل مرور و انتخاب‌اند.
