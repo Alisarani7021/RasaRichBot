@@ -398,6 +398,8 @@ export async function handleMiniAppApi(request, env, url) {
       if (!fileId) return bad('no file_id from telegram');
       const item = { name: file.name || `media-${Date.now()}`, kind, fileId, at: Date.now(), size: file.size || 0 };
       await store.saveMedia(uid, item);
+      // بلافاصله پیام کش موقت ربات را پاک کن تا چت شلوغ نشود — file_id همچنان معتبر می‌ماند
+      try { await tg.deleteMessage(uid, tj.result.message_id); } catch {}
       return json({ ok:true, media: item });
     } catch (e) {
       console.error('media upload error', e);
