@@ -762,7 +762,7 @@ function paintLib(){var h='';
         }
         inserted=true;
       } else {
-        var code=(GUIDE_DATA[Object.keys(GUIDE_DATA).find(function(k){return GUIDE_DATA[k].some(function(x){return x.name===name})})]||[]).find(function(x){return x.name===name})||{}).code||'';
+        var code=((GUIDE_DATA[Object.keys(GUIDE_DATA).find(function(k){return GUIDE_DATA[k].some(function(x){return x.name===name})})]||[]).find(function(x){return x.name===name})||{}).code||'';
         if(code){
           try{
             var parsed=parseAny(code);
