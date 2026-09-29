@@ -2601,22 +2601,53 @@ async function editPostMessage(env, chatId, messageId, { text, html, media, repl
       return rest;
     })) };
   }, "stripIconIds");
+  const sanitized = sanitizeTelegramHtml(content);
+  const captionHtml = sanitized.slice(0, 1024);
+  const captionPlain = captionHtml.replace(/<[^>]*>/g, "").slice(0, 1024);
+  const editCaption = /* @__PURE__ */ __name(async () => {
+    const ladder = [
+      { caption: captionHtml, parse: true, markup: effectiveReplyMarkup },
+      { caption: captionHtml, parse: true, markup: stripIconIds(effectiveReplyMarkup) },
+      { caption: captionPlain, parse: false, markup: effectiveReplyMarkup },
+      { caption: captionPlain, parse: false, markup: stripIconIds(effectiveReplyMarkup) }
+    ];
+    let last = null;
+    for (const step of ladder) {
+      try {
+        const res = await tgCall(env, "editMessageCaption", {
+          chat_id: chatId,
+          message_id: messageId,
+          caption: step.caption,
+          ...step.parse ? { parse_mode: "HTML" } : {},
+          ...replyMarkup ? { reply_markup: step.markup } : {}
+        });
+        if (res && res.ok) return res;
+        last = res;
+      } catch (e) {
+        console.warn("edit caption failed", e?.message);
+      }
+    }
+    return last;
+  }, "editCaption");
+  const captionTarget = /* @__PURE__ */ __name((res) => !!res && /no text in the message|caption/i.test(String(res?.description || "")), "captionTarget");
   if (!media) {
+    let richRes = null;
     try {
-      const richRes = await tgCall(env, "editMessageText", {
+      richRes = await tgCall(env, "editMessageText", {
         chat_id: chatId,
         message_id: messageId,
         rich_message: { html: content },
         ...replyMarkup ? { reply_markup: effectiveReplyMarkup } : {}
       });
-      if (richRes && richRes.ok) return richRes;
-      console.warn("edit rich_message rejected:", richRes?.description || "unknown error");
     } catch (e) {
       console.warn("edit rich_message error:", e);
     }
-    const sanitized = sanitizeTelegramHtml(content);
+    if (richRes && richRes.ok) return richRes;
+    if (captionTarget(richRes)) return await editCaption();
+    console.warn("edit rich_message rejected:", richRes?.description || "unknown error");
+    let res2 = null;
     try {
-      const res2 = await tgCall(env, "editMessageText", {
+      res2 = await tgCall(env, "editMessageText", {
         chat_id: chatId,
         message_id: messageId,
         text: sanitized,
@@ -2625,9 +2656,13 @@ async function editPostMessage(env, chatId, messageId, { text, html, media, repl
         ...replyMarkup ? { reply_markup: effectiveReplyMarkup } : {}
       });
       if (res2 && res2.ok) return res2;
+      if (captionTarget(res2)) return await editCaption();
     } catch (e) {
       console.warn("edit with icon failed, retry without icon", e?.message);
-      const res2b = await tgCall(env, "editMessageText", {
+    }
+    let res2b = null;
+    try {
+      res2b = await tgCall(env, "editMessageText", {
         chat_id: chatId,
         message_id: messageId,
         text: sanitized,
@@ -2636,58 +2671,21 @@ async function editPostMessage(env, chatId, messageId, { text, html, media, repl
         ...replyMarkup ? { reply_markup: stripIconIds(effectiveReplyMarkup) } : {}
       });
       if (res2b && res2b.ok) return res2b;
+      if (captionTarget(res2b)) return await editCaption();
+    } catch (e) {
+      console.warn("edit html without icon failed", e?.message);
     }
-    return await tgCall(env, "editMessageText", {
+    const plainRes = await tgCall(env, "editMessageText", {
       chat_id: chatId,
       message_id: messageId,
       text: sanitized.replace(/<[^>]*>/g, ""),
       disable_web_page_preview: true,
       ...replyMarkup ? { reply_markup: stripIconIds(effectiveReplyMarkup) } : {}
     });
+    if (plainRes && plainRes.ok) return plainRes;
+    return await editCaption();
   }
-  const caption = sanitizeTelegramHtml(content).slice(0, 1024);
-  const plainCaption = caption.replace(/<[^>]*>/g, "").slice(0, 1024);
-  try {
-    const res = await tgCall(env, "editMessageCaption", {
-      chat_id: chatId,
-      message_id: messageId,
-      caption,
-      parse_mode: "HTML",
-      ...replyMarkup ? { reply_markup: effectiveReplyMarkup } : {}
-    });
-    if (res && res.ok) return res;
-  } catch (e) {
-    console.warn("edit caption html+icon failed", e?.message);
-  }
-  try {
-    const res = await tgCall(env, "editMessageCaption", {
-      chat_id: chatId,
-      message_id: messageId,
-      caption,
-      parse_mode: "HTML",
-      ...replyMarkup ? { reply_markup: stripIconIds(effectiveReplyMarkup) } : {}
-    });
-    if (res && res.ok) return res;
-  } catch (e) {
-    console.warn("edit caption html without icon failed", e?.message);
-  }
-  try {
-    const res = await tgCall(env, "editMessageCaption", {
-      chat_id: chatId,
-      message_id: messageId,
-      caption: plainCaption,
-      ...replyMarkup ? { reply_markup: effectiveReplyMarkup } : {}
-    });
-    if (res && res.ok) return res;
-  } catch (e) {
-    console.warn("edit caption plain+icon failed", e?.message);
-  }
-  return await tgCall(env, "editMessageCaption", {
-    chat_id: chatId,
-    message_id: messageId,
-    caption: plainCaption,
-    ...replyMarkup ? { reply_markup: stripIconIds(effectiveReplyMarkup) } : {}
-  });
+  return await editCaption();
 }
 __name(editPostMessage, "editPostMessage");
 __name2(editPostMessage, "editPostMessage");
