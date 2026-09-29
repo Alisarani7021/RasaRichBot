@@ -972,9 +972,59 @@ var EM={packs:null,recent:[]};try{EM.recent=JSON.parse(localStorage.getItem('em_
 var EM_DEMO=[{name:'demo',title:'نمونه (آفلاین)',items:[{id:'5870171369371418705',e:'🌟'},{id:'1',e:'❤️'},{id:'2',e:'🔥'},{id:'3',e:'😂'}]}];
 function emNorm(x){return String(x||'').replace(/[\uFE0E\uFE0F\s]/g,'').toLowerCase()}
 function emImg(id){return '/api/emoji/img?id='+encodeURIComponent(id)+(token?'&t='+encodeURIComponent(token).replace(/[_*~`|]/g,function(c){return '%'+c.charCodeAt(0).toString(16).toUpperCase()}):'')}
-function emLoad(cb){if(EM.packs)return cb();if(!S.online){EM.packs=EM_DEMO;return cb()}
-  api('/api/emoji/all').then(function(r){EM.packs=(r&&r.ok&&r.packs)||[];if(!EM.packs.length)toast('پکی برای اموجی پیدا نشد');cb()})}
-function emHTML(){return '<div class="emw"><input class="fld" id="emq" placeholder="جستجوی اموجی پرمیوم… مثلاً ❤️" autocomplete="off"><div class="rec" id="emp" style="margin-top:8px"></div><div class="emg" id="emg"><div class="emn">در حال بارگذاری…</div></div></div>'}
+var EM_STATS={total:0,packs:0,pending:0};
+function emLoad(cb){if(EM.packs)return cb();if(!S.online){EM.packs=EM_DEMO;EM_STATS={total:4,packs:1};return cb()}
+  api('/api/emoji/all').then(function(r){EM.packs=(r&&r.ok&&r.packs)||[];
+    EM_STATS.total=(r&&r.total)||EM.packs.reduce(function(n,p){return n+p.items.length},0);
+    EM_STATS.packs=(r&&r.packCount)||EM.packs.length;EM_STATS.pending=(r&&r.pending)||0;
+    if(!EM.packs.length)toast('پکی برای اموجی پیدا نشد');cb()})}
+function emReload(cb){EM.packs=null;emLoad(cb)}
+/* افزودن پک با لینک t.me/addemoji یا نام/یوزرنیم پک */
+function emPackAdd(box){
+  if(box.__emAdding)return; box.__emAdding=1;
+  var inp=box.querySelector('#emPkIn'),btn=box.querySelector('#emPkAdd'),out=box.querySelector('#emPkOut');
+  var v=(inp&&inp.value||'').trim();
+  if(!v){toast('لینک پک را بچسبان — مثلاً t.me/addemoji/MeowieQ');return}
+  if(btn){btn.disabled=true;btn.textContent='در حال افزودن…'}
+  if(out)out.innerHTML='';
+  api('/api/emoji/pack/add',{target:v}).then(function(r){
+    box.__emAdding=0;
+    if(btn){btn.disabled=false;btn.textContent='افزودن'}
+    if(!r||!r.ok){if(out)out.innerHTML='<div class="vd bad">افزودن پک نشد — '+(r&&r.error?esc(r.error):'لینک را بررسی کن')+'</div>';hap('err');return}
+    if(inp)inp.value='';hap('ok');toast('پک «'+esc(r.title||r.name)+'» با '+(r.count||'')+' اموجی اضافه شد');
+    if(out)out.innerHTML='<div class="vd ok">پک «'+esc(r.title||r.name)+'» اضافه شد ✓</div>';
+    emReload(function(){paintEm(box)});
+    setTimeout(function(){emTrim(box)},2200);
+  })} 
+/* حذف پک (اموجی‌ها برای رندر باقی می‌مانند) */
+function emPackRemove(box,name){hap();if(box.__emRemoving)return;box.__emRemoving=1;
+  api('/api/emoji/pack/remove',{name:name}).then(function(r){
+    box.__emRemoving=0;
+    if(!r||!r.ok){toast('حذف نشد');return}
+    toast('پک حذف شد');emReload(function(){paintEm(box)})})}
+function emTrim(box){var out=box&&box.querySelector('#emPkOut');if(out)out.innerHTML=''}
+/* قالبِ مدیریت پک‌ها + شمارنده‌ها */
+function emManageHTML(){return '<div class="emtb"><span class="emstats" id="emStats"></span><button class="chip" id="emMgBtn" data-mg="1">مدیریت پک‌ها</button>'
+  +'<button class="chip" id="emRfBtn" data-mg="1">تازه‌سازی</button></div>'
+  +'<div class="emmg" id="emMg" style="display:none">'
+  +'<div class="row"><input class="fld grow" id="emPkIn" dir="ltr" placeholder="t.me/addemoji/… یا نام پک"><button class="btn pri" id="emPkAdd">افزودن</button></div>'
+  +'<div id="emPkOut" style="margin-top:8px"></div><div id="emPkList" style="margin-top:8px"></div></div>'}
+function emUpdateStats(box){
+  var el=box.querySelector('#emStats');if(!el)return;
+  var n=EM.packs?EM.packs.reduce(function(a,p){return a+p.items.length},0):0;
+  el.textContent='📦 '+(EM_STATS.total||n)+' اموجی در '+(EM_STATS.packs||(EM.packs||[]).length)+' پک'+(EM_STATS.pending?' • +'+(EM_STATS.pending)+' در حال بارگذاری':'');}
+function emPackList(box){
+  var l=box.querySelector('#emPkList');if(!l)return;
+  var packs=EM.packs||[];
+  var ttl={};packs.forEach(function(p){var n=p.title||p.name;ttl[n]=(ttl[n]||0)+1});
+  l.innerHTML=packs.length?packs.map(function(p){var n=p.title||p.name;return '<div class="empr"><span class="ti">'+ic('spark',16)+'</span><b class="grow">'+esc(n)+(ttl[n]>1?'<small> · '+esc(p.name)+'</small>':'')+'</b><small>'+p.items.length+' اموجی</small><button class="btn red" data-pk="'+qa(p.name)+'" style="padding:4px 9px">حذف</button></div>'}).join('')
+    :'<div class="emn">هنوز پکی اضافه نشده — لینک t.me/addemoji/… را بچسبان و «افزودن» را بزن.</div>';}
+function paintEm(box){
+  if(!box)return;
+  emUpdateStats(box);
+  if(box.querySelector('#emMg')&&box.querySelector('#emMg').style.display!=='none')emPackList(box);
+}
+function emHTML(){return '<div class="emw">'+emManageHTML()+'<input class="fld" id="emq" placeholder="جستجوی اموجی پرمیوم… مثلاً ❤️" autocomplete="off"><div class="rec" id="emp" style="margin-top:8px"></div><div class="emg" id="emg"><div class="emn">در حال بارگذاری…</div></div></div>'}
 function emMount(root,pick){var q=root.querySelector('#emq'),pp=root.querySelector('#emp'),g=root.querySelector('#emg'),cur='\u0000r';
   function list(){var t=emNorm(q.value),all=[];EM.packs.forEach(function(p){p.items.forEach(function(i){all.push({id:i.id,e:i.e,p:p.title||p.name})})});
     if(t){
@@ -990,15 +1040,26 @@ function emMount(root,pick){var q=root.querySelector('#emq'),pp=root.querySelect
       return combined;
     }
     if(cur==='\u0000r')return EM.recent.length?EM.recent:all.slice(0,120);return all.filter(function(i){return i.p===cur})}
-  function paint(){pp.innerHTML=[['\u0000r','اخیر']].concat(EM.packs.map(function(p){var n=p.title||p.name;return [n,n]})).map(function(c){return '<button class="chip'+(c[0]===cur&&!q.value?' on':'')+'" data-p="'+qa(c[0])+'">'+esc(c[1])+'</button>'}).join('');
+  function paint(){var t={};EM.packs.forEach(function(p){var n=p.title||p.name;t[n]=(t[n]||0)+1});
+    pp.innerHTML=[['\u0000r','اخیر']].concat(EM.packs.map(function(p){var n=p.title||p.name;return [n,p.name,t[n]>1?n+' · '+p.name:n]})).map(function(c){return '<button class="chip'+(c[0]===cur&&!q.value?' on':'')+'" data-p="'+qa(c[0])+'" title="'+qa(c[1])+'">'+esc(c[2])+'</button>'}).join('');
     var allList=list();
     var it=allList.slice(0,500);
     var extra=allList.length>500?' <small style="color:var(--mu)">+'+(allList.length-500)+' مورد دیگر</small>':'';
-    g.innerHTML=it.length?it.map(function(i){return '<button class="eo" data-id="'+qa(i.id)+'" data-e="'+qa(i.e)+'"><span>'+esc(i.e)+'</span>'+(S.online?'<img loading="lazy" alt="" src="'+qa(emImg(i.id))+'" onerror="this.remove()">':'')+'</button>'}).join('')+extra:'<div class="emn">اموجی پرمیومی با این شکل تو پک‌ها پیدا نشد — '+ (q.value? '“'+esc(q.value)+'”':'') +' — '+ (EM.packs.reduce(function(n,p){return n+p.items.length},0)) +' اموجی در '+(EM.packs.length)+' پک</div>'}
-  q.oninput=paint;pp.onclick=function(e){var c=e.target.closest('.chip');if(!c)return;hap('pick');cur=c.dataset.p;q.value='';paint()};
+    g.innerHTML=it.length?it.map(function(i){return '<button class="eo" data-id="'+qa(i.id)+'" data-e="'+qa(i.e)+'"><span>'+esc(i.e)+'</span>'+(S.online?'<img loading="lazy" alt="" src="'+qa(emImg(i.id))+'" onerror="this.remove()">':'')+'</button>'}).join('')+extra:'<div class="emn">اموجی پرمیومی با این شکل تو پک‌ها پیدا نشد — '+ (q.value? '“'+esc(q.value)+'”':'') +' — '+ (EM.packs.reduce(function(n,p){return n+p.items.length},0)) +' اموجی در '+(EM.packs.length)+' پک<br><small>می‌توانی از «مدیریت پک‌ها» همین‌جا پک تازه اضافه کنی.</small></div>'}
+  function paintAll(){var bx=root.querySelector('.emw')||root;paint();emUpdateStats(bx)}
+  q.oninput=paintAll;
+  if(!root.__emBound){root.__emBound=1;root.addEventListener('click',function(e){
+    var mg=e.target.closest('[data-mg]');if(mg){var box=root.querySelector('#emMg');if(!box)return;hap();
+      if(mg.id==='emMgBtn'){var open=!(box.dataset.open==='1');box.dataset.open=open?'1':'0';box.style.display=open?'block':'none';if(open)emPackList(root)}
+      else if(mg.id==='emRfBtn'){toast('تازه‌سازی پک‌ها…');emReload(function(){paintAll();emUpdateStats(root);if(root.querySelector('#emMg')&&root.querySelector('#emMg').style.display!=='none')emPackList(root)})}
+      return}
+    var add=e.target.closest('#emPkAdd');if(add){emPackAdd(root);return}
+    var rm=e.target.closest('[data-pk]');if(rm){emPackRemove(root,rm.dataset.pk);return}
+  })}
+  pp.onclick=function(e){var c=e.target.closest('.chip');if(!c||c.dataset.mg)return;hap('pick');cur=c.dataset.p;q.value='';paintAll()};
   g.onclick=function(e){var b=e.target.closest('.eo');if(!b)return;hap('ok');var it={id:b.dataset.id,e:b.dataset.e};
     EM.recent=[it].concat(EM.recent.filter(function(x){return x.id!==it.id})).slice(0,30);try{localStorage.setItem('em_recent',JSON.stringify(EM.recent))}catch(x){}pick(it.id,it.e)};
-  emLoad(paint)}
+  emLoad(function(){paint();emUpdateStats(root);emPackList(root)})}
 function emTag(id,e){return '<tg-emoji emoji-id="'+id+'">'+e+'</tg-emoji>'}
 function emInsert(ta,s,e,id,em){var tag=emTag(id,em);ta.focus();try{ta.setRangeText(tag,s,e,'end')}catch(x){ta.value=ta.value.slice(0,s)+tag+ta.value.slice(e)}ta.dispatchEvent(new Event('input',{bubbles:true}))}
 function openEmojiSheet(ta,s,e){sheet('<h3>اموجی پرمیوم</h3>'+emHTML());var r=$('#sheet');emMount(r,function(id,em){closeSheet();emInsert(ta,s,e,id,em)})}
@@ -1626,6 +1687,15 @@ boot();
 </script>
 <input type="file" id="galFile" accept="image/*,video/*,audio/*" aria-hidden="true" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0">
 <script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a42aa5ce1ad3f2c0',t:'MTc5MDY4MTM0MQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
+<style id="x4-emoji">
+.emtb{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+.emstats{font-size:12px;color:var(--mu);direction:rtl}
+.emmg{border:1px dashed color-mix(in srgb,var(--mu) 40%,transparent);border-radius:14px;padding:10px;margin:0 0 10px;background:color-mix(in srgb,var(--bg) 92%,transparent)}
+.empr{display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid color-mix(in srgb,var(--mu) 14%,transparent)}
+.empr:last-child{border-bottom:0}
+.empr .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.empr small{color:var(--mu);font-size:11px}
+</style>
 <style id="x3-patch">
 .top{background:color-mix(in srgb,var(--bg) 92%,transparent)}
 .pvhead{position:sticky;top:calc(var(--st) + var(--th,56px) - 1px);z-index:20;padding:8px 0;background:color-mix(in srgb,var(--bg) 90%,transparent);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}

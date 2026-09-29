@@ -1069,7 +1069,7 @@ function mixedToHtml(text) {
   return fixInlineMarkdown(out.join("\n"));
 }
 __name(mixedToHtml, "mixedToHtml");
-async function renderPayload(store2, uid, body) {
+async function renderPayload(env, store2, uid, body) {
   const text = String(body?.text || "").trim().slice(0, 3900);
   if (!text) return bad("empty");
   let html;
@@ -1080,7 +1080,9 @@ async function renderPayload(store2, uid, body) {
   } else {
     html = mdToHtml(text);
   }
-  const map = await libraryMap(store2);
+  // Both namespaces, both layers: the preview must know every premium emoji the
+  // bot knows, not just the ones the library half happened to hold.
+  const map = new Map(Object.entries(await emojiReadMerged(env, store2, 0)));
   let final = html;
   if (map.size) {
     const premium = premiumize(html, map);
@@ -1406,21 +1408,81 @@ async function handleMiniAppApi(request, env, url) {
   if (!session) return bad("session", 401);
   const uid = session.uid;
   if (path === "/api/emoji/all" && request.method === "GET") {
+    const packsMap = await emojiPacksMerged(env, store2);
+    const totals = emojiTotals(packsMap);
     const cache = typeof caches !== "undefined" ? caches.default : null;
-    const ckey = new Request("https://cache.local/emoji-all");
+    // Signature keeps the cache honest: adding a pack changes it, so the list
+    // can never stay stale for the half hour the old fixed key allowed.
+    const sig = totals.packs + ":" + totals.emojis + ":" + (totals.list[0]?.at || 0);
+    const ckey = new Request("https://cache.local/emoji-all-" + sig);
     const hit = cache ? await cache.match(ckey) : null;
     if (hit) return hit;
-    const packsMap = await store2.get("emoji:packs", {});
-    const names = Object.keys(packsMap || {});
-    const sets = await Promise.all(names.map((n) => tg.call("getStickerSet", { name: n }).catch(() => null)));
-    const packs = (sets || []).filter((r) => r && r.sticker_type === "custom_emoji").map((r) => ({
-      name: r.name,
-      title: r.title,
-      items: (r.stickers || []).filter((x) => x.custom_emoji_id).map((x) => ({ id: x.custom_emoji_id, e: x.emoji || "\u2B50" }))
-    }));
-    const res = json({ ok: true, packs }, 200, { "cache-control": "max-age=1800" });
+    const packs = [];
+    let budget = 6; // at most six Telegram look-ups per request; the rest fill in on later loads
+    let registryDirty = false;
+    for (const meta of totals.list) {
+      const raw = packsMap[meta.name] || {};
+      let items = null;
+      if (Array.isArray(raw.items) && raw.items.length) {
+        // legacy inline copy: publish it under its own key, slim the registry
+        items = raw.items;
+        await emojiPackItemsSave(env, store2, meta.name, items);
+        registryDirty = true;
+      } else {
+        items = await emojiPackItemsGet(env, store2, meta.name);
+      }
+      if (!items && budget > 0) {
+        budget -= 1;
+        const set = await tg.call("getStickerSet", { name: meta.name }).catch(() => null);
+        if (set && (set.sticker_type === "custom_emoji" || (set.stickers || [])[0]?.custom_emoji_id)) {
+          items = (set.stickers || []).filter((x) => x.custom_emoji_id).map((x) => ({ id: x.custom_emoji_id, e: x.emoji || "\u2B50" }));
+          await emojiPackItemsSave(env, store2, meta.name, items);
+          raw.title = raw.title || set.title || meta.name;
+          raw.name = meta.name;
+          raw.count = items.length;
+          raw.at = raw.at || Date.now();
+          registryDirty = true;
+        }
+      }
+      if (!items) continue;
+      packs.push({ name: meta.name, title: raw.title || meta.title, count: items.length, at: raw.at || meta.at || 0, items });
+    }
+    if (registryDirty) {
+      for (const meta of totals.list) {
+        const raw = packsMap[meta.name];
+        if (raw) packsMap[meta.name] = emojiPackSlim(raw, meta.name);
+      }
+      await emojiWrite(env, store2, 2, packsMap);
+    }
+    const fresh = emojiTotals(packsMap);
+    const res = json({ ok: true, packs, total: packs.reduce((n, p) => n + p.count, 0), packCount: packs.length, pending: Math.max(0, fresh.packs - packs.length) }, 200, { "cache-control": "max-age=300" });
     if (cache) await cache.put(ckey, res.clone());
     return res;
+  }
+  if (path === "/api/emoji/pack/add" && request.method === "POST") {
+    // `body` is parsed further down for the other routes; read it here so these
+    // endpoints keep working no matter where they sit in the handler.
+    let packReq = {};
+    try { packReq = await request.json(); } catch { return bad("body"); }
+    const raw = String(packReq?.target || packReq?.link || "").trim();
+    const packed = packNameFromText(raw);
+    const bare = raw.replace(/^@/, "").replace(/\/+$/, "").trim();
+    const name = packed || (/^[A-Za-z0-9_]{4,}$/.test(bare) ? bare : "");
+    if (!name) return bad("link");
+    const saved = await savePackByName(env, name);
+    if (!saved.ok) return json({ ok: false, error: saved.error || "pack" });
+    return json({ ok: true, name, title: saved.title, count: saved.stickersCount, emojis: saved.basesCount });
+  }
+  if (path === "/api/emoji/pack/remove" && request.method === "POST") {
+    let rmReq = {};
+    try { rmReq = await request.json(); } catch { return bad("body"); }
+    const name = String(rmReq?.name || "").trim();
+    if (!name) return bad("name");
+    const packsMap = await emojiPacksMerged(env, store2);
+    delete packsMap[name];
+    await emojiWrite(env, store2, 2, packsMap);
+    const totals = emojiTotals(packsMap);
+    return json({ ok: true, packCount: totals.packs, total: totals.emojis });
   }
   if (path === "/api/emoji/img" && request.method === "GET") {
     const id = String(url.searchParams.get("id") || "").replace(/\D/g, "");
@@ -1548,7 +1610,7 @@ async function handleMiniAppApi(request, env, url) {
       return bad("body");
     }
   }
-  if (path === "/api/render" && request.method === "POST") return renderPayload(store2, uid, body);
+  if (path === "/api/render" && request.method === "POST") return renderPayload(env, store2, uid, body);
   if (path === "/api/channel/check" && request.method === "POST") return channelCheck(tg, uid, body?.target);
   if (path === "/api/channel/add" && request.method === "POST") {
     const probe = await channelCheck(tg, uid, body?.target);
@@ -1947,7 +2009,7 @@ var RASA_API = [
   /^\/api\/context$/,
   /^\/api\/render$/,
   /^\/api\/publish$/,
-  /^\/api\/emoji\/(all|img)$/,
+  /^\/api\/emoji\//,
   /^\/api\/draft\//,
   /^\/api\/template\//,
   /^\/api\/channel\//,
@@ -2733,6 +2795,113 @@ function packNameFromText(text) {
 __name(packNameFromText, "packNameFromText");
 __name2(packNameFromText, "packNameFromText");
 __name22(packNameFromText, "packNameFromText");
+/* ── emoji state lives under two key namespaces ──
+   The bot's pack flow has always written `map` / `variants_map` / `packs`
+   through the state object, while the app-facing library reads `emoji:map` /
+   `emoji:packs` from KV. Different flows fed each one, so the picker only ever
+   saw the library half. Reads below merge every namespace *and* every storage
+   layer; writes keep them in sync, so both sides stay whole. */
+var EMOJI_PAIRS = [["map", "emoji:map"], ["variants_map", "emoji:variants_map"], ["packs", "emoji:packs"]];
+function emojiPair(index) { return EMOJI_PAIRS[index]; }
+async function emojiCollect(env, store2, key, out) {
+  const push = (v) => {
+    if (!v || typeof v !== "object") return;
+    for (const k of Object.keys(v)) if (v[k] !== null && v[k] !== undefined) out[k] = v[k];
+  };
+  if (store2) { try { push(await store2.get(key, null)); } catch {} }
+  try { push(await getJson(env, key, null)); } catch {}
+  return out;
+}
+async function emojiReadMerged(env, store2, index) {
+  const pair = emojiPair(index);
+  const out = {};
+  await emojiCollect(env, store2, pair[0], out);
+  await emojiCollect(env, store2, pair[1], out);
+  return out;
+}
+async function emojiWrite(env, store2, index, value) {
+  const pair = emojiPair(index);
+  const kv = env?.KV_FRESH || env?.KV || null;
+  const YEAR = 60 * 60 * 24 * 365;
+  for (const key of pair) {
+    try { await setJson(env, key, value); } catch (e) { console.warn("emoji setJson failed", key, e?.message); }
+    try {
+      if (store2) await store2.put(key, value, YEAR);
+      else if (kv && typeof kv.put === "function") await kv.put(key, JSON.stringify(value));
+    } catch (e) { console.warn("emoji kv mirror failed", key, e?.message); }
+  }
+  return value;
+}
+/* Pack registry keeps the richest entry per pack: the library side only knows
+   {title,count,ts}, the pack side holds the sticker list. */
+async function emojiPacksMerged(env, store2) {
+  const out = {};
+  const absorb = (src, preferRich) => {
+    if (!src) return;
+    for (const [name, rec] of Object.entries(src)) {
+      if (!rec || typeof rec !== "object") continue;
+      const prev = out[name] || {};
+      const rich = !!(rec.items || rec.bases || rec.stickers);
+      out[name] = preferRich === "lib" && rich
+        ? { ...prev, ...rec }
+        : { ...rec, ...prev, title: prev.title || rec.title || name, count: prev.count || rec.count || 0, at: prev.at || rec.at || rec.ts || 0 };
+    }
+  };
+  const legacy = {};
+  await emojiCollect(env, store2, "packs", legacy);
+  const lib = {};
+  await emojiCollect(env, store2, "emoji:packs", lib);
+  absorb(legacy, null);
+  absorb(lib, "lib");
+  return out;
+}
+__name(emojiPair, "emojiPair");
+__name(emojiReadMerged, "emojiReadMerged");
+__name(emojiWrite, "emojiWrite");
+__name(emojiPacksMerged, "emojiPacksMerged");
+/* Items live per pack so the registry stays a few kilobytes: rewriting a
+   megabyte blob on every load is what made the live endpoint time out once
+   several packs were queued behind the six-per-request budget. */
+function emojiPackItemsKey(name) { return "emoji:pack:" + String(name); }
+async function emojiPackItemsGet(env, store2, name) {
+  const key = emojiPackItemsKey(name);
+  if (store2) { try { const v = await store2.get(key, null); if (Array.isArray(v) && v.length) return v; } catch {} }
+  try { const v = await getJson(env, key, null); if (Array.isArray(v) && v.length) return v; } catch {}
+  return null;
+}
+async function emojiPackItemsSave(env, store2, name, items) {
+  const key = emojiPackItemsKey(name);
+  const YEAR = 60 * 60 * 24 * 365;
+  try { await setJson(env, key, items); } catch (e) { console.warn("pack items setJson failed", e?.message); }
+  try {
+    if (store2) await store2.put(key, items, YEAR);
+    else { const kv = env.KV_FRESH || env.KV; if (kv && typeof kv.put === "function") await kv.put(key, JSON.stringify(items)); }
+  } catch (e) { console.warn("pack items kv mirror failed", e?.message); }
+  return items;
+}
+/* Registry entries never carry the sticker list. */
+function emojiPackSlim(rec, name) {
+  const out = { ...(rec || {}) };
+  delete out.items;
+  delete out.bases;
+  out.name = out.name || name;
+  out.count = Number(out.count || 0) || 0;
+  out.at = Number(out.at || out.ts || 0) || 0;
+  delete out.ts;
+  return out;
+}
+function emojiTotals(packsMap) {
+  const list = Object.entries(packsMap || {}).map(([name, rec]) => ({
+    name,
+    title: rec?.title || name,
+    count: Number(rec?.count || (Array.isArray(rec?.items) ? rec.items.length : 0)) || 0,
+    at: Number(rec?.at || rec?.ts || 0) || 0
+  }));
+  list.sort((a, b) => b.at - a.at);
+  return { packs: list.length, emojis: list.reduce((n, p) => n + p.count, 0), list };
+}
+__name(emojiTotals, "emojiTotals");
+
 async function savePackByName(env, packName) {
   const cleanName = String(packName).replace(/^@/, "").replace(/\/+$/, "").trim();
   const res = await tgCall(env, "getStickerSet", { name: cleanName });
@@ -2744,9 +2913,9 @@ async function savePackByName(env, packName) {
   if (stickers.length === 0 || !stickers[0].custom_emoji_id) {
     return { ok: false, error: "\u0627\u06CC\u0646 \u067E\u06A9 \u0634\u0627\u0645\u0644 \u0627\u0645\u0648\u062C\u06CC\u200C\u0647\u0627\u06CC \u067E\u0631\u06CC\u0645\u06CC\u0648\u0645 \u0646\u06CC\u0633\u062A (\u0627\u0633\u062A\u06CC\u06A9\u0631 \u0645\u0639\u0645\u0648\u0644\u06CC \u0627\u0633\u062A)." };
   }
-  const currentMap = await getJson(env, "map", {});
-  const currentVariants = await getJson(env, "variants_map", {});
-  const currentPacks = await getJson(env, "packs", {});
+  const currentMap = await emojiReadMerged(env, null, 0);
+  const currentVariants = await emojiReadMerged(env, null, 1);
+  const currentPacks = Object.fromEntries(Object.entries(await emojiPacksMerged(env, null)).map(([k, v]) => [k, emojiPackSlim(v, k)]));
   const bases = [];
   const seen = /* @__PURE__ */ new Set();
   const sample = [];
@@ -2772,6 +2941,10 @@ async function savePackByName(env, packName) {
       }
     }
   }
+  const items = stickers.filter((st) => st.custom_emoji_id).map((st) => {
+    const emos = Array.isArray(st.emoji) ? st.emoji : [st.emoji];
+    return { id: st.custom_emoji_id, e: (emos.find(Boolean) || "\u2B50").replace(/\uFE0F/g, "") };
+  });
   const packData = {
     title: set.title || set.name,
     name: set.name,
@@ -2779,14 +2952,17 @@ async function savePackByName(env, packName) {
     stickers: stickers.length,
     sample,
     bases,
+    items,
+    at: Date.now(),
     // Telegram only renders a premium icon on a button when its custom emoji
     // identifier is sent explicitly. Keep one representative from each pack.
     icon_custom_emoji_id: stickers.find((st) => st.custom_emoji_id)?.custom_emoji_id || null
   };
-  currentPacks[set.name] = packData;
-  await setJson(env, "map", currentMap);
-  await setJson(env, "variants_map", currentVariants);
-  await setJson(env, "packs", currentPacks);
+  await emojiPackItemsSave(env, null, set.name, items);
+  currentPacks[set.name] = emojiPackSlim(packData, set.name);
+  await emojiWrite(env, null, 0, currentMap);
+  await emojiWrite(env, null, 1, currentVariants);
+  await emojiWrite(env, null, 2, currentPacks);
   const totalEmojis = Object.keys(currentMap).length;
   return {
     ok: true,
@@ -4278,10 +4454,10 @@ ${health.error || health.status}`, true);
     }
   }
   if (data === "nav:packs") {
-    const [packs, map] = await Promise.all([getJson(env, "packs", {}), getJson(env, "map", {})]);
+    const [packs, map] = await Promise.all([emojiPacksMerged(env, null), emojiReadMerged(env, null, 0)]);
     const pkeys = Object.keys(packs);
     const rows = [];
-    for (let i = 0; i < Math.min(10, pkeys.length); i += 2) {
+    for (let i = 0; i < Math.min(24, pkeys.length); i += 2) {
       const row = [];
       for (let j = i; j < Math.min(i + 2, pkeys.length); j++) {
         const pkName = pkeys[j];
@@ -5676,10 +5852,10 @@ ${base}`;
       });
     }
     if (cmd === "/packs" || cmd === "/emojis") {
-      const [packs, map] = await Promise.all([getJson(env, "packs", {}), getJson(env, "map", {})]);
+      const [packs, map] = await Promise.all([emojiPacksMerged(env, null), emojiReadMerged(env, null, 0)]);
       const pkeys = Object.keys(packs);
       const rows = [];
-      for (let i = 0; i < Math.min(10, pkeys.length); i += 2) {
+      for (let i = 0; i < Math.min(24, pkeys.length); i += 2) {
         const row = [];
         for (let j = i; j < Math.min(i + 2, pkeys.length); j++) {
           const pkName = pkeys[j];

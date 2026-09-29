@@ -2,7 +2,9 @@
    navigation, list rendering, add / check / set-target / remove flows.
    node test-channels.js [app.html]                                                    */
 const fs = require('fs');
-const { JSDOM } = require('/home/user/node_modules/jsdom');
+let JSDOM;
+try { JSDOM = require('jsdom').JSDOM; }                                  // repo: npm i jsdom
+catch { JSDOM = require('/home/user/tools/jsdom-loader.js').loadJsdom(); } // sandbox helper
 
 const html = fs.readFileSync(process.argv[2] || './app.html', 'utf8');
 const calls = [];
