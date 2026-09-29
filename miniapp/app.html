@@ -502,8 +502,13 @@ body.mn{-webkit-font-smoothing:antialiased;background-image:radial-gradient(520p
     <h2>📡 اتصالات کانال</h2>
     <p style="color:var(--mu)">کانال‌هایی که رِسا در آن‌ها ادمین است را وصل کن و از همین‌جا وضعیت دسترسی را ببین، مقصد انتشار انتخاب کن یا اتصال را قطع کن.</p>
 
-    <div class="opt"><span class="ti" style="color:var(--mint)">🛡</span><span class="grow"><b>سه گام اتصال</b>
-      <small>۱) ربات @RasaRichBot را در کانال ادمین کن ۲) در ادمین‌ها «ارسال پیام» را روشن بگذار ۳) آدرس کانال را پایین بزن یا از قسمت «انتشار» کانال جدید اضافه کن</small></span></div>
+    <div class="opt"><span class="ti" style="color:var(--mint)">📲</span><span class="grow"><b>اتصال از تلگرام — بدون فوروارد</b>
+      <small>دکمه‌ی زیر چت ربات را باز می‌کند؛ آن‌جا روی «📡 انتخاب کانال از فهرست» بزن و کانال را از فهرست خود تلگرام انتخاب کن. همان لحظه بررسی می‌شود و کانال این‌جا می‌آید.</small></span></div>
+    <button class="btn pri" data-k="tg" id="connTgBtn" style="width:100%">📲 باز کردن انتخاب کانال در تلگرام</button>
+    <div id="connTgLink" style="font-size:12px;color:var(--mu);direction:ltr;text-align:center;margin:6px 0 12px"></div>
+
+    <div class="opt"><span class="ti" style="color:var(--mint)">🛡</span><span class="grow"><b>راه دوم: آدرس کانال</b>
+      <small>کانال‌های عمومی را می‌توانی همین‌جا با @username وصل کنی. ربات باید از قبل در کانال ادمین باشد (در غیر این‌صورت، دلیل دقیق را همین‌جا می‌گوید).</small></span></div>
 
     <span class="lbl">افزودن کانال جدید</span>
     <div class="row">
@@ -1266,6 +1271,8 @@ function conRender(){
 }
 function paintConn(){
   conRender();
+  var lg=$('#connTgLink');
+  if(lg&&!lg.dataset.filled){lg.dataset.filled='1';lg.textContent='t.me/RasaRichBot?start=connect';}
   var btn=$('#connAddBtn');
   if(btn&&!btn.dataset.bound){btn.dataset.bound='1';btn.onclick=function(){
     var t=($('#connIn')||{}).value; t=(t||'').trim();
@@ -1293,7 +1300,24 @@ $('#v-conn').addEventListener('click',function(e){var b=e.target.closest('[data-
   if(k==='check'){var o=b.textContent;b.textContent='…';conCheck(chat).then(function(){b.textContent=o;conRender();if(S.conSt[chat])toast(S.conSt[chat].c==='ok'?'سالم است ✓':'مشکل دسترسی دارد',1800)})}
   else if(k==='target'){P.target=(S.channels||[]).find(function(c){return c.chat===chat})||null;conRender();toast('مقصد انتشار انتخاب شد')}
   else if(k==='rm'){api('/api/channel/remove',{chat:chat}).then(function(r){S.channels=r.channels||[];delete S.conSt[chat];if(P.target&&P.target.chat===chat)P.target=null;conRender();toast('اتصال قطع شد')})}
+  else if(k==='tg'){conOpenPicker()}
 });
+/* باز کردن چت ربات روی دستور اتصال کانال (دکمه‌ی انتخاب کانال در خود تلگرام) */
+var CON_LINK='https://t.me/RasaRichBot?start=connect';
+function conOpenPicker(){
+  var tw=window.Telegram&&window.Telegram.WebApp;hap();
+  try{ if(tw&&tw.openTelegramLink) tw.openTelegramLink(CON_LINK); else if(tw&&tw.openLink) tw.openLink(CON_LINK); else window.open(CON_LINK,'_blank') }
+  catch(e){ try{window.open(CON_LINK,'_blank')}catch(e2){} }
+  toast('در چت ربات، دکمه‌ی «📡 انتخاب کانال از فهرست» را بزن؛ بعد به همین‌جا برگرد');
+}
+/* برگشتن از تلگرام = تازه‌سازی خودکار فهرست، بدون رفرش دستی */
+function conSync(){
+  if(!token) return;
+  return api('/api/context',{}).then(function(c){ if(c&&c.ok&&c.channels){S.channels=c.channels; if(V==='conn')conRender();} return c }).catch(function(){});
+}
+document.addEventListener('visibilitychange',function(){if(!document.hidden)conSync()});
+window.addEventListener('focus',function(){conSync()});
+(function(){var tw=window.Telegram&&window.Telegram.WebApp;if(tw&&tw.onEvent)try{tw.onEvent('activated',function(){conSync()})}catch(e){}})();
 /* در گام ۲ انتشار، میان‌بر به همین بخش */
 /* ── command palette ── */
 var CMD=[['text','افزودن متن','ساخت',function(){insertBlock(mk('text'))}],['heading','افزودن عنوان','ساخت',function(){insertBlock(mk('heading'))}],['btn','افزودن دکمه','ساخت',function(){openBuilder(0,0,null)}],['btn','کتابخانهٔ دکمه‌ها','ساخت',openCatalog],['image','افزودن تصویر','ساخت',openMedia],['table','افزودن جدول','ساخت',function(){insertBlock(mk('table'))}],['formula','افزودن فرمول','ساخت',function(){insertBlock(mk('formula'))}],['quote','افزودن نقل‌قول','ساخت',function(){insertBlock(mk('quote'))}],['details','افزودن بخش بازشونده','ساخت',function(){insertBlock(mk('details'))}],
@@ -1530,6 +1554,9 @@ document.addEventListener('keydown',function(e){var m=e.ctrlKey||e.metaKey,k=e.k
   else if(e.key==='Escape'){closeSheet();palClose()}});
 /* ── boot ── */
 function boot(){bindGalleryInput();setStatus();setView('home');
+  var wantView=(location.hash||'').replace(/^#/,'');
+  if(!wantView){var mv=/[?&]view=([a-zA-Z]+)/.exec(location.search);wantView=mv?mv[1]:''}
+  if(wantView&&VIEWS.indexOf(wantView)>=0)setView(wantView);
   if(!initData){S.offlineWhy='آفلاین — حالت نمایشی';setStatus();paintHome();return}
   api('/api/session',{initData:initData}).then(function(r){
     if(!r.ok){S.offlineWhy='سرور در دسترس نیست';setStatus();paintHome();return}

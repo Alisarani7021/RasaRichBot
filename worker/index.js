@@ -4097,7 +4097,7 @@ function getStartKeyboard(origin) {
         { text: "\u0637\u0631\u0627\u062D\u06CC \u067E\u0633\u062A \u062C\u062F\u06CC\u062F", callback_data: "act:new_post", style: "success", icon_custom_emoji_id: "5307891786088227313" }
       ],
       [
-        { text: "\u0631\u0650\u0633\u0627", web_app: { url: `${origin}/app?v=29` }, style: "primary", icon_custom_emoji_id: "5339209399120465044" }
+        { text: "\u0631\u0650\u0633\u0627", web_app: { url: `${origin}/app?v=31` }, style: "primary", icon_custom_emoji_id: "5339209399120465044" }
       ],
       [
         { text: "\u0645\u062F\u06CC\u0631\u06CC\u062A \u0648 \u0627\u062A\u0635\u0627\u0644 \u06A9\u0627\u0646\u0627\u0644", callback_data: "nav:channel", icon_custom_emoji_id: "4981474026779051847" },
@@ -4970,6 +4970,75 @@ async function creditForwardToken(env, ownerId, token) {
 __name(creditForwardToken, "creditForwardToken");
 __name2(creditForwardToken, "creditForwardToken");
 __name22(creditForwardToken, "creditForwardToken");
+/* Channel copy first: every string the user reads about channels lives here. */
+var PICKER_TEXT = '<b>\u{1F4E1} \u0627\u062a\u0635\u0627\u0644 \u06a9\u0627\u0646\u0627\u0644 \u2014 \u0627\u0646\u062a\u062e\u0627\u0628 \u0627\u0632 \u0641\u0647\u0631\u0633\u062a \u062a\u0644\u06af\u0631\u0627\u0645</b>\n\n\u06f1) \u0645\u0637\u0645\u0626\u0646 \u0634\u0648 \u0631\u0628\u0627\u062a <b>@RasaRichBot</b> \u062f\u0631 \u06a9\u0627\u0646\u0627\u0644 \u062a\u0648 <b>\u0627\u062f\u0645\u06cc\u0646</b> \u0627\u0633\u062a \u0648 \u062f\u0633\u062a\u0631\u0633\u06cc \u00ab\u0627\u0631\u0633\u0627\u0644 \u067e\u06cc\u0627\u0645\u00bb \u062f\u0627\u0631\u062f.\n\u06f2) \u0631\u0648\u06cc \u062f\u06a9\u0645\u0647\u200c\u06cc <b>\u{1F4E1} \u0627\u0646\u062a\u062e\u0627\u0628 \u06a9\u0627\u0646\u0627\u0644 \u0627\u0632 \u0641\u0647\u0631\u0633\u062a</b> \u067e\u0627\u06cc\u06cc\u0646 \u0628\u0632\u0646 \u0648 \u06a9\u0627\u0646\u0627\u0644 \u0631\u0627 \u0627\u0646\u062a\u062e\u0627\u0628 \u06a9\u0646.\n\n\u0647\u0645\u0627\u0646 \u0644\u062d\u0638\u0647 \u0628\u0631\u0631\u0633\u06cc \u0645\u06cc\u200c\u0634\u0648\u062f\u061b \u0627\u06af\u0631 \u0647\u0645\u0647\u200c\u0686\u06cc\u0632 \u062f\u0631\u0633\u062a \u0628\u0627\u0634\u062f \u06a9\u0627\u0646\u0627\u0644 \u0648\u0635\u0644 \u0645\u06cc\u200c\u0634\u0648\u062f \u0648 \u062f\u0631 \u0645\u06cc\u0646\u06cc\u200c\u0627\u067e \u0647\u0645 \u0645\u06cc\u200c\u0628\u06cc\u0646\u06cc.\n\n\u0627\u06af\u0631 \u062f\u06a9\u0645\u0647 \u06a9\u0627\u0631 \u0646\u06a9\u0631\u062f\u060c \u06cc\u06a9 \u067e\u0633\u062a \u0627\u0632 \u06a9\u0627\u0646\u0627\u0644 \u0631\u0627 \u0628\u0647 \u0647\u0645\u06cc\u0646 \u0686\u062a <b>\u0641\u0648\u0631\u0648\u0627\u0631\u062f</b> \u06a9\u0646 \u06cc\u0627 \u0627\u0632 \u0645\u0646\u0648\u06cc <b>\u0645\u062f\u06cc\u0631\u06cc\u062a \u0648 \u0627\u062a\u0635\u0627\u0644 \u06a9\u0627\u0646\u0627\u0644</b> \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u06a9\u0646.';
+var NOTACHAT_TEXT = '\u26a0\ufe0f <b>\u0627\u06cc\u0646 \u0686\u062a \u0642\u0627\u0628\u0644 \u0627\u062a\u0635\u0627\u0644 \u0646\u06cc\u0633\u062a</b>\n\n\u0641\u0647\u0631\u0633\u062a \u0627\u0646\u062a\u062e\u0627\u0628 \u0628\u0631\u0627\u06cc \u06a9\u0627\u0646\u0627\u0644\u200c\u0647\u0627 \u0648 \u0633\u0648\u067e\u0631\u0628\u06af\u0631\u0648\u0647\u200c\u0647\u0627\u0633\u062a. \u06cc\u06a9 \u06a9\u0627\u0646\u0627\u0644 \u0627\u0646\u062a\u062e\u0627\u0628 \u06a9\u0646 \u06cc\u0627 \u0627\u0632 \u062f\u0633\u062a\u0648\u0631 /start \u062f\u0648\u0628\u0627\u0631\u0647 \u0634\u0631\u0648\u0639 \u06a9\u0646.';
+var NOPOST_TEXT = '\u26a0\ufe0f <b>\u0631\u0628\u0627\u062a \u062f\u0631 \u06a9\u0627\u0646\u0627\u0644 \u00ab{T}\u00bb \u0627\u062f\u0645\u06cc\u0646 \u0627\u0633\u062a\u060c \u0648\u0644\u06cc \u0627\u062c\u0627\u0632\u0647\u200c\u06cc \u00ab\u0627\u0631\u0633\u0627\u0644 \u067e\u06cc\u0627\u0645\u00bb \u0646\u062f\u0627\u0631\u062f</b>\n\n\u062f\u0631 \u062a\u0646\u0638\u06cc\u0645\u0627\u062a \u0627\u062f\u0645\u06cc\u0646\u06cc \u06a9\u0627\u0646\u0627\u0644\u060c \u06af\u0632\u06cc\u0646\u0647\u200c\u06cc <b>\u00ab\u0627\u0631\u0633\u0627\u0644 \u067e\u06cc\u0627\u0645\u00bb</b> \u0631\u0627 \u0631\u0648\u0634\u0646 \u06a9\u0646 \u0648 \u0630\u062e\u06cc\u0631\u0647 \u0628\u0632\u0646\u060c \u0633\u067e\u0633 \u062f\u0648\u0628\u0627\u0631\u0647 \u06a9\u0627\u0646\u0627\u0644 \u0631\u0627 \u0627\u0632 \u0641\u0647\u0631\u0633\u062a \u0627\u0646\u062a\u062e\u0627\u0628 \u06a9\u0646.';
+var NOTADMIN_TEXT = '\u274c <b>\u0631\u0628\u0627\u062a \u062f\u0631 \u06a9\u0627\u0646\u0627\u0644 \u00ab{T}\u00bb \u0627\u062f\u0645\u06cc\u0646 \u0646\u06cc\u0633\u062a!</b>\n\n\u0648\u0636\u0639\u06cc\u062a \u0641\u0639\u0644\u06cc \u0631\u0628\u0627\u062a \u062f\u0631 \u06a9\u0627\u0646\u0627\u0644: <code>{S}</code>{E}\n\n<b>\u062d\u0644 \u062f\u0631 \u0633\u0647 \u06af\u0627\u0645:</b>\n\u06f1. \u06a9\u0627\u0646\u0627\u0644 \u0631\u0627 \u0628\u0627\u0632 \u06a9\u0646 \u2192 <b>\u0645\u062f\u06cc\u0631\u06cc\u062a</b> \u2192 <b>\u0627\u062f\u0645\u06cc\u0646\u200c\u0647\u0627</b>\n\u06f2. <b>\u0627\u0641\u0632\u0648\u062f\u0646 \u0627\u062f\u0645\u06cc\u0646</b> \u2192 \u062c\u0633\u062a\u200c\u0648\u062c\u0648\u06cc <b>@RasaRichBot</b> \u2192 \u0627\u0646\u062a\u062e\u0627\u0628\n\u06f3. \u062f\u0633\u062a\u0631\u0633\u06cc <b>\u00ab\u0627\u0631\u0633\u0627\u0644 \u067e\u06cc\u0627\u0645\u00bb</b> \u0631\u0627 \u0631\u0648\u0634\u0646 \u06a9\u0646 \u0648 \u0630\u062e\u06cc\u0631\u0647 \u0628\u0632\u0646\n\n\u0633\u067e\u0633 \u062f\u0648\u0628\u0627\u0631\u0647 \u062f\u06a9\u0645\u0647\u200c\u06cc <b>\u{1F4E1} \u0627\u0646\u062a\u062e\u0627\u0628 \u06a9\u0627\u0646\u0627\u0644 \u0627\u0632 \u0641\u0647\u0631\u0633\u062a</b> \u0631\u0627 \u0628\u0632\u0646.';
+var OKMSG_TEXT = '\u2705 <b>\u06a9\u0627\u0646\u0627\u0644 \u00ab{T}\u00bb \u0648\u0635\u0644 \u0634\u062f!</b>\n\n{U}\u0627\u0632 \u0627\u06cc\u0646 \u0628\u0647 \u0628\u0639\u062f \u0645\u06cc\u200c\u062a\u0648\u0627\u0646\u06cc \u062f\u0631 \u0647\u0645\u06cc\u0646 \u06a9\u0627\u0646\u0627\u0644 \u0627\u0646\u062a\u0634\u0627\u0631 \u0628\u062f\u0647\u06cc. \u0628\u0631\u0627\u06cc \u062f\u06cc\u062f\u0646 \u0648\u0636\u0639\u06cc\u062a \u062f\u0633\u062a\u0631\u0633\u06cc\u060c \u0639\u0648\u0636 \u06a9\u0631\u062f\u0646 \u0645\u0642\u0635\u062f \u06cc\u0627 \u0642\u0637\u0639 \u0627\u062a\u0635\u0627\u0644\u060c \u0628\u062e\u0634 <b>\u{1F4E1} \u0627\u062a\u0635\u0627\u0644\u0627\u062a \u06a9\u0627\u0646\u0627\u0644</b> \u0631\u0627 \u0628\u0627\u0632 \u06a9\u0646.';
+
+/* Single place that links a channel to a user: the Telegram picker, the
+   my_chat_member event and the forwarded-post flow all go through it, so the
+   stored shape can never drift. The bot default destination is only filled
+   while it is still empty. */
+async function linkChannelForUser(env, uid, chat, via) {
+  const list = await getJson(env, `appc:${uid}`, { items: [] });
+  const entry = { chat: String(chat.id), title: chat.title || "\u06A9\u0627\u0646\u0627\u0644", username: chat.username || null, at: Date.now(), via: via || "manual" };
+  const idx = (list.items || []).findIndex((c) => String(c.chat) === String(chat.id));
+  if (idx >= 0) list.items[idx] = { ...list.items[idx], ...entry };
+  else list.items.push(entry);
+  await setJson(env, `appc:${uid}`, list, 400 * 86400);
+  const current = await getJson(env, `ch:${uid}`, null);
+  if (!current || !current.id) {
+    await setJson(env, `ch:${uid}`, { id: chat.id, title: chat.title || "", username: chat.username || null }, 365 * 86400);
+  }
+  return list.items;
+}
+__name(linkChannelForUser, "linkChannelForUser");
+
+/* Answers a shared chat (KeyboardButton.request_chat): one button in Telegram,
+   the native channel list, and an exact fix for every failing case. */
+async function handleSharedChannel(msg, env, origin) {
+  const chatId = msg.chat?.id;
+  const uid = msg.from?.id || chatId;
+  const shared = msg.chat_shared || {};
+  const botId = await resolveBotId(env);
+  const got = await tgCall(env, "getChat", { chat_id: shared.chat_id }).catch((e) => ({ ok: false, description: e?.message || "network" }));
+  const chat = got && got.ok ? got.result : null;
+  if (!chat || (chat.type !== "channel" && chat.type !== "supergroup")) {
+    return await sendPostMessage(env, chatId, { html: NOTACHAT_TEXT });
+  }
+  const title = chat.title || String(chat.id);
+  const member = await tgCall(env, "getChatMember", { chat_id: chat.id, user_id: botId }).catch((e) => ({ ok: false, description: e?.message || "network" }));
+  const status = member && member.ok && member.result ? member.result.status : "";
+  const canPost = !member?.result || member.result.can_post_messages !== false;
+  const isAdmin = status === "administrator" || status === "creator";
+  const tgError = !member?.ok ? String(member?.description || "").slice(0, 140) : "";
+  if (isAdmin && !canPost) return await sendPostMessage(env, chatId, { html: NOPOST_TEXT.split("{T}").join(escapeHtml(title)) });
+  if (!isAdmin) {
+    return await sendPostMessage(env, chatId, { html: NOTADMIN_TEXT
+      .split("{T}").join(escapeHtml(title))
+      .split("{S}").join(escapeHtml(status || "unknown"))
+      .split("{E}").join(tgError ? "\n" + "\u062E\u0637\u0627\u06CC \u062A\u0644\u06AF\u0631\u0627\u0645: <code>" + escapeHtml(tgError) + "</code>" : "") });
+  }
+  await linkChannelForUser(env, uid, chat, "picker");
+  await tgCall(env, "sendMessage", {
+    chat_id: chatId,
+    text: "\u{1F4E1}",
+    reply_markup: { remove_keyboard: true },
+    disable_notification: true
+  }).catch(() => {});
+  return await sendPostMessage(env, chatId, { html: OKMSG_TEXT
+    .split("{T}").join(escapeHtml(title))
+    .split("{U}").join(chat.username ? "\u0622\u062F\u0631\u0633: @" + escapeHtml(chat.username) + "\n\n" : ""),
+    replyMarkup: { inline_keyboard: [
+      [{ text: "\u{1F4E1} \u0627\u062A\u0635\u0627\u0644\u0627\u062A \u06A9\u0627\u0646\u0627\u0644", web_app: { url: `${origin}/app?v=31#conn` }, style: "primary" }],
+      [{ text: "\u{1F39B} \u0645\u062F\u06CC\u0631\u06CC\u062A \u06A9\u0627\u0646\u0627\u0644\u200C\u0647\u0627 \u062F\u0631 \u0631\u0628\u0627\u062A", callback_data: "nav:channel" }]
+    ] }
+  });
+}
+__name(handleSharedChannel, "handleSharedChannel");
+
 async function handleBotMembership(mcm, env, origin) {
   const chat = mcm && mcm.chat;
   const by = mcm && mcm.from;
@@ -4979,16 +5048,7 @@ async function handleBotMembership(mcm, env, origin) {
   const isAdmin = next.status === "administrator" || next.status === "creator";
   const list = await getJson(env, `appc:${by.id}`, { items: [] });
   if (isAdmin) {
-    const entry = { chat: String(chat.id), title: chat.title || "\u06A9\u0627\u0646\u0627\u0644", username: chat.username || null, at: Date.now(), via: "membership" };
-    const idx = (list.items || []).findIndex((c) => String(c.chat) === String(chat.id));
-    if (idx >= 0) list.items[idx] = entry;
-    else list.items.push(entry);
-    await setJson(env, `appc:${by.id}`, list, 400 * 86400);
-    // مقصد پیش‌فرضِ ربات فقط اگر قبلاً چیزی وصل نشده باشد
-    const current = await getJson(env, `ch:${by.id}`, null);
-    if (!current || !current.id) {
-      await setJson(env, `ch:${by.id}`, { id: chat.id, title: chat.title || "", username: chat.username || null }, 365 * 86400);
-    }
+    await linkChannelForUser(env, by.id, chat, "membership");
     try {
       await sendPostMessage(env, by.id, {
         html: `\u2705 <b>\u06A9\u0627\u0646\u0627\u0644 \xAB${escapeHtml(chat.title || "")}\xBB \u0628\u0647 \u0641\u0647\u0631\u0633\u062A \u0627\u062A\u0635\u0627\u0644\u0627\u062A \u0627\u0636\u0627\u0641\u0647 \u0634\u062F!</b>
@@ -5014,6 +5074,7 @@ async function handleMessage(msg, env, origin) {
   const uid = msg.from?.id || chatId;
   const rawText = msg.text || msg.caption || "";
   const entities = msg.text ? msg.entities : msg.caption_entities;
+  if (msg.chat_shared) return handleSharedChannel(msg, env, origin);
   if (msg && msg.forward_origin && rawText) {
     try {
       const fw = String(rawText).match(/t\.me\/RasaRichBot\?start=f_(\d+)_([A-Za-z0-9]{6,64})/i);
@@ -5451,6 +5512,21 @@ ${base}`;
     const startParam = rawText.trim().split(/\s+/)[1] || "";
     if (cmd === "/start" || cmd === "/help") {
       try {
+        if (startParam === "connect") {
+          const pickerKeyboard = {
+            keyboard: [[{ text: "\u{1F4E1} \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0627\u0646\u0627\u0644 \u0627\u0632 \u0641\u0647\u0631\u0633\u062A", request_chat: { request_id: 1, chat_is_channel: true } }]],
+            resize_keyboard: true,
+            one_time_keyboard: true,
+            input_field_placeholder: "\u06CC\u0627 \u06CC\u06A9 \u067E\u0633\u062A \u0631\u0627 \u0641\u0648\u0631\u0648\u0627\u0631\u062F \u06A9\u0646"
+          };
+          return await tgCall(env, "sendMessage", {
+            chat_id: chatId,
+            text: PICKER_TEXT,
+            parse_mode: "HTML",
+            reply_markup: pickerKeyboard,
+            link_preview_options: { is_disabled: true }
+          });
+        }
         if (startParam) {
           let inviterId = null;
           let isForward = false;

@@ -1,8 +1,8 @@
 /* Tests the new «اتصالات کانال» section in the mini app:
    navigation, list rendering, add / check / set-target / remove flows.
-   node test_channels.js app.html                                                    */
+   node test-channels.js [app.html]                                                    */
 const fs = require('fs');
-const { JSDOM } = require('jsdom');   // npm i jsdom
+const { JSDOM } = require('/home/user/node_modules/jsdom');
 
 const html = fs.readFileSync(process.argv[2] || './app.html', 'utf8');
 const calls = [];
@@ -13,7 +13,8 @@ let addVerdict = { ok: true, title: 'کانال تازه', channels: null };
 const dom = new JSDOM(html, {
   runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://rich-post-bot.4lisarani-1.workers.dev/app',
   beforeParse(w) {
-    w.Telegram = { WebApp: { ready() {}, expand() {}, initData: 'user=%7B%22id%22%3A' + UID + '%7D&hash=x&auth_date=1', HapticFeedback: { notificationOccurred() {}, impactOccurred() {}, selectionChanged() {} } } };
+    w.__tgOpened = [];
+    w.Telegram = { WebApp: { ready() {}, expand() {}, initData: 'user=%7B%22id%22%3A' + UID + '%7D&hash=x&auth_date=1', openTelegramLink(u) { w.__tgOpened.push(u) }, openLink(u) { w.__tgOpened.push(u) }, onEvent() {}, HapticFeedback: { notificationOccurred() {}, impactOccurred() {}, selectionChanged() {} } } };
     w.fetch = (url, opts) => {
       const p = String(url), body = opts && opts.body ? JSON.parse(opts.body) : {};
       let d = { ok: true };
@@ -103,6 +104,39 @@ const check = (name, cond, extra) => { results.push([name, !!cond]); console.log
   const shortcut = doc.querySelector('#pubBox [data-p="conn"]');
   check('میان‌بر «مدیریت اتصالات کانال» در مرحله انتشار', !!shortcut);
   if (shortcut) { shortcut.click(); await wait(250); check('میان‌بر به بخش کانال‌ها می‌برد', section.classList.contains('on')); }
+
+
+  /* ── اتصال از خود تلگرام ── */
+  console.log('— اتصال کانال از تلگرام —');
+  const tgBtn = doc.getElementById('connTgBtn');
+  check('دکمه‌ی «باز کردن انتخاب کانال در تلگرام» هست', !!tgBtn);
+  if (tgBtn) {
+    const beforeSync = calls.filter(c => c.p.includes('/api/context')).length;
+    tgBtn.click(); await wait(250);
+    check('کلیک، چت ربات را روی دستور اتصال باز می‌کند',
+      window.__tgOpened.some(u => /t\.me\/RasaRichBot\?start=connect/.test(u)), JSON.stringify(window.__tgOpened));
+    const linkBox = doc.getElementById('connTgLink');
+    check('لینک قابل‌کپی نشان داده می‌شود', !!linkBox && /start=connect/.test(linkBox.textContent), linkBox && linkBox.textContent);
+  }
+  {
+    const b4 = calls.filter(c => c.p.includes('/api/context')).length;
+    doc.dispatchEvent(new window.Event('visibilitychange')); await wait(200);
+    window.dispatchEvent(new window.Event('focus')); await wait(250);
+    const after = calls.filter(c => c.p.includes('/api/context')).length;
+    check('با برگشتن از تلگرام، فهرست خودکار تازه می‌شود', after > b4, `context calls: ${b4} → ${after}`);
+  }
+
+  /* ── مسیردهی مستقیم #conn ── */
+  console.log('— باز شدن مستقیم بخش کانال‌ها —');
+  {
+    const dom2 = new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://rich-post-bot.4lisarani-1.workers.dev/app?v=31#conn',
+      beforeParse(w) { w.Telegram = { WebApp: { ready() {}, expand() {}, initData: '', onEvent() {}, HapticFeedback: {} } }; w.fetch = () => Promise.resolve({ ok: false, status: 503, json: () => Promise.resolve({ ok: false }), text: () => Promise.resolve('') }); } });
+    await new Promise(r => setTimeout(r, 250));
+    const s2 = dom2.window.document.getElementById('v-conn');
+    check('لینک «#conn» مستقیم روی بخش کانال‌ها باز می‌شود', !!(s2 && s2.classList.contains('on')));
+    check('راهنمای خالی‌بودن فهرست نشان داده می‌شود', /کانال/.test(dom2.window.document.getElementById('connList').textContent || ''), (dom2.window.document.getElementById('connList').textContent || '').slice(0, 60));
+    dom2.window.close();
+  }
 
   const failed = results.filter(r => !r[1]);
   console.log(`\n${results.length - failed.length} passed, ${failed.length} failed`);

@@ -1,8 +1,9 @@
 /* Simulates the bot's «اتصال کانال» flow end to end:
-   /start → منوی کانال → اتصال کانال جدید → فوروارد یک پیام از کانال.
+   /start connect → دکمه‌ی انتخاب کانال (request_chat) → chat_shared،
+   و مسیر فوروارد؛ به‌علاوه‌ی ثبت خودکار با my_chat_member.
    The Telegram mock knows the bot's real id, so a check against a wrong id fails
    exactly like production did ("ربات هنوز ادمین نیست" while it actually is).
-   Usage: node channel_connect_test.mjs <bundle.mjs>        (exit 0 = pass)         */
+   Usage: node test-channel-connect.mjs [bundle.mjs]        (exit 0 = pass)         */
 import { pathToFileURL } from 'node:url';
 
 const bundlePath = process.argv[2] || './index.js';
@@ -189,6 +190,70 @@ const membershipUpdate = (chat, byId, status) => ({
   kvData.clear(); doStore.clear();
   await send({ update_id: ++seq, my_chat_member: { chat: { id: CHAT, type: 'private', first_name: 'Ali' }, from: { id: CHAT, first_name: 'Ali' }, date: Date.now(), old_chat_member: { status: 'member' }, new_chat_member: { status: 'kicked' } } });
   check('تغییر وضعیت پیوی چیزی ثبت نمی‌کند', ![...kvData.keys(), ...doStore.keys()].some((k) => k.startsWith('appc:')));
+}
+
+
+/* ── اتصال از فهرست خود تلگرام (KeyboardButton.request_chat) ── */
+console.log('— اتصال از دکمه‌ی «انتخاب کانال از فهرست» —');
+const chatShared = (chatId, extra = {}) => message({ chat_shared: { request_id: 1, chat_id: chatId, ...extra } });
+const plainHtml = (m) => (m?.html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+{
+  /* /start connect → پیام راهنما + دکمهٔ انتخاب کانال */
+  kvData.clear(); doStore.clear(); membership = { [String(REAL_BOT_ID)]: { status: 'administrator', can_post_messages: true }, [String(CHAT)]: { status: 'creator' } };
+  const msgs = await send(message({ text: '/start connect' }));
+  const m = msgs[msgs.length - 1];
+  const kb = m?.markup?.keyboard;
+  const btn = kb && kb[0] && kb[0][0];
+  check('دستور اتصال، پیام راهنما می‌دهد', plainHtml(m).includes('انتخاب کانال از فهرست'), plainHtml(m).slice(0, 70));
+  check('دکمه‌ی request_chat فرستاده شد', !!(btn && btn.request_chat), JSON.stringify(btn));
+  check('فقط کانال‌ها پیشنهاد می‌شوند', !!(btn && btn.request_chat.chat_is_channel === true));
+  check('کیبورد بعد از یک استفاده پنهان می‌شود', m?.markup?.one_time_keyboard === true);
+}
+{
+  /* ربات ادمین است → کانال وصل می‌شود */
+  kvData.clear(); doStore.clear(); membership = { [String(REAL_BOT_ID)]: { status: 'administrator', can_post_messages: true }, [String(CHAT)]: { status: 'creator' } };
+  const msgs = await send(chatShared(CHANNEL.id, { title: CHANNEL.title, username: CHANNEL.username }));
+  const list = JSON.parse(doStore.get(`appc:${CHAT}`) || kvData.get(`appc:${CHAT}`) || '{}');
+  const last = msgs[msgs.length - 1];
+  check('کانال انتخاب‌شده وصل شد', (list.items || []).some((c) => String(c.chat) === String(CHANNEL.id)));
+  check('پیام تأیید نام کانال را دارد', plainHtml(last).includes('پیام‌رسان پول دار'), plainHtml(last).slice(0, 70));
+  check('کیبورد انتخاب کانال برداشته شد', msgs.some((x) => x.markup && x.markup.remove_keyboard === true));
+  check('دکمه‌ی میان‌بر مینی‌اپ در تأییدیه هست', !!(last?.markup?.inline_keyboard?.[0]?.[0]?.web_app));
+}
+{
+  /* ربات ادمین نیست → دقیقاً همان راهنمای سه‌گامی */
+  kvData.clear(); doStore.clear(); membership = { [String(CHAT)]: { status: 'creator' } };
+  const msgs = await send(chatShared(CHANNEL.id, { title: CHANNEL.title }));
+  const list = JSON.parse(doStore.get(`appc:${CHAT}`) || kvData.get(`appc:${CHAT}`) || '{}');
+  const t = plainHtml(msgs[msgs.length - 1]);
+  check('کانال وصل نشد', !(list.items || []).length);
+  check('گفته می‌شود ربات ادمین نیست', t.includes('ادمین نیست'));
+  check('راهنمای افزودن ادمین هست', t.includes('افزودن ادمین') && t.includes('RasaRichBot'), t.slice(0, 80));
+}
+{
+  /* ادمین است ولی حق ارسال پیام ندارد */
+  kvData.clear(); doStore.clear(); membership = { [String(REAL_BOT_ID)]: { status: 'administrator', can_post_messages: false }, [String(CHAT)]: { status: 'creator' } };
+  const msgs = await send(chatShared(CHANNEL.id, { title: CHANNEL.title }));
+  const list = JSON.parse(doStore.get(`appc:${CHAT}`) || kvData.get(`appc:${CHAT}`) || '{}');
+  const t = plainHtml(msgs[msgs.length - 1]);
+  check('عدم اجازه‌ی ارسال پیام جدا گزارش می‌شود', t.includes('ارسال پیام') && t.includes('ندارد'), t.slice(0, 80));
+  check('در این حالت هم چیزی وصل نمی‌شود', !(list.items || []).length);
+}
+{
+  /* چت خصوصی انتخاب شود → رد می‌شود */
+  kvData.clear(); doStore.clear();
+  const msgs = await send(chatShared(CHAT, { title: 'Ali' }));
+  const t = plainHtml(msgs[msgs.length - 1]);
+  check('چت خصوصی قابل اتصال نیست', t.includes('قابل اتصال نیست'), t.slice(0, 60));
+}
+{
+  /* ثبت از فهرست، مقصد پیش‌فرض موجود را عوض نمی‌کند */
+  kvData.clear(); doStore.clear(); membership = { [String(REAL_BOT_ID)]: { status: 'administrator' }, [String(CHAT)]: { status: 'creator' } };
+  doStore.set(`ch:${CHAT}`, JSON.stringify({ id: -1007777777777, title: 'کانال قبلی' }));
+  await send(chatShared(CHANNEL.id, { title: CHANNEL.title }));
+  const fallback = JSON.parse(doStore.get(`ch:${CHAT}`) || '{}');
+  check('مقصد پیش‌فرض قبلی دست‌نخورده می‌ماند', String(fallback.id) === '-1007777777777');
 }
 
 const failed = results.filter((r) => !r[1]);
