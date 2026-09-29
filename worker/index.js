@@ -4970,6 +4970,44 @@ async function creditForwardToken(env, ownerId, token) {
 __name(creditForwardToken, "creditForwardToken");
 __name2(creditForwardToken, "creditForwardToken");
 __name22(creditForwardToken, "creditForwardToken");
+async function handleBotMembership(mcm, env, origin) {
+  const chat = mcm && mcm.chat;
+  const by = mcm && mcm.from;
+  const next = mcm && mcm.new_chat_member;
+  if (!chat || !next || !by || by.is_bot) return;
+  if (chat.type !== "channel" && chat.type !== "supergroup") return;
+  const isAdmin = next.status === "administrator" || next.status === "creator";
+  const list = await getJson(env, `appc:${by.id}`, { items: [] });
+  if (isAdmin) {
+    const entry = { chat: String(chat.id), title: chat.title || "\u06A9\u0627\u0646\u0627\u0644", username: chat.username || null, at: Date.now(), via: "membership" };
+    const idx = (list.items || []).findIndex((c) => String(c.chat) === String(chat.id));
+    if (idx >= 0) list.items[idx] = entry;
+    else list.items.push(entry);
+    await setJson(env, `appc:${by.id}`, list, 400 * 86400);
+    // مقصد پیش‌فرضِ ربات فقط اگر قبلاً چیزی وصل نشده باشد
+    const current = await getJson(env, `ch:${by.id}`, null);
+    if (!current || !current.id) {
+      await setJson(env, `ch:${by.id}`, { id: chat.id, title: chat.title || "", username: chat.username || null }, 365 * 86400);
+    }
+    try {
+      await sendPostMessage(env, by.id, {
+        html: `\u2705 <b>\u06A9\u0627\u0646\u0627\u0644 \xAB${escapeHtml(chat.title || "")}\xBB \u0628\u0647 \u0641\u0647\u0631\u0633\u062A \u0627\u062A\u0635\u0627\u0644\u0627\u062A \u0627\u0636\u0627\u0641\u0647 \u0634\u062F!</b>
+
+\u0627\u0632 \u0628\u062E\u0634 <b>\u{1F4E1} \u0627\u062A\u0635\u0627\u0644\u0627\u062A \u06A9\u0627\u0646\u0627\u0644</b> \u062F\u0631 \u0645\u06CC\u0646\u06CC\u200C\u0627\u067E: \u0648\u0636\u0639\u06CC\u062A \u062F\u0633\u062A\u0631\u0633\u06CC \u0631\u0627 \u0628\u0628\u06CC\u0646\u060C \u0645\u0642\u0635\u062F \u0627\u0646\u062A\u0634\u0627\u0631 \u0631\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646 \u06CC\u0627 \u0627\u062A\u0635\u0627\u0644 \u0631\u0627 \u0642\u0637\u0639 \u06A9\u0646.`,
+        replyMarkup: getStartKeyboard(origin)
+      });
+    } catch (e) {
+      console.warn("membership notify failed", e?.message);
+    }
+    return;
+  }
+  // ربات از کانال حذف/محدود شده: از فهرست همان‌کس که تغییر داده پاکش کن
+  const before = (list.items || []).length;
+  list.items = (list.items || []).filter((c) => String(c.chat) !== String(chat.id));
+  if (list.items.length !== before) await setJson(env, `appc:${by.id}`, list, 400 * 86400);
+}
+__name(handleBotMembership, "handleBotMembership");
+
 async function handleMessage(msg, env, origin) {
   const chatId = msg.chat?.id;
   const isPrivate = msg.chat?.type === "private";
@@ -5794,6 +5832,8 @@ var index_default = {
         try {
           if (update.callback_query) {
             await handleCallback(update.callback_query, env, origin);
+          } else if (update.my_chat_member) {
+            await handleBotMembership(update.my_chat_member, env, origin);
           } else if (update.message) {
             await handleMessage(update.message, env, origin);
           }

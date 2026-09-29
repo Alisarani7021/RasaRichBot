@@ -149,6 +149,48 @@ tgError = null;
   check('پیام غیرفوروارد، خطای مربوط به خودش را می‌گیرد', res.includes('فوروارد نشده'), res.slice(0, 80));
 }
 
+/* ── ثبت خودکار کانال با my_chat_member ── */
+console.log('— اتصال خودکار وقتی ربات ادمین می‌شود —');
+const membershipUpdate = (chat, byId, status) => ({
+  update_id: ++seq,
+  my_chat_member: {
+    chat, from: { id: byId, first_name: 'Ali' },
+    date: Math.floor(Date.now() / 1000),
+    old_chat_member: { status: 'left', user: { id: REAL_BOT_ID, is_bot: true } },
+    new_chat_member: { status, user: { id: REAL_BOT_ID, is_bot: true }, can_post_messages: true }
+  }
+});
+{
+  kvData.clear(); doStore.clear(); membership = {};
+  const msgs = await send(membershipUpdate(CHANNEL, CHAT, 'administrator'));
+  const list = JSON.parse(doStore.get(`appc:${CHAT}`) || kvData.get(`appc:${CHAT}`) || '{}');
+  const fallback = JSON.parse(doStore.get(`ch:${CHAT}`) || kvData.get(`ch:${CHAT}`) || '{}');
+  check('کانال به فهرست مینی‌اپ اضافه شد', (list.items || []).some((c) => String(c.chat) === String(CHANNEL.id)), JSON.stringify(list.items || []).slice(0, 80));
+  check('مقصد پیش‌فرض ربات هم ست شد', String(fallback.id) === String(CHANNEL.id));
+  check('به کاربر اطلاع داده شد', msgs.length > 0 && msgs[0].html.includes('به فهرست اتصالات'), (msgs[0]?.html || '').replace(/<[^>]+>/g, ' ').slice(0, 70));
+}
+{
+  /* کانال دوم: فهرست کامل می‌شود ولی مقصد پیش‌فرض دست‌نخورده می‌ماند */
+  const second = { id: -1009876543210, title: 'کانال دوم', username: 'second', type: 'channel' };
+  await send(membershipUpdate(second, CHAT, 'administrator'));
+  const list = JSON.parse(doStore.get(`appc:${CHAT}`) || kvData.get(`appc:${CHAT}`) || '{}');
+  const fallback = JSON.parse(doStore.get(`ch:${CHAT}`) || kvData.get(`ch:${CHAT}`) || '{}');
+  check('کانال دوم هم به فهرست اضافه شد', (list.items || []).length === 2);
+  check('مقصد پیش‌فرض با کانال دوم عوض نمی‌شود', String(fallback.id) === String(CHANNEL.id));
+}
+{
+  /* حذف ربات از کانال اول → از فهرست پاک می‌شود */
+  await send(membershipUpdate(CHANNEL, CHAT, 'left'));
+  const list = JSON.parse(doStore.get(`appc:${CHAT}`) || kvData.get(`appc:${CHAT}`) || '{}');
+  check('حذف ربات از کانال، فهرست را به‌روز می‌کند', (list.items || []).length === 1 && !(list.items || []).some((c) => String(c.chat) === String(CHANNEL.id)));
+}
+{
+  /* وقتی کسی ربات را از پیوی بلاک می‌کند نباید چیزی ثبت شود */
+  kvData.clear(); doStore.clear();
+  await send({ update_id: ++seq, my_chat_member: { chat: { id: CHAT, type: 'private', first_name: 'Ali' }, from: { id: CHAT, first_name: 'Ali' }, date: Date.now(), old_chat_member: { status: 'member' }, new_chat_member: { status: 'kicked' } } });
+  check('تغییر وضعیت پیوی چیزی ثبت نمی‌کند', ![...kvData.keys(), ...doStore.keys()].some((k) => k.startsWith('appc:')));
+}
+
 const failed = results.filter((r) => !r[1]);
 console.log(`\n${results.length - failed.length} passed, ${failed.length} failed`);
 console.log('RESULT:', failed.length ? 'FAIL ❌' : 'PASS ✅');
