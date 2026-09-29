@@ -11,7 +11,8 @@ const RASA_API = [
   /^\/api\/emoji\/(all|img)$/,
   /^\/api\/draft\//,      // ours: draft/save|load|delete — original uses bare /api/draft
   /^\/api\/template\//,   // ours only
-  /^\/api\/channel\//     // ours: channel/add|remove|check — original uses bare /api/channel
+  /^\/api\/channel\//,     // ours: channel/add|remove|check — original uses bare /api/channel
+  /^\/api\/media\//       // ours: media/upload from mini app gallery
 ];
 const RASA_CORS = {
   'access-control-allow-origin': '*',
