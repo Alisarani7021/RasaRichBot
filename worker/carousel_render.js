@@ -30,7 +30,7 @@ function carouselCaption(state) {
   const s = slides[i] || {};
   const dots = slides.map(function (_, k) { return k === i ? CAR_DOT_ON : CAR_DOT_OFF; }).join(" ");
   const head = "<b>" + carouselEscape(s.title || "") + "</b>";
-  const body = s.caption ? "\n" + carouselEscape(s.caption) : "";
+  const body = s.html ? ("\n" + String(s.html)) : (s.caption ? "\n" + carouselEscape(s.caption) : "");
   const counter = "\n" + carouselFa(i + 1) + " / " + carouselFa(n) + "   " + dots;
   const hint = state.auto === true
     ? "\n\u25B6\uFE0F \u067E\u062E\u0634 \u062E\u0648\u062F\u06A9\u0627\u0631 \u0631\u0648\u0634\u0646 \u2014 \u0647\u0631 \u062F\u0642\u06CC\u0642\u0647 \u064A\u06A9 \u0627\u0633\u0644\u0627\u064A\u062F \u062C\u0644\u0648 \u0645\u06CC\u200C\u0631\u0648\u0645"
@@ -60,7 +60,8 @@ function carouselKeyboard(state) {
   return { inline_keyboard: rows };
 }
 function carouselView(state) {
-  return { fileId: carouselSlide(state).fileId || null, caption: carouselCaption(state), keyboard: carouselKeyboard(state) };
+  const slide = carouselSlide(state);
+  return { fileId: slide.fileId || null, rich: !!state.rich || !!(slide.html && !slide.fileId), caption: carouselCaption(state), keyboard: carouselKeyboard(state) };
 }
 
 if (typeof module !== "undefined" && module.exports) {

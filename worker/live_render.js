@@ -31,6 +31,18 @@ function liveBar(n, total) {
   return LIVE_BAR_FULL.repeat(filled) + LIVE_BAR_EMPTY.repeat(LIVE_BAR_SLOTS - filled);
 }
 function liveClock(ms) { return Math.max(0, Math.floor(Number(ms || 0) / 1000)); }
+var LIVE_SPARK_BLOCKS = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588";
+function liveSpark(series) {
+  const xs = (series || []).map(function (n) { return Number(n) || 0; });
+  if (xs.length < 2) return "";
+  let lo = Math.min.apply(null, xs);
+  let hi = Math.max.apply(null, xs);
+  if (hi === lo) { hi = lo + 1; }
+  return xs.map(function (n) {
+    const k = Math.round(((n - lo) / (hi - lo)) * (LIVE_SPARK_BLOCKS.length - 1));
+    return LIVE_SPARK_BLOCKS.charAt(Math.max(0, Math.min(LIVE_SPARK_BLOCKS.length - 1, k)));
+  }).join("");
+}
 function renderLivePost(state, opts) {
   const o = opts || {};
   const t = liveTally(state);
@@ -60,6 +72,14 @@ function renderLivePost(state, opts) {
           (e.at ? " \u2014 <tg-time unix=\"" + liveClock(e.at) + "\">\u0627\u0644\u0627\u0646</tg-time>" : "") + "</p>";
       }).join("")
     : "";
+  const flow = (state.flow && typeof state.flow === "object")
+    ? "<h3>" + liveEscape(state.flow.emoji || "\u{1F30A}") + " " + liveEscape(state.flow.label || "") + "</h3>" +
+      "<p><b>" + liveEscape(String(state.flow.value)) + liveEscape(state.flow.unit || "") + "</b>" +
+      (state.updatedAt ? " \u2014 <tg-time unix=\"" + liveClock(state.updatedAt) + "\">\u0627\u0644\u0627\u0646</tg-time>" : "") + "</p>" +
+      (Array.isArray(state.flow.series) && state.flow.series.length > 1
+        ? "<pre>" + liveSpark(state.flow.series) + "</pre>"
+        : "")
+    : "";
   const footText = votesOn
     ? "\u26A1\uFE0F \u067E\u0633\u062A \u0632\u0646\u062F\u0647 \u2014 \u0647\u0631 \u0631\u0623\u06cc \u0628\u0644\u0627\u0641\u0627\u0635\u0644\u0647 \u0628\u0631\u0627\u06CC \u0647\u0645\u0647 \u062F\u06cc\u062F\u0647 \u0645\u06CC\u200C\u0634\u0648\u062F"
     : "\u26A1\uFE0F \u067E\u0633\u062A \u0632\u0646\u062F\u0647 \u2014 \u062E\u0648\u062F\u0634 \u0628\u0647\u200C\u0631\u0648\u0632 \u0645\u06CC\u200C\u0634\u0648\u062F\u060C \u0628\u062F\u0648\u0646 \u067E\u06CC\u0627\u0645 \u062C\u062F\u06CC\u062F";
@@ -67,7 +87,8 @@ function renderLivePost(state, opts) {
     (state.updatedAt ? " \u00B7 \u0622\u062E\u0631\u06CC\u0646 \u0628\u0647\u200C\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06CC: <tg-time unix=\"" + liveClock(state.updatedAt) + "\">\u0627\u0644\u0627\u0646</tg-time>" : "") +
     "</p>" +
     "<footer>" + footText + (o.brand ? " \u00B7 " + liveEscape(o.brand) : "") + "</footer>";
-  return head + lead + status + clock + table + timeline + foot;
+  const hero = state.image ? "<img src=\"" + liveEscape(state.image) + "\"/>" : "";
+  return hero + head + lead + status + clock + flow + table + timeline + foot;
 }
 function liveKeyboard(state, origin) {
   const id = state.id;
@@ -89,5 +110,5 @@ function liveKeyboard(state, origin) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { renderLivePost: renderLivePost, liveKeyboard: liveKeyboard, liveTally: liveTally };
+  module.exports = { renderLivePost: renderLivePost, liveKeyboard: liveKeyboard, liveTally: liveTally, liveSpark: liveSpark };
 }

@@ -1375,6 +1375,42 @@ async function handleMiniAppApi(request, env, url) {
   const tg = createTelegram(env, config);
   const store2 = new Store(env, config);
   const path = url.pathname;
+  if (path === "/api/landing/submit" || path === "/api/landing/count") {
+    const pidOf = (v) => String(v || "").replace(/[^a-z0-9_-]/gi, "");
+    if (request.method === "GET" && path === "/api/landing/count") {
+      const pid = pidOf(url.searchParams.get("page"));
+      const subs = pid ? await store2.get(`landsubs:${pid}`, { items: [] }) : { items: [] };
+      return json({ ok: true, count: (subs.items || []).length });
+    }
+    if (request.method !== "POST") return bad("method", 405);
+    let body2 = {};
+    try {
+      body2 = await request.json();
+    } catch {
+      return bad("body");
+    }
+    const pid = pidOf(body2?.page);
+    const page = pid ? await store2.get(`land:${pid}`, null) : null;
+    if (!page || !page.owner) return bad("page", 404);
+    const item = {
+      at: Date.now(),
+      name: String(body2?.name || "").slice(0, 80),
+      contact: String(body2?.contact || "").slice(0, 80),
+      note: String(body2?.note || "").slice(0, 300)
+    };
+    if (!item.name && !item.contact) return bad("empty");
+    const subs = await store2.get(`landsubs:${pid}`, { items: [] });
+    subs.items = [...(subs.items || []), item].slice(-200);
+    await store2.put(`landsubs:${pid}`, subs, 90 * 86400);
+    if (subs.items.length <= 50) {
+      await tgCall(env, "sendMessage", {
+        chat_id: page.owner,
+        text: `📥 ثبت جدید در «${page.title || ""}»\n👤 ${item.name || "—"}\n📞 ${item.contact || "—"}\n📝 ${item.note || "—"}\n\nمجموع ثبت‌ها: ${subs.items.length}`
+      }).catch(() => {
+      });
+    }
+    return json({ ok: true, count: subs.items.length });
+  }
   const cors = { "access-control-allow-origin": "*" };
   if (request.method === "POST" && path === "/api/session") {
     let body2;
@@ -2022,7 +2058,8 @@ var RASA_API = [
   /^\/api\/brand\//,
   /^\/api\/schedule\//,
   /^\/api\/import\//,
-  /^\/api\/ai\//
+  /^\/api\/ai\//,
+  /^\/api\/landing\//
 ];
 var RASA_CORS = {
   "access-control-allow-origin": "*",
@@ -2043,6 +2080,20 @@ var ASSET_TYPES = {
 var rasaEnv = /* @__PURE__ */ __name((env) => Object.assign(Object.create(Object.getPrototypeOf(env) || Object.prototype), env, { STORE: env.RASA_KV }), "rasaEnv");
 async function tryRasaApp(request, env, ctx, url) {
   const path = url.pathname;
+  if (request.method === "GET" && path.startsWith("/p/")) {
+    const pid = path.slice(3).replace(/[^a-z0-9_-]/gi, "");
+    if (!pid) return new Response("not found", { status: 404 });
+    const raw = await env.RASA_KV?.get(`land:${pid}`);
+    let page = null;
+    try {
+      page = raw ? JSON.parse(raw) : null;
+    } catch {
+    }
+    if (!page) return new Response("<!doctype html><html lang=\"fa\" dir=\"rtl\"><meta charset=\"utf-8\"><body style=\"background:#0b0f14;color:#eef2f7;font-family:Tahoma;padding:40px;text-align:center\">این صفحه پیدا نشد یا حذف شده است.</body></html>", { status: 404, headers: { "content-type": "text/html; charset=utf-8" } });
+    return new Response(renderLandingPage(page), {
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store, no-cache, must-revalidate, max-age=0", "x-robots-tag": "noindex" }
+    });
+  }
   const isApi = RASA_API.some((re) => re.test(path));
   if (isApi && request.method === "OPTIONS") return new Response(null, { status: 204, headers: RASA_CORS });
   if (request.method === "GET" && path === "/app") {
@@ -4367,6 +4418,14 @@ async function handleCallback(cb, env, origin) {
   if (typeof cb.data === "string" && cb.data.indexOf("car:") === 0) {
     return handleCarouselTap(cb, env, origin);
   }
+  // community posts: members add their own lines to a post everyone watches
+  if (typeof cb.data === "string" && cb.data.indexOf("comm:") === 0) {
+    return handleCommunityCallback(cb, env, origin);
+  }
+  // three-state posts: the same message opens up to short, mid or full depth
+  if (typeof cb.data === "string" && cb.data.indexOf("deep:") === 0) {
+    return handleDeepCallback(cb, env, origin);
+  }
   const qId = cb.id;
   const chatId = cb.message?.chat?.id;
   const msgId2 = cb.message?.message_id;
@@ -5260,6 +5319,18 @@ function liveBar(n, total) {
   return LIVE_BAR_FULL.repeat(filled) + LIVE_BAR_EMPTY.repeat(LIVE_BAR_SLOTS - filled);
 }
 function liveClock(ms) { return Math.max(0, Math.floor(Number(ms || 0) / 1000)); }
+var LIVE_SPARK_BLOCKS = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588";
+function liveSpark(series) {
+  const xs = (series || []).map(function (n) { return Number(n) || 0; });
+  if (xs.length < 2) return "";
+  let lo = Math.min.apply(null, xs);
+  let hi = Math.max.apply(null, xs);
+  if (hi === lo) { hi = lo + 1; }
+  return xs.map(function (n) {
+    const k = Math.round(((n - lo) / (hi - lo)) * (LIVE_SPARK_BLOCKS.length - 1));
+    return LIVE_SPARK_BLOCKS.charAt(Math.max(0, Math.min(LIVE_SPARK_BLOCKS.length - 1, k)));
+  }).join("");
+}
 function renderLivePost(state, opts) {
   const o = opts || {};
   const t = liveTally(state);
@@ -5289,6 +5360,14 @@ function renderLivePost(state, opts) {
           (e.at ? " \u2014 <tg-time unix=\"" + liveClock(e.at) + "\">\u0627\u0644\u0627\u0646</tg-time>" : "") + "</p>";
       }).join("")
     : "";
+  const flow = (state.flow && typeof state.flow === "object")
+    ? "<h3>" + liveEscape(state.flow.emoji || "\u{1F30A}") + " " + liveEscape(state.flow.label || "") + "</h3>" +
+      "<p><b>" + liveEscape(String(state.flow.value)) + liveEscape(state.flow.unit || "") + "</b>" +
+      (state.updatedAt ? " \u2014 <tg-time unix=\"" + liveClock(state.updatedAt) + "\">\u0627\u0644\u0627\u0646</tg-time>" : "") + "</p>" +
+      (Array.isArray(state.flow.series) && state.flow.series.length > 1
+        ? "<pre>" + liveSpark(state.flow.series) + "</pre>"
+        : "")
+    : "";
   const footText = votesOn
     ? "\u26A1\uFE0F \u067E\u0633\u062A \u0632\u0646\u062F\u0647 \u2014 \u0647\u0631 \u0631\u0623\u06cc \u0628\u0644\u0627\u0641\u0627\u0635\u0644\u0647 \u0628\u0631\u0627\u06CC \u0647\u0645\u0647 \u062F\u06cc\u062F\u0647 \u0645\u06CC\u200C\u0634\u0648\u062F"
     : "\u26A1\uFE0F \u067E\u0633\u062A \u0632\u0646\u062F\u0647 \u2014 \u062E\u0648\u062F\u0634 \u0628\u0647\u200C\u0631\u0648\u0632 \u0645\u06CC\u200C\u0634\u0648\u062F\u060C \u0628\u062F\u0648\u0646 \u067E\u06CC\u0627\u0645 \u062C\u062F\u06CC\u062F";
@@ -5296,7 +5375,8 @@ function renderLivePost(state, opts) {
     (state.updatedAt ? " \u00B7 \u0622\u062E\u0631\u06CC\u0646 \u0628\u0647\u200C\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06CC: <tg-time unix=\"" + liveClock(state.updatedAt) + "\">\u0627\u0644\u0627\u0646</tg-time>" : "") +
     "</p>" +
     "<footer>" + footText + (o.brand ? " \u00B7 " + liveEscape(o.brand) : "") + "</footer>";
-  return head + lead + status + clock + table + timeline + foot;
+  const hero = state.image ? "<img src=\"" + liveEscape(state.image) + "\"/>" : "";
+  return hero + head + lead + status + clock + flow + table + timeline + foot;
 }
 function liveKeyboard(state, origin) {
   const id = state.id;
@@ -5318,7 +5398,7 @@ function liveKeyboard(state, origin) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { renderLivePost: renderLivePost, liveKeyboard: liveKeyboard, liveTally: liveTally };
+  module.exports = { renderLivePost: renderLivePost, liveKeyboard: liveKeyboard, liveTally: liveTally, liveSpark: liveSpark };
 }
 
 /* Live carousel renderer \u2014 one message whose photo changes *in place*.
@@ -5353,7 +5433,7 @@ function carouselCaption(state) {
   const s = slides[i] || {};
   const dots = slides.map(function (_, k) { return k === i ? CAR_DOT_ON : CAR_DOT_OFF; }).join(" ");
   const head = "<b>" + carouselEscape(s.title || "") + "</b>";
-  const body = s.caption ? "\n" + carouselEscape(s.caption) : "";
+  const body = s.html ? ("\n" + String(s.html)) : (s.caption ? "\n" + carouselEscape(s.caption) : "");
   const counter = "\n" + carouselFa(i + 1) + " / " + carouselFa(n) + "   " + dots;
   const hint = state.auto === true
     ? "\n\u25B6\uFE0F \u067E\u062E\u0634 \u062E\u0648\u062F\u06A9\u0627\u0631 \u0631\u0648\u0634\u0646 \u2014 \u0647\u0631 \u062F\u0642\u06CC\u0642\u0647 \u064A\u06A9 \u0627\u0633\u0644\u0627\u064A\u062F \u062C\u0644\u0648 \u0645\u06CC\u200C\u0631\u0648\u0645"
@@ -5383,18 +5463,173 @@ function carouselKeyboard(state) {
   return { inline_keyboard: rows };
 }
 function carouselView(state) {
-  return { fileId: carouselSlide(state).fileId || null, caption: carouselCaption(state), keyboard: carouselKeyboard(state) };
+  const slide = carouselSlide(state);
+  return { fileId: slide.fileId || null, rich: !!state.rich || !!(slide.html && !slide.fileId), caption: carouselCaption(state), keyboard: carouselKeyboard(state) };
 }
 
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { carouselView: carouselView, carouselCaption: carouselCaption, carouselKeyboard: carouselKeyboard, carouselIndex: carouselIndex, carouselFa: carouselFa };
 }
 
+/* Community post renderer \u2014 a post that the audience itself builds, line by
+   line. Same rules as the other renderers: dependency-free, embedded into the
+   worker bundle, shared by the delivery scripts.                            */
 
-/* \u2500\u2500 live carousel \u2500\u2500
-   A carousel that lives inside one message: every tap rewrites the photo in
-   place (editMessageMedia), so a ten-slide post never becomes a ten-message
-   thread. The server can also walk it forward on its own (see applyLiveTick). */
+function communityEscape(v) {
+  return String(v == null ? "" : v)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function communityLine(line) {
+  const name = communityEscape(String(line.name || "").slice(0, 30));
+  const text = communityEscape(String(line.text || "").slice(0, 200));
+  const clock = line.at ? ' <tg-time unix="' + Math.floor(Number(line.at) / 1000) + '">\u0627\u0644\u0627\u0646</tg-time>' : "";
+  return "\u2022 " + text + (name ? " \u2014 <i>" + name + "</i>" : "") + clock;
+}
+function communityStats(state) {
+  const lines = Array.isArray(state.lines) ? state.lines : [];
+  const authors = {};
+  lines.forEach(function (l) { authors[String(l.uid || "?")] = 1; });
+  return { count: lines.length, authors: Object.keys(authors).length };
+}
+function renderCommunityPost(state, opts) {
+  const o = opts || {};
+  const lines = Array.isArray(state.lines) ? state.lines : [];
+  const s = communityStats(state);
+  const open = state.open !== false;
+  const head = "<h2>\u{1F9E9} " + communityEscape(state.title || "\u067E\u0633\u062A\u06CC \u06A9\u0647 \u0628\u0627 \u0647\u0645 \u0645\u06CC\u200C\u0633\u0627\u0632\u06CC\u0645") + "</h2>";
+  const lead = state.subtitle ? "<p>" + communityEscape(state.subtitle) + "</p>" : "";
+  const meta = "<p>\u270D\uFE0F <b>" + s.count + "</b> \u062E\u0637 \u0627\u0632 <b>" + s.authors + "</b> \u0646\u0648\u06CC\u0633\u0646\u062F\u0647" +
+    (state.founderName ? " \u00B7 \u0633\u0627\u0632\u0646\u062F\u0647: " + communityEscape(state.founderName) : "") + "</p>";
+  const body = lines.length
+    ? "<blockquote>" + lines.map(communityLine).join("\n") + "</blockquote>"
+    : "<p><i>\u0647\u0646\u0648\u0632 \u062E\u0637\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u0634\u062F\u0647 \u2014 \u0627\u0648\u0644\u06CC\u0646 \u062E\u0637 \u0631\u0627 \u062A\u0648 \u0628\u0646\u0648\u06CC\u0633.</i></p>";
+  const prog = (function () {
+    const goal = Number(state.goal) || 10;
+    const filled = Math.max(0, Math.min(10, Math.round((s.count * 10) / goal)));
+    return "<p>\u{1F3AF} \u067E\u06CC\u0634\u0631\u0641\u062A: <code>" + "\u2588".repeat(filled) + "\u2591".repeat(10 - filled) + "</code> <b>" + s.count + "/" + goal + "</b></p>";
+  })();
+  const tail = open
+    ? "<footer>\u{1F9E9} \u0627\u06CC\u0646 \u067E\u0633\u062A \u0631\u0627 \u0628\u0627 \u0647\u0645 \u0645\u06CC\u200C\u0633\u0627\u0632\u06CC\u0645" + (o.brand ? " \u00B7 " + communityEscape(o.brand) : "") + "</footer>"
+    : "<footer>\u2705 \u067E\u0633\u062A \u06A9\u0627\u0645\u0644 \u0634\u062F \u2014 \u0645\u0645\u0646\u0648\u0646 \u06A9\u0647 \u0646\u0648\u0634\u062A\u06CC\u062F" + (o.brand ? " \u00B7 " + communityEscape(o.brand) : "") + "</footer>";
+  return head + lead + meta + body + prog + tail;
+}
+function communityKeyboard(state) {
+  const id = state.id;
+  const open = state.open !== false;
+  const rows = [];
+  if (open) rows.push([{ text: "\u270D\uFE0F \u062E\u0637\u0645 \u0631\u0627 \u0627\u0636\u0627\u0641\u0647 \u06A9\u0646", callback_data: "comm:" + id + ":add" }]);
+  rows.push([{ text: "\u{1F504} \u062A\u0627\u0632\u0647\u200C\u0633\u0627\u0632\u06CC", callback_data: "comm:" + id + ":refresh" }]);
+  if (open) rows.push([{ text: "\u2705 \u06A9\u0627\u0645\u0644\u0634 \u06A9\u0646", callback_data: "comm:" + id + ":close" }]);
+  return { inline_keyboard: rows };
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { renderCommunityPost: renderCommunityPost, communityKeyboard: communityKeyboard, communityStats: communityStats };
+}
+
+/* Landing page renderer \u2014 from a post to a small, self-contained page inside
+   Telegram: the worker renders it from the post's own content (no site, no
+   external tools). Inline CSS only, works in the WebView and as a web link. */
+
+function lpEscape(v) {
+  return String(v == null ? "" : v)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function renderLandingPage(page) {
+  const p = page || {};
+  const accent = /^#[0-9a-f]{3,8}$/i.test(String(p.accent || "")) ? p.accent : "#f0b429";
+  const title = lpEscape(p.title || "\u0635\u0641\u062D\u0647\u0654 \u067E\u0633\u062A");
+  const subtitle = lpEscape(p.subtitle || "");
+  const body = String(p.body || "");
+  const blocks = Array.isArray(p.blocks) ? p.blocks : [];
+  const assetPath = function (f) { return '/assets/' + String(f).replace(/[^a-z0-9._/-]/gi, ""); };
+  const hero = p.image ? assetPath(p.image) : "";
+  const photos = Array.isArray(p.photos) ? p.photos.slice(0, 6) : [];
+  const cta = p.cta && p.cta.text ? p.cta : null;
+  const form = p.form !== false;
+  const rows = blocks.map(function (b) {
+    return '<tr><td class="k">' + lpEscape(b.k) + '</td><td class="v">' + lpEscape(b.v) + '</td></tr>';
+  }).join("");
+  const gallery = photos.map(function (f) {
+    return '<img src="' + assetPath(f) + '" alt="">';
+  }).join("");
+  const price = p.price ? '<div class="price">' + lpEscape(p.price) + '</div>' : "";
+  const ctaHtml = cta
+    ? '<a class="cta" href="' + lpEscape(cta.url || "https://t.me/RasaRichBot") + '">' + lpEscape(cta.text) + '</a>'
+    : '';
+  const phone = p.phone ? '<a class="ghost" href="tel:' + lpEscape(p.phone) + '">\u{1F4DE} ' + lpEscape(p.phone) + '</a>' : '';
+  const formHtml = form ? (
+    '<form id="f" autocomplete="off">' +
+    '<h3>\u{1F4DD} ' + lpEscape(p.formTitle || "\u062B\u0628\u062A \u062F\u0631\u062E\u0648\u0627\u0633\u062A") + '</h3>' +
+    '<input name="name" placeholder="\u0627\u0633\u0645 \u0634\u0645\u0627" required>' +
+    '<input name="contact" placeholder="\u0634\u0645\u0627\u0631\u0647 \u06CC\u0627 \u0622\u06CC\u062F\u06CC \u062A\u0644\u06AF\u0631\u0627\u0645" required>' +
+    '<textarea name="note" rows="2" placeholder="\u062A\u0648\u0636\u06CC\u062D (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)"></textarea>' +
+    '<button type="submit">\u0627\u0631\u0633\u0627\u0644</button>' +
+    '<p id="ok" hidden>\u2705 \u062B\u0628\u062A \u0634\u062F \u2014 \u0647\u0645\u06CC\u0646 \u0644\u062D\u0638\u0647 \u0628\u0647 \u0645\u06CC\u0632\u0628\u0627\u0646 \u062E\u0628\u0631 \u0645\u06CC\u200C\u0631\u0648\u062F.</p>' +
+    '<p id="err" hidden>\u26A0\uFE0F \u0634\u062F \u0646\u0634\u062F\u061B \u062F\u0648\u0628\u0627\u0631\u0647 \u062A\u0644\u0627\u0634 \u06A9\u0646.</p>' +
+    '</form>'
+  ) : '';
+  const pid = lpEscape(p.id || "");
+  return '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">' +
+    '<meta name="color-scheme" content="dark">' +
+    '<title>' + title + '</title>' +
+    '<script src="https://telegram.org/js/telegram-web-app.js"><\/script>' +
+    '<style>' +
+    ':root{--a:' + accent + '}' +
+    '*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}' +
+    'body{margin:0;background:#0b0f14;color:#eef2f7;font-family:Vazirmatn,system-ui,"Segoe UI",Tahoma,sans-serif;line-height:1.9}' +
+    '.wrap{max-width:560px;margin:0 auto;padding:14px 14px 40px}' +
+    '.card{background:linear-gradient(180deg,#131a23,#0e141b);border:1px solid #1f2a36;border-radius:20px;overflow:hidden;box-shadow:0 18px 44px rgba(0,0,0,.45)}' +
+    '.hero{height:190px;background:linear-gradient(135deg,var(--a),#2b6cb0);background-size:cover;background-position:center;display:flex;align-items:flex-end}' +
+    '.hero img{width:100%;height:100%;object-fit:cover}' +
+    '.pad{padding:16px}' +
+    'h1{font-size:20px;margin:0 0 6px}' +
+    '.sub{color:#9fb0c3;font-size:13px;margin:0 0 12px}' +
+    'table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}' +
+    'td{padding:9px 10px;border-bottom:1px solid #1e2833}' +
+    'td.k{color:#9fb0c3;width:38%}' +
+    '.price{font-size:18px;font-weight:700;color:var(--a);margin:8px 0}' +
+    '.gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0}' +
+    '.gallery img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px}' +
+    '.cta,.ghost{display:block;text-align:center;text-decoration:none;border-radius:14px;padding:13px;font-weight:700;margin-top:10px}' +
+    '.cta{background:var(--a);color:#10161d}' +
+    '.ghost{background:#16202b;color:#dbe6f2;border:1px solid #22303d}' +
+    'form{margin-top:14px;background:#101821;border:1px solid #1e2833;border-radius:16px;padding:14px}' +
+    'form h3{margin:0 0 10px;font-size:15px}' +
+    'input,textarea{width:100%;margin-bottom:8px;padding:11px;border-radius:12px;border:1px solid #24313e;background:#0c141c;color:#eef2f7;font-family:inherit;font-size:14px}' +
+    'button{width:100%;padding:13px;border:0;border-radius:12px;background:var(--a);color:#10161d;font-weight:800;font-size:15px;font-family:inherit}' +
+    '#ok{color:#4ade80;font-size:13px}#err{color:#f87171;font-size:13px}' +
+    'footer{margin-top:14px;text-align:center;color:#64748b;font-size:12px}' +
+    '</style></head><body><div class="wrap"><div class="card">' +
+    '<div class="hero">' + (hero ? '<img src="' + hero + '" alt="">' : '') + '</div>' +
+    '<div class="pad"><h1>' + title + '</h1>' + (subtitle ? '<p class="sub">' + subtitle + '</p>' : '') +
+    body + price + (gallery ? '<div class="gallery">' + gallery + '</div>' : '') +
+    (rows ? '<table>' + rows + '</table>' : '') +
+    ctaHtml + phone + formHtml +
+    '</div></div><footer>\u{1F3EC} \u0633\u0627\u062E\u062A\u0647\u200C\u0634\u062F\u0647 \u0628\u0627 \u0631\u0650\u0633\u0627 \u00B7 \u0635\u0641\u062D\u0647\u0654 \u0641\u0631\u0648\u062F \u062F\u0627\u062E\u0644 \u062A\u0644\u06AF\u0631\u0627\u0645</footer></div>' +
+    '<script>(function(){var f=document.getElementById("f");if(!f)return;' +
+    'f.addEventListener("submit",function(e){e.preventDefault();var d=Object.fromEntries(new FormData(f).entries());d.page="' + pid + '";' +
+    'fetch("/api/landing/submit",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(d)})' +
+    '.then(function(r){return r.json()}).then(function(j){if(j&&j.ok){f.querySelector("button").disabled=true;document.getElementById("ok").hidden=false;}else{document.getElementById("err").hidden=false;}}) ' +
+    '.catch(function(){document.getElementById("err").hidden=false;});});' +
+    'var tg=window.Telegram&&window.Telegram.WebApp;if(tg){try{tg.ready();tg.expand();tg.setHeaderColor&&tg.setHeaderColor("#0b0f14");}catch(e){}}' +
+    '})();<\/script></body></html>';
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { renderLandingPage: renderLandingPage };
+}
+
+/* Worker glue for the interactive renderers. Embedded into the bundle by
+   cf/build/patch_live_v3.mjs, right after the renderer sources, so the worker
+   and the delivery scripts always agree on how a post looks.
+   Requires the bundle's own helpers (hoisted function declarations):
+   getJson / setJson / deleteKey / tgCall / editPostMessage / sendPostMessage /
+   answerCallback / getStartKeyboard / escapeHtml / applyEmojiSubs /
+   ensureRichHtmlStructure / decorateReplyMarkup / sanitizeTelegramHtml        */
+
+/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 live carousel \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
 function carouselStripIcons(mk) {
   if (!mk || !mk.inline_keyboard) return mk;
   return { ...mk, inline_keyboard: mk.inline_keyboard.map((row) => row.map((b) => {
@@ -5403,6 +5638,13 @@ function carouselStripIcons(mk) {
   })) };
 }
 async function editCarouselMessage(env, chatId, msgId, view) {
+  if (!view.fileId) {
+    // a text tab: the same message rewrites its rich content (images included)
+    return await editPostMessage(env, chatId, msgId, { html: view.caption, replyMarkup: view.keyboard }).catch((e) => {
+      console.warn("text-tab edit failed", e?.message);
+      return null;
+    });
+  }
   const emojiMap = await getJson(env, "map", {});
   const content = applyEmojiSubs(ensureRichHtmlStructure(String(view.caption || "").trim()), {}, emojiMap);
   const caption = sanitizeTelegramHtml(content).slice(0, 1024);
@@ -5464,9 +5706,7 @@ async function handleCarouselTap(cb, env, origin) {
   return await show(`\u0627\u0633\u0644\u0627\u06CC\u062F ${carouselFa(target + 1)} \u0627\u0632 ${carouselFa(n)} \u2713`);
 }
 
-/* \u2500\u2500 the server side of a live post \u2500\u2500
-   A scheduled job with kind:"live_tick" either appends a line to a coverage
-   post (entry/patch) or walks a carousel one slide forward (advance). */
+/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 live ticks: coverage, carousel advance, live flow \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
 async function applyLiveTick(env, job) {
   const id = job.liveId;
   if (!id) return { ok: false, description: "tick without liveId" };
@@ -5479,6 +5719,30 @@ async function applyLiveTick(env, job) {
     await setJson(env, `car:${id}`, st, 30 * 86400);
     const res = await editCarouselMessage(env, job.target, job.messageId, carouselView(st));
     return res && res.ok ? { ok: true, result: { message_id: job.messageId } } : { ok: false, description: res?.description || "carousel advance failed" };
+  }
+  if (job.flow) {
+    const st0 = await getJson(env, `live:${id}`, null);
+    if (!st0) return { ok: false, description: "live state missing" };
+    const f = job.flow;
+    const prevSeries = (st0.flow && Array.isArray(st0.flow.series)) ? st0.flow.series.slice(-24) : (Array.isArray(job.flow.seed) ? job.flow.seed.slice(-24) : []);
+    const last = prevSeries.length ? prevSeries[prevSeries.length - 1] : (Number(f.start) || 0);
+    const drift = (Number(f.step) || 0) + (Math.random() * 2 - 1) * (Number(f.jitter) || 0);
+    let value = last + drift;
+    if (f.min != null) value = Math.max(Number(f.min), value);
+    if (f.max != null) value = Math.min(Number(f.max), value);
+    value = Math.round(value * 100) / 100;
+    st0.flow = {
+      label: f.label || st0.flow?.label || "",
+      emoji: f.emoji || st0.flow?.emoji || "",
+      unit: f.unit || st0.flow?.unit || "",
+      value,
+      series: [...prevSeries, value].slice(-24)
+    };
+    if (f.status) st0.status = f.status;
+    st0.updatedAt = Date.now();
+    await setJson(env, `live:${id}`, st0, 30 * 86400);
+    const res0 = await editLivePost(env, job.target, job.messageId, st0);
+    return res0 && res0.ok ? { ok: true, result: { message_id: job.messageId } } : { ok: false, description: res0?.description || "flow tick failed" };
   }
   const st = await getJson(env, `live:${id}`, null);
   if (!st) return { ok: false, description: "live state missing" };
@@ -5496,6 +5760,116 @@ async function applyLiveTick(env, job) {
   await setJson(env, `live:${id}`, st, 30 * 86400);
   const res = await editLivePost(env, job.target, job.messageId, st);
   return res && res.ok ? { ok: true, result: { message_id: job.messageId } } : { ok: false, description: res?.description || "live tick failed" };
+}
+
+/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 community posts: the audience builds the post \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+async function communityAddLine(env, st, from, text) {
+  const line = {
+    uid: String(from?.id || ""),
+    name: String(from?.first_name || from?.username || "\u0639\u0636\u0648").slice(0, 30),
+    at: Date.now(),
+    text: String(text || "").replace(/\s+/g, " ").trim().slice(0, 200)
+  };
+  if (!line.text) return false;
+  const dupe = (st.lines || []).some((l) => l.uid === line.uid && l.text === line.text);
+  if (!dupe) {
+    st.lines = [...(st.lines || []), line].slice(-60);
+    st.updatedAt = Date.now();
+  }
+  await setJson(env, `comm:${st.id}`, st, 30 * 86400);
+  await editPostMessage(env, st.chatId, st.msgId, { html: renderCommunityPost(st), replyMarkup: communityKeyboard(st) }).catch((e) => {
+    console.warn("community edit failed", e?.message);
+  });
+  return true;
+}
+async function communityDispatch(msg, env, origin) {
+  const uid = msg.from?.id;
+  const text = String(msg.text || "").trim();
+  if (!uid || !text || text.startsWith("/")) return false;
+  const pend = await getJson(env, `st:${uid}`, null);
+  if (!pend || pend.mode !== "community_line" || !pend.cid) return false;
+  if (Date.now() - (pend.at || 0) > 30 * 60 * 1000) {
+    await deleteKey(env, `st:${uid}`);
+    return false;
+  }
+  const st = await getJson(env, `comm:${pend.cid}`, null);
+  await deleteKey(env, `st:${uid}`);
+  if (!st) return false;
+  if (st.open === false) {
+    await sendPostMessage(env, uid, { html: "\u2705 <b>\u0627\u06CC\u0646 \u067E\u0633\u062A \u0628\u0633\u062A\u0647 \u0634\u062F\u0647 \u0627\u0633\u062A.</b>", replyMarkup: getStartKeyboard(origin) }).catch(() => {});
+    return true;
+  }
+  const ok = await communityAddLine(env, st, msg.from, text);
+  await sendPostMessage(env, uid, {
+    html: ok
+      ? `\u2705 <b>\u062E\u0637\u062A \u0627\u0636\u0627\u0641\u0647 \u0634\u062F!</b>\n\n\u0647\u0645\u06CC\u0646 \u062D\u0627\u0644\u0627 \u062F\u0631 \u067E\u0633\u062A \u062F\u06CC\u062F\u0647 \u0645\u06CC\u200C\u0634\u0648\u062F (${(st.lines || []).length} \u062E\u0637).`
+      : "\u26A0\uFE0F \u062E\u0637 \u062E\u0627\u0644\u06CC \u0628\u0648\u062F\u061B \u062F\u0648\u0628\u0627\u0631\u0647 \u0628\u0646\u0648\u06CC\u0633.",
+    replyMarkup: getStartKeyboard(origin)
+  }).catch(() => {});
+  return true;
+}
+async function handleCommunityCallback(cb, env, origin) {
+  const qId = cb.id;
+  const chatId = cb.message?.chat?.id;
+  const msgId = cb.message?.message_id;
+  const uid = cb.from?.id;
+  const parts = String(cb.data || "").split(":");
+  const id = parts[1] || "";
+  const action = parts[2] || "";
+  if (!id || !chatId || !msgId) return answerCallback(env, qId, "\u067E\u06CC\u0627\u0645 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F.", true);
+  const st = await getJson(env, `comm:${id}`, null);
+  if (!st) return answerCallback(env, qId, "\u0627\u06CC\u0646 \u067E\u0633\u062A \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A.", true);
+  st.chatId = chatId;
+  st.msgId = msgId;
+  if (action === "add") {
+    if (st.open === false) return answerCallback(env, qId, "\u0627\u06CC\u0646 \u067E\u0633\u062A \u0628\u0633\u062A\u0647 \u0634\u062F\u0647 \u{1F60A}", true);
+    await setJson(env, `st:${uid}`, { mode: "community_line", cid: id, at: Date.now() }, 1800);
+    await answerCallback(env, qId, "\u270D\uFE0F \u062E\u0637\u062A \u0631\u0627 \u062F\u0631 \u067E\u06CC\u0648\u06CC \u0631\u0628\u0627\u062A \u0628\u0646\u0648\u06CC\u0633");
+    await sendPostMessage(env, uid, {
+      html: `\u270D\uFE0F <b>\u062E\u0637\u062A \u0631\u0627 \u0628\u0631\u0627\u06CC \u067E\u0633\u062A \u00AB${escapeHtml(st.title || "")}\u00BB \u0628\u0646\u0648\u06CC\u0633.</b>\n\n\u0641\u0642\u0637 \u06CC\u06A9 \u062E\u0637 \u2014 \u0647\u0645\u06CC\u0646 \u062D\u0627\u0644\u0627 \u062F\u0631 \u067E\u0633\u062A \u0645\u0646\u062A\u0634\u0631 \u0645\u06CC\u200C\u0634\u0648\u062F.`,
+      replyMarkup: getStartKeyboard(origin)
+    }).catch(() => {});
+    return;
+  }
+  if (action === "close") {
+    if (String(st.founder) !== String(uid)) return answerCallback(env, qId, "\u0641\u0642\u0637 \u0633\u0627\u0632\u0646\u062F\u0647\u0654 \u067E\u0633\u062A \u0645\u06CC\u200C\u062A\u0648\u0627\u0646\u062F \u0628\u0628\u0646\u062F\u062F", true);
+    st.open = false;
+    st.updatedAt = Date.now();
+    await setJson(env, `comm:${id}`, st, 30 * 86400);
+    await editPostMessage(env, chatId, msgId, { html: renderCommunityPost(st), replyMarkup: communityKeyboard(st) }).catch(() => {});
+    return answerCallback(env, qId, "\u2705 \u067E\u0633\u062A \u06A9\u0627\u0645\u0644 \u0634\u062F");
+  }
+  await editPostMessage(env, chatId, msgId, { html: renderCommunityPost(st), replyMarkup: communityKeyboard(st) }).catch(() => {});
+  return answerCallback(env, qId, "\u0628\u0647\u200C\u0631\u0648\u0632 \u0634\u062F \u267B\uFE0F");
+}
+
+
+/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 three-state posts: one message, three depths \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+function deepKeyboard(st) {
+  const levels = st.levels || {};
+  return { inline_keyboard: Object.keys(levels).map((k) => ([{
+    text: (k === st.level ? "\u25CF " : "") + (levels[k].label || k),
+    callback_data: `deep:${st.id}:${k}`
+  }])) };
+}
+async function handleDeepCallback(cb, env, origin) {
+  const qId = cb.id;
+  const chatId = cb.message?.chat?.id;
+  const msgId = cb.message?.message_id;
+  const parts = String(cb.data || "").split(":");
+  const id = parts[1] || "";
+  const level = parts[2] || "";
+  const st = await getJson(env, `deep:${id}`, null);
+  if (!st || !st.levels || !st.levels[level]) return answerCallback(env, qId, "\u0627\u06CC\u0646 \u0646\u0633\u062E\u0647 \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A.", true);
+  st.chatId = chatId;
+  st.msgId = msgId;
+  st.level = level;
+  st.updatedAt = Date.now();
+  await setJson(env, `deep:${id}`, st, 30 * 86400);
+  await editPostMessage(env, chatId, msgId, { html: st.levels[level].html, replyMarkup: deepKeyboard(st) }).catch((e) => {
+    console.warn("deep edit failed", e?.message);
+  });
+  return answerCallback(env, qId, `\u062D\u0627\u0644\u062A: ${st.levels[level].label || level}`);
 }
 
 /* \u2500\u2500 live posts \u2500\u2500
@@ -5574,6 +5948,8 @@ async function handleBotMembership(mcm, env, origin) {
 __name(handleBotMembership, "handleBotMembership");
 
 async function handleMessage(msg, env, origin) {
+  // community line? consume it before any other text handling
+  if (await communityDispatch(msg, env, origin).catch(() => false)) return;
   const chatId = msg.chat?.id;
   const isPrivate = msg.chat?.type === "private";
   const uid = msg.from?.id || chatId;
