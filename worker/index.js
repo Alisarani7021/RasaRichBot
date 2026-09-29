@@ -3616,6 +3616,18 @@ __name2(cleanCompetitorWatermarks, "cleanCompetitorWatermarks");
 __name22(cleanCompetitorWatermarks, "cleanCompetitorWatermarks");
 var encoder = new TextEncoder();
 var BOT_USER_ID = 8865308307;
+var BOT_ID_CACHE = 0;
+async function resolveBotId(env) {
+  if (BOT_ID_CACHE) return BOT_ID_CACHE;
+  try {
+    const me = await tgCall(env, "getMe");
+    if (me && me.ok && me.result && me.result.id) BOT_ID_CACHE = me.result.id;
+  } catch (e) {
+    console.warn("getMe failed while resolving bot id", e?.message);
+  }
+  return BOT_ID_CACHE || BOT_USER_ID;
+}
+__name(resolveBotId, "resolveBotId");
 async function equal(a, b) {
   const hash = /* @__PURE__ */ __name22(async (s) => new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(s))), "hash");
   const [aa, bb] = await Promise.all([hash(a), hash(b)]);
@@ -5078,7 +5090,7 @@ ${escapeHtml(aiRes.error || "\u067E\u0627\u0633\u062E \u0645\u0639\u062A\u0628\u
       return sent2;
     }
     if (state.action === "connect_channel") {
-      const fwdChat = msg.forward_from_chat;
+      const fwdChat = msg.forward_from_chat || msg.forward_origin && (msg.forward_origin.chat || msg.forward_origin.sender_chat) || null;
       if (!fwdChat || fwdChat.type !== "channel" && fwdChat.type !== "supergroup") {
         return await sendPostMessage(env, chatId, {
           html: `\u26A0\uFE0F <b>\u067E\u06CC\u0627\u0645 \u0627\u0631\u0633\u0627\u0644\u06CC \u0627\u0632 \u06A9\u0627\u0646\u0627\u0644 \u0641\u0648\u0631\u0648\u0627\u0631\u062F \u0646\u0634\u062F\u0647 \u0627\u0633\u062A!</b>
@@ -5087,15 +5099,32 @@ ${escapeHtml(aiRes.error || "\u067E\u0627\u0633\u062E \u0645\u0639\u062A\u0628\u
 (\u062C\u0647\u062A \u0627\u0646\u0635\u0631\u0627\u0641 \u0639\u0628\u0627\u0631\u062A \xAB\u0644\u063A\u0648\xBB \u0631\u0627 \u0628\u0641\u0631\u0633\u062A\u06CC\u062F)`
         });
       }
+      const botId = await resolveBotId(env);
       const botMember = await tgCall(env, "getChatMember", {
         chat_id: fwdChat.id,
-        user_id: BOT_USER_ID
-      });
-      if (!botMember || !botMember.ok || botMember.result.status !== "administrator" && botMember.result.status !== "creator") {
+        user_id: botId
+      }).catch((e) => ({ ok: false, description: e?.message || "network" }));
+      const botStatus = botMember && botMember.ok && botMember.result ? botMember.result.status : "";
+      const isBotAdmin = botStatus === "administrator" || botStatus === "creator";
+      if (!isBotAdmin) {
+        const why = botMember && botMember.ok ? `\u0648\u0636\u0639\u06CC\u062A \u0641\u0639\u0644\u06CC \u0631\u0628\u0627\u062a \u062F\u0631 \u06A9\u0627\u0646\u0627\u0644: ${botStatus || "\u0639\u0636\u0648 \u0646\u06CC\u0633\u062A"}` : `\u062E\u0637\u0627\u06CC \u062A\u0644\u06AF\u0631\u0627\u0645: ${String(botMember && botMember.description || "\u0646\u0627\u0645\u0634\u062E\u0635").slice(0, 120)}`;
         return await sendPostMessage(env, chatId, {
           html: `\u274C <b>\u0631\u0628\u0627\u062A \u0647\u0646\u0648\u0632 \u062F\u0631 \u06A9\u0627\u0646\u0627\u0644 \xAB${escapeHtml(fwdChat.title || "")}\xBB \u0627\u062F\u0645\u06CC\u0646 \u0646\u06CC\u0633\u062A!</b>
 
-\u0644\u0637\u0641\u0627\u064B \u0627\u0628\u062A\u062F\u0627 \u0631\u0628\u0627\u062A \u0631\u0627 \u0628\u0627 \u062F\u0633\u062A\u0631\u0633\u06CC \u0627\u0631\u0633\u0627\u0644 \u067E\u06CC\u0627\u0645 \u062F\u0631 \u06A9\u0627\u0646\u0627\u0644 \u0627\u062F\u0645\u06CC\u0646 \u06A9\u0646\u06CC\u062F\u060C \u0633\u067E\u0633 \u0645\u062C\u062F\u062F\u0627\u064B \u067E\u06CC\u0627\u0645 \u0631\u0627 \u0641\u0648\u0631\u0648\u0627\u0631\u062F \u0641\u0631\u0645\u0627\u06CC\u06CC\u062F.`
+${escapeHtml(why)}
+
+<b>\u06F1.</b> \u06A9\u0627\u0646\u0627\u0644 \u2190 \u0645\u062F\u06CC\u0631\u06CC\u062A \u2190 \u0627\u062F\u0645\u06CC\u0646\u200C\u0647\u0627 \u2190 \u0627\u0641\u0632\u0648\u062F\u0646 \u0627\u062F\u0645\u06CC\u0646 \u2190 <b>@RasaRichBot</b>
+<b>\u06F2.</b> \u062F\u0633\u062A\u0631\u0633\u06CC \xAB\u0627\u0631\u0633\u0627\u0644 \u067E\u06CC\u0627\u0645\xBB \u0631\u0627 \u0631\u0648\u0634\u0646 \u0628\u06AF\u0630\u0627\u0631
+<b>\u06F3.</b> \u0628\u0639\u062F \u06CC\u06A9 \u067E\u06CC\u0627\u0645 \u0627\u0632 \u06A9\u0627\u0646\u0627\u0644 \u0631\u0627 \u0647\u0645\u06CC\u0646\u200C\u062C\u0627 \u062F\u0648\u0628\u0627\u0631\u0647 \u0641\u0648\u0631\u0648\u0627\u0631\u062F \u06A9\u0646
+
+<i>(\u062C\u0647\u062A \u0627\u0646\u0635\u0631\u0627\u0641 \xAB\u0644\u063A\u0648\xBB \u0631\u0627 \u0628\u0641\u0631\u0633\u062A)</i>`
+        });
+      }
+      if (fwdChat.type === "channel" && botMember.result.can_post_messages === false) {
+        return await sendPostMessage(env, chatId, {
+          html: `\u26A0\uFE0F <b>\u0631\u0628\u0627\u062A \u062F\u0631 \u06A9\u0627\u0646\u0627\u0644 \xAB${escapeHtml(fwdChat.title || "")}\xBB \u0627\u062F\u0645\u06CC\u0646 \u0627\u0633\u062A\u060C \u0648\u0644\u06CC \u0627\u062C\u0627\u0632\u0647\u200C\u06CC \xAB\u0627\u0631\u0633\u0627\u0644 \u067E\u06CC\u0627\u0645\xBB \u0646\u062F\u0627\u0631\u062F.</b>
+
+\u062F\u0631 \u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u0627\u062F\u0645\u06CC\u0646 \u0647\u0645\u0627\u0646 \u06A9\u0627\u0646\u0627\u0644\u060C \u06AF\u0632\u06CC\u0646\u0647\u200C\u06CC <b>Post Messages</b> \u0631\u0627 \u0631\u0648\u0634\u0646 \u06A9\u0646 \u0648 \u0628\u0639\u062F \u067E\u06CC\u0627\u0645 \u0631\u0627 \u062F\u0648\u0628\u0627\u0631\u0647 \u0641\u0648\u0631\u0648\u0627\u0631\u062F \u06A9\u0646.`
         });
       }
       const channelInfo = {

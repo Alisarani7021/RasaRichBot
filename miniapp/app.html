@@ -497,6 +497,29 @@ body.mn{-webkit-font-smoothing:antialiased;background-image:radial-gradient(520p
   </div>
 </section>
 
+<section class="view" id="v-conn">
+  <div class="card">
+    <h2>📡 اتصالات کانال</h2>
+    <p style="color:var(--mu)">کانال‌هایی که رِسا در آن‌ها ادمین است را وصل کن و از همین‌جا وضعیت دسترسی را ببین، مقصد انتشار انتخاب کن یا اتصال را قطع کن.</p>
+
+    <div class="opt"><span class="ti" style="color:var(--mint)">🛡</span><span class="grow"><b>سه گام اتصال</b>
+      <small>۱) ربات @RasaRichBot را در کانال ادمین کن ۲) در ادمین‌ها «ارسال پیام» را روشن بگذار ۳) آدرس کانال را پایین بزن یا از قسمت «انتشار» کانال جدید اضافه کن</small></span></div>
+
+    <span class="lbl">افزودن کانال جدید</span>
+    <div class="row">
+      <input class="fld grow" id="connIn" dir="ltr" placeholder="@channel یا -100…">
+      <button class="btn pri" id="connAddBtn">بررسی و اتصال</button>
+    </div>
+    <div id="connVerdict"></div>
+    <button class="btn" id="connCheckAll" style="width:100%;margin-top:10px">بررسی وضعیت همه‌ی کانال‌ها</button>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <h3>کانال‌های متصل</h3>
+    <div id="connList"></div>
+  </div>
+</section>
+
 <section class="view" id="v-schedule">
   <div class="card">
     <h2>⏰ زمان‌بندی انتشار</h2>
@@ -981,12 +1004,12 @@ function emAddHTML(){return '<h3 style="margin-top:18px">اموجی پرمیوم
 function emAddInit(){emMount($('#sheet'),function(id,em){closeSheet();var b=find(D.active),ta=b?document.querySelector('.blk[data-id="'+b.id+'"] textarea[data-f="t"]'):null;
   if(ta){var p=ta.selectionStart==null?ta.value.length:ta.selectionStart;emInsert(ta,p,ta.selectionEnd==null?p:ta.selectionEnd,id,em)}else{var nk=mk('text');nk.t=emTag(id,em);insertBlock(nk)}})}
 /* ── views ── */
-var VIEWS=['home','build','preview','library','channels','friends','brand','schedule','ai','import','about'];
+var VIEWS=['home','build','preview','library','channels','conn','friends','brand','schedule','ai','import','about'];
 function setView(v){V=v;VIEWS.forEach(function(x){var el=$('#v-'+x); if(el) el.classList.toggle('on',x===v)});$$('.nav button').forEach(function(b){b.classList.toggle('on',b.dataset.v===v)});document.body.dataset.view=v;
-  if(v==='home')paintHome();if(v==='library')paintLib();if(v==='channels')paintPub();if(v==='friends')paintFriends();if(v==='brand')paintBrand();if(v==='schedule')paintSchedule();if(v==='ai')paintAI();if(v==='import')paintImport();if(v==='build'||v==='preview')paintPV();
+  if(v==='home')paintHome();if(v==='library')paintLib();if(v==='channels')paintPub();if(v==='conn')paintConn();if(v==='friends')paintFriends();if(v==='brand')paintBrand();if(v==='schedule')paintSchedule();if(v==='ai')paintAI();if(v==='import')paintImport();if(v==='build'||v==='preview')paintPV();
   $('#fab').classList.toggle('hide',v!=='build'||D.mode!=='visual');window.scrollTo(0,0)}
 var MAIN_NAV=[['build','ساخت','spark'],['preview','پیش‌نمایش','eye'],['library','کتابخانه','grid'],['channels','انتشار','send']];
-var EXTRA_NAV=[['brand','برند','box'],['schedule','زمان‌بندی','send'],['ai','هوش مصنوعی','spark'],['import','واردات','link'],['friends','دوستان','users'],['about','درباره','box'],['home','خانه','home']];
+var EXTRA_NAV=[['conn','کانال‌ها','channel'],['brand','برند','box'],['schedule','زمان‌بندی','send'],['ai','هوش مصنوعی','spark'],['import','واردات','link'],['friends','دوستان','users'],['about','درباره','box'],['home','خانه','home']];
 var NAV=MAIN_NAV;
 $('.nav').innerHTML=MAIN_NAV.map(function(n){return '<button data-v="'+n[0]+'">'+ic(n[2],22)+n[1]+'</button>'}).join('');
 $('.nav').addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;hap('pick');if(b.dataset.v==='build'&&!D.blocks.length&&V==='home'){newDoc()}else setView(b.dataset.v)});
@@ -1161,7 +1184,7 @@ function paintPub(){try{var el=$('#pubBox'); if(!el) return; var st=P.step,h='<d
   h+='<div id="pubCreditBar" style="margin-bottom:12px;padding:10px;border-radius:12px;background:var(--s2);font-size:13px;color:var(--mu)">در حال بارگذاری اعتبار...</div>';
   h+='<div id="pubBrandBar" style="margin-bottom:12px"></div>';
   if(st===1){h+=hasContent()?'<b>'+dg(D.blocks.length)+' بلوک'+(D.blocks.some(function(b){return b.type==='buttons'})?' و دکمه‌ها':'')+' آمادهٔ رندر نهایی است</b><p style="color:var(--mu)">پیام از سرور رِسا رندر می‌شود تا دقیقاً همان چیزی که منتشر می‌شود را ببینی.</p>'+(S.online?'':'<div class="vd bad">انتشار فقط از داخل ربات ممکن است.</div>')+'<div class="row" style="margin-top:10px"><label style="display:flex;align-items:center;gap:8px;font-size:13px"><input type="checkbox" id="sigToggle" checked> حذف امضای رِسا (۱ اعتبار)</label><span class="grow"></span><button class="btn" id="brandApplyBtn">اعمال برند</button></div><button class="btn pri" data-p="render" '+(S.online&&!P.busy?'':'disabled')+' style="width:100%;margin-top:10px">'+(P.busy?'در حال رندر…':'رندر نهایی و ادامه')+'</button>':'<div class="empty"><div class="em">'+ic('spark',28)+'</div><b>پیامی برای انتشار نیست</b><button class="btn pri" data-p="build">رفتن به ساخت</button></div>'}
-  else if(st===2){h+='<b>کانال مقصد</b><div style="margin-top:10px">'+(S.channels.length?S.channels.map(function(c){return '<div class="opt'+(P.target&&P.target.chat===c.chat?' on':'')+'" data-p="pick" data-chat="'+qa(c.chat)+'" role="button" tabindex="0"><span class="ti" style="color:var(--mint)">'+ic('channel',22)+'</span><span class="grow"><b>'+esc(c.title)+'</b><small>'+(c.username?'@'+esc(c.username):esc(c.chat))+'</small></span><button class="btn red" data-p="rm" data-chat="'+qa(c.chat)+'" style="padding:5px 10px">حذف</button></div>'}).join(''):'<p style="color:var(--mu)">هنوز کانالی وصل نکرده‌ای.</p>')+'</div><span class="lbl">اتصال کانال جدید</span><div class="row"><input class="fld grow" id="chIn" dir="ltr" placeholder="@channel"><button class="btn" data-p="add">بررسی</button></div>'+(P.verdict?'<div class="vd '+P.verdict.c+'">'+P.verdict.h+'</div>':'')+'<div class="row" style="margin-top:14px"><button class="btn" data-p="s1">بازگشت</button><button class="btn pri grow" data-p="s3" '+(P.target?'':'disabled')+'>ادامه</button></div>'}
+  else if(st===2){h+='<b>کانال مقصد</b><div style="margin-top:10px">'+(S.channels.length?S.channels.map(function(c){return '<div class="opt'+(P.target&&P.target.chat===c.chat?' on':'')+'" data-p="pick" data-chat="'+qa(c.chat)+'" role="button" tabindex="0"><span class="ti" style="color:var(--mint)">'+ic('channel',22)+'</span><span class="grow"><b>'+esc(c.title)+'</b><small>'+(c.username?'@'+esc(c.username):esc(c.chat))+'</small></span><button class="btn red" data-p="rm" data-chat="'+qa(c.chat)+'" style="padding:5px 10px">حذف</button></div>'}).join(''):'<p style="color:var(--mu)">هنوز کانالی وصل نکرده‌ای.</p>')+'</div><div class="row" style="margin-bottom:8px"><button class="btn" data-p="conn">📡 مدیریت اتصالات کانال</button></div><span class="lbl">اتصال کانال جدید</span><div class="row"><input class="fld grow" id="chIn" dir="ltr" placeholder="@channel"><button class="btn" data-p="add">بررسی</button></div>'+(P.verdict?'<div class="vd '+P.verdict.c+'">'+P.verdict.h+'</div>':'')+'<div class="row" style="margin-top:14px"><button class="btn" data-p="s1">بازگشت</button><button class="btn pri grow" data-p="s3" '+(P.target?'':'disabled')+'>ادامه</button></div>'}
   else if(st===3){h+='<b>مرور نهایی</b><div class="pvhost" style="margin:12px 0" id="pubPv"></div><div class="opt on"><span class="ti" style="color:var(--mint)">'+ic('channel',22)+'</span><span><b>'+(P.target?esc(P.target.title):'کانال')+'</b><small>مقصد انتشار</small></span></div><div class="row" style="margin-top:10px"><label style="display:flex;align-items:center;gap:6px;font-size:12px"><input type="checkbox" id="delMediaChk"> حذف عکس‌ها بعد انتشار</label></div><div class="row" style="margin-top:10px"><button class="btn" data-p="s2">بازگشت</button><button class="btn pri grow" data-p="go" '+(P.busy?'disabled':'')+'>'+ic('send',18)+(P.busy?'در حال انتشار…':'انتشار پیام')+'</button><button class="btn" data-p="sched">⏰ زمان‌بندی</button></div>'}
   else{var r=P.res||{};h+=r.ok?'<div class="succ"><div class="ck">'+ic('check',36)+'</div><b style="font-size:18px">منتشر شد!</b><p style="color:var(--mu)">پیامت در «'+(P.target?esc(P.target.title):'کانال')+'» نشست.</p>'+(r.link?'<a class="btn pri" href="'+qa(r.link)+'" target="_blank" rel="noopener">مشاهده در کانال</a>':'')+' <button class="btn" data-p="again">پیام دیگر</button></div>':'<div class="vd bad"><b>منتشر نشد</b><br>'+esc(r.error==='permissions'?'ربات مجوز کافی برای ارسال در این کانال ندارد.':(r.error||'خطای ناشناخته'))+'</div><div class="row" style="margin-top:12px"><button class="btn pri" data-p="s3">تلاش دوباره</button></div>'}
   el.innerHTML=h+'</div>';if(st===3){$('#pubPv').innerHTML=pvHtml()}
@@ -1191,6 +1214,7 @@ function paintPub(){try{var el=$('#pubBox'); if(!el) return; var st=P.step,h='<d
 }
 $('#pubBox').addEventListener('click',function(e){var b=e.target.closest('[data-p]');if(!b)return;var p=b.dataset.p;hap();
   if(p==='build')setView('build');
+  else if(p==='conn')setView('conn');
   else if(p==='render'){P.busy=true;paintPub();render().then(function(h){P.busy=false;if(h){P.step=2;hap('ok')}paintPub()})}
   else if(p==='pick'){P.target=S.channels.find(function(c){return c.chat===b.dataset.chat});paintPub()}
   else if(p==='rm'){e.stopPropagation();api('/api/channel/remove',{chat:b.dataset.chat}).then(function(r){S.channels=r.channels||[];if(P.target&&!S.channels.some(function(c){return c.chat===P.target.chat}))P.target=null;paintPub();toast('حذف شد')})}
@@ -1205,9 +1229,75 @@ $('#pubBox').addEventListener('click',function(e){var b=e.target.closest('[data-
   else if(p==='go'){P.busy=true;paintPub();var pr=(P.ver===D.ver&&P.html)?Promise.resolve(P.html):render();
     pr.then(function(h){if(!h){P.busy=false;paintPub();return}var delChk=$('#delMediaChk'); var delMedia=delChk&&delChk.checked; return api('/api/publish',{target:P.target.chat,rich:{html:h,deleteMedia:delMedia}}).then(function(r){P.busy=false;P.res=r;P.step=4;paintPub();hap(r.ok?'ok':'err'); if(delMedia&&r.ok){ S.media=[]; }})})}
   else if(p==='again'){P={step:1,html:'',ver:-1,target:null,busy:false,res:null,verdict:null};newDoc()}});
+
+/* ─────────────── اتصالات کانال ─────────────── */
+S.conSt={};
+function conVerdict(c,h){var el=$('#connVerdict'); if(!el) return; el.innerHTML='<div class="vd '+c+'" style="margin-top:10px">'+h+'</div>'}
+function conFacts(r){
+  var parts=[];
+  parts.push('<span class="chip '+(r.bot&&r.bot.admin?'on':'')+'">'+ic('check',14)+'ربات ادمین'+(r.bot&&r.bot.admin?' ✓':' ✗')+'</span>');
+  parts.push('<span class="chip '+(r.user&&r.user.admin?'on':'')+'">'+ic('users',14)+'تو ادمین'+(r.user&&r.user.admin?' ✓':' ✗')+'</span>');
+  return '<div class="row" style="gap:6px;margin-top:6px">'+parts.join('')+'</div>';
+}
+function conCheck(chat,then){
+  return api('/api/channel/check',{target:chat}).then(function(r){
+    S.conSt[chat]={c:r.ok?'ok':'bad',h:(r.ok?'«'+esc(r.title||chat)+'» آماده است ✓ دسترسی ربات و تو تأیید شد.':'بازه‌ی «'+esc(r.title||chat)+'» مشکل دارد — '+(r.bot&&!r.bot.admin?'ربات ادمین نیست یا دسترسی ارسال پیام ندارد.':'تو در این کانال ادمین نیستی.'))};
+    if(then)then(r);
+    return r;
+  });
+}
+function conRender(){
+  var box=$('#connList'); if(!box) return;
+  var items=S.channels||[];
+  if(!items.length){ box.innerHTML='<div class="empty"><b>هنوز کانالی وصل نیست</b><small>آدرس کانال را بالا بنویس تا رِسا بررسی و وصل کند.</small></div>'; return }
+  box.innerHTML=items.map(function(c){
+    var st=S.conSt[c.chat];
+    return '<div class="opt" style="display:block">'
+      +'<div style="display:flex;align-items:center;gap:8px">'
+      +'<span class="ti" style="color:var(--mint)">'+ic('channel',20)+'</span>'
+      +'<span class="grow"><b>'+esc(c.title||'کانال')+'</b><small>'+(c.username?'@'+esc(c.username):esc(c.chat))+(P.target&&P.target.chat===c.chat?' • مقصد فعلی انتشار':'')+'</small></span>'
+      +'<button class="btn" data-k="check" data-chat="'+qa(c.chat)+'" style="padding:5px 10px">بررسی</button>'
+      +'<button class="btn" data-k="target" data-chat="'+qa(c.chat)+'" style="padding:5px 10px">انتخاب</button>'
+      +'<button class="btn red" data-k="rm" data-chat="'+qa(c.chat)+'" style="padding:5px 10px">حذف</button>'
+      +'</div>'
+      +(st?'<div class="vd '+st.c+'" style="margin-top:8px">'+st.h+'</div>':'')
+      +'</div>';
+  }).join('');
+}
+function paintConn(){
+  conRender();
+  var btn=$('#connAddBtn');
+  if(btn&&!btn.dataset.bound){btn.dataset.bound='1';btn.onclick=function(){
+    var t=($('#connIn')||{}).value; t=(t||'').trim();
+    if(!t){toast('آدرس کانال را بنویس');return}
+    btn.disabled=true;conVerdict('','<b>در حال بررسی…</b>');
+    api('/api/channel/add',{target:t}).then(function(r){
+      btn.disabled=false;
+      if(r.channels)S.channels=r.channels;
+      if(!r.ok&&r.bot===undefined){
+        conVerdict('bad','آدرس را پیدا نکردم — «'+esc(t)+'» را بررسی کن. ربات باید در آن کانال عضو باشد.');hap('err');conRender();return}
+      if(r.bot&&!r.bot.admin){conVerdict('bad','ربات در «'+esc(r.title||t)+'» ادمین نیست یا دسترسی «ارسال پیام» ندارد.'+conFacts(r));hap('err');conRender();return}
+      if(r.user&&!r.user.admin){conVerdict('bad','تو در «'+esc(r.title||t)+'» ادمین نیستی.'+conFacts(r));hap('err');conRender();return}
+      conVerdict('ok','«'+esc(r.title||t)+'» وصل شد ✓'+conFacts(r));hap('ok');toast('کانال وصل شد');
+      var el=$('#connIn');if(el)el.value='';
+      conCheck(String((r.channels&&r.channels.length?r.channels[r.channels.length-1].chat:'')).trim()||t,function(){conRender()});
+      conRender();
+    });}}
+  var all=$('#connCheckAll');
+  if(all&&!all.dataset.bound){all.dataset.bound='1';all.onclick=function(){
+    var items=(S.channels||[]).slice(); if(!items.length){toast('کانالی برای بررسی نیست');return}
+    all.disabled=true; toast('بررسی ' + items.length + ' کانال…');
+    var i=0; (function next(){ if(i>=items.length){all.disabled=false;toast('بررسی تمام شد');return} conCheck(items[i++].chat).then(next) })();}}
+}
+$('#v-conn').addEventListener('click',function(e){var b=e.target.closest('[data-k]');if(!b)return;var k=b.dataset.k,chat=b.dataset.chat;hap();
+  if(k==='check'){var o=b.textContent;b.textContent='…';conCheck(chat).then(function(){b.textContent=o;conRender();if(S.conSt[chat])toast(S.conSt[chat].c==='ok'?'سالم است ✓':'مشکل دسترسی دارد',1800)})}
+  else if(k==='target'){P.target=(S.channels||[]).find(function(c){return c.chat===chat})||null;conRender();toast('مقصد انتشار انتخاب شد')}
+  else if(k==='rm'){api('/api/channel/remove',{chat:chat}).then(function(r){S.channels=r.channels||[];delete S.conSt[chat];if(P.target&&P.target.chat===chat)P.target=null;conRender();toast('اتصال قطع شد')})}
+});
+/* در گام ۲ انتشار، میان‌بر به همین بخش */
 /* ── command palette ── */
 var CMD=[['text','افزودن متن','ساخت',function(){insertBlock(mk('text'))}],['heading','افزودن عنوان','ساخت',function(){insertBlock(mk('heading'))}],['btn','افزودن دکمه','ساخت',function(){openBuilder(0,0,null)}],['btn','کتابخانهٔ دکمه‌ها','ساخت',openCatalog],['image','افزودن تصویر','ساخت',openMedia],['table','افزودن جدول','ساخت',function(){insertBlock(mk('table'))}],['formula','افزودن فرمول','ساخت',function(){insertBlock(mk('formula'))}],['quote','افزودن نقل‌قول','ساخت',function(){insertBlock(mk('quote'))}],['details','افزودن بخش بازشونده','ساخت',function(){insertBlock(mk('details'))}],
- ['eye','نمایش پیش‌نمایش','برو',function(){setView('preview')}],['save','ذخیره پیش‌نویس','عملیات',saveDraft],['bolt','ساخت از قالب','برو',function(){setView('library')}],['channel','اتصال کانال','برو',function(){P.step=2;setView('channels')}],['send','انتشار','برو',function(){P.step=1;setView('channels')}],['undo','برگشت','ویرایش',undo],['redo','تکرار','ویرایش',redo],['home','صفحهٔ اصلی','برو',function(){setView('home')}]];
+ ['eye','نمایش پیش‌نمایش','برو',function(){setView('preview')}],['save','ذخیره پیش‌نویس','عملیات',saveDraft],['bolt','ساخت از قالب','برو',function(){setView('library')}],['channel','اتصال کانال','برو',function(){P.step=2;setView('channels')}],['send','انتشار','برو',function(){P.step=1;setView('channels')}],['channel','اتصالات کانال','برو',function(){setView('conn')}],['undo','برگشت','ویرایش',undo],['redo','تکرار','ویرایش',redo],['home','صفحهٔ اصلی','برو',function(){setView('home')}]];
 var PI=0,PL=[];
 function paintFriends(){
   var box=$('#inviteBox'), cbox=$('#creditsBox');
