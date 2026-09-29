@@ -4363,6 +4363,10 @@ async function handleCallback(cb, env, origin) {
   if (typeof cb.data === "string" && cb.data.indexOf("vote:") === 0) {
     return handleLiveVote(cb, env, origin);
   }
+  // live-carousel taps: same idea, but the photo itself swaps in place
+  if (typeof cb.data === "string" && cb.data.indexOf("car:") === 0) {
+    return handleCarouselTap(cb, env, origin);
+  }
   const qId = cb.id;
   const chatId = cb.message?.chat?.id;
   const msgId2 = cb.message?.message_id;
@@ -5226,7 +5230,11 @@ __name(handleSharedChannel, "handleSharedChannel");
 /* Live-post renderer \u2014 the single source of truth for how an interactive post
    looks. The worker bundle embeds this exact file (build-time injection), and
    the delivery script uses it too, so the first message and every later edit
-   are byte-identical.  Keep it dependency-free plain JS. */
+   are byte-identical.  Keep it dependency-free plain JS.
+
+   Two shapes live here:
+   \u00B7 poll posts   \u2014 options + votes, bars move as subscribers tap
+   \u00B7 live coverage \u2014 status + entries, the server appends news by itself      */
 
 var LIVE_BAR_SLOTS = 10;
 var LIVE_BAR_FULL = "\u2588";
@@ -5255,9 +5263,11 @@ function liveClock(ms) { return Math.max(0, Math.floor(Number(ms || 0) / 1000));
 function renderLivePost(state, opts) {
   const o = opts || {};
   const t = liveTally(state);
+  const votesOn = (state.options || []).length > 0;
   const over = !!(state.endsAt && Date.now() > state.endsAt);
   const head = "<h2>" + liveEscape(state.title || "\u0646\u0638\u0631\u0633\u0646\u062c\u06cc \u0632\u0646\u062f\u0647") + "</h2>";
   const lead = state.subtitle ? "<p>" + liveEscape(state.subtitle) + "</p>" : "";
+  const status = state.status ? "<p><b>" + liveEscape(state.status) + "</b></p>" : "";
   const clock = state.endsAt
     ? "<p>\u23F3 " + (over ? "\u0645\u0647\u0644\u062a \u062a\u0645\u0627\u0645 \u0634\u062f \u2014 \u062f\u0631 " : "\u0645\u0647\u0644\u062a \u062f\u0627\u0631\u062f: ") +
       "<tg-time unix=\"" + liveClock(state.endsAt) + "\">" + (over ? "\u0645\u0647\u0644\u062a \u062a\u0645\u0627\u0645" : "\u062f\u0631 \u062d\u0627\u0644 \u0634\u0645\u0631\u0634") + "</tg-time>" +
@@ -5271,26 +5281,221 @@ function renderLivePost(state, opts) {
   const table = rows
     ? "<table bordered striped compact><tr><th>\u06AF\u0632\u06cc\u0646\u0647</th><th>\u0633\u0647\u0645</th><th>\u0646\u0645\u0648\u062f\u0627\u0631</th><th>\u0631\u0623\u06cc</th></tr>" + rows + "</table>"
     : "";
-  const foot = "<p>\u{1F465} \u0645\u062c\u0645\u0648\u0639 \u0622\u0631\u0627: <b>" + t.total + "</b>" +
-    (state.updatedAt ? " \u00B7 \u0622\u062e\u0631\u06cc\u0646 \u0628\u0647\u200C\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc: <tg-time unix=\"" + liveClock(state.updatedAt) + "\">\u0627\u0644\u0627\u0646</tg-time>" : "") +
+  const entries = Array.isArray(state.entries) ? state.entries : [];
+  const timeline = entries.length
+    ? "<h3>\u{1F6F0} \u0644\u062D\u0638\u0647\u200C\u0628\u0647\u200C\u0644\u062D\u0638\u0647</h3>" +
+      entries.slice(-12).map(function (e) {
+        return "<p>\u2022 " + liveEscape(e.text || "") +
+          (e.at ? " \u2014 <tg-time unix=\"" + liveClock(e.at) + "\">\u0627\u0644\u0627\u0646</tg-time>" : "") + "</p>";
+      }).join("")
+    : "";
+  const footText = votesOn
+    ? "\u26A1\uFE0F \u067E\u0633\u062A \u0632\u0646\u062F\u0647 \u2014 \u0647\u0631 \u0631\u0623\u06cc \u0628\u0644\u0627\u0641\u0627\u0635\u0644\u0647 \u0628\u0631\u0627\u06CC \u0647\u0645\u0647 \u062F\u06cc\u062F\u0647 \u0645\u06CC\u200C\u0634\u0648\u062F"
+    : "\u26A1\uFE0F \u067E\u0633\u062A \u0632\u0646\u062F\u0647 \u2014 \u062E\u0648\u062F\u0634 \u0628\u0647\u200C\u0631\u0648\u0632 \u0645\u06CC\u200C\u0634\u0648\u062F\u060C \u0628\u062F\u0648\u0646 \u067E\u06CC\u0627\u0645 \u062C\u062F\u06CC\u062F";
+  const foot = "<p>\u{1F465} \u0645\u062C\u0645\u0648\u0639 \u0622\u0631\u0627: <b>" + t.total + "</b>" +
+    (state.updatedAt ? " \u00B7 \u0622\u062E\u0631\u06CC\u0646 \u0628\u0647\u200C\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06CC: <tg-time unix=\"" + liveClock(state.updatedAt) + "\">\u0627\u0644\u0627\u0646</tg-time>" : "") +
     "</p>" +
-    "<footer>\u26A1\uFE0F \u067E\u0633\u062A \u0632\u0646\u062F\u0647 \u2014 \u0647\u0631 \u0631\u0623\u06cc \u0628\u0644\u0627\u0641\u0627\u0635\u0644\u0647 \u0628\u0631\u0627\u06CC \u0647\u0645\u0647 \u062f\u06cc\u062f\u0647 \u0645\u06cc\u200C\u0634\u0648\u062f" + (o.brand ? " \u00B7 " + liveEscape(o.brand) : "") + "</footer>";
-  return head + lead + clock + table + foot;
+    "<footer>" + footText + (o.brand ? " \u00B7 " + liveEscape(o.brand) : "") + "</footer>";
+  return head + lead + status + clock + table + timeline + foot;
 }
 function liveKeyboard(state, origin) {
   const id = state.id;
+  const votesOn = (state.options || []).length > 0;
   const over = !!(state.endsAt && Date.now() > state.endsAt);
   const btns = (state.options || []).map(function (opt) {
     return { text: opt.label, callback_data: "vote:" + id + ":" + opt.key };
   });
   const rows = [];
   for (let i = 0; i < btns.length; i += 2) rows.push(btns.slice(i, i + 2));
-  if (over) {
-    rows.push([{ text: "\u{1F3C1} \u0646\u062a\u06cc\u062c\u0647 \u0646\u0647\u0627\u06cc\u06cc", callback_data: "vote:" + id + ":__refresh" }]);
+  if (!votesOn) {
+    rows.push([{ text: "\u267B\uFE0F \u0628\u0647\u200C\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06CC \u067E\u0633\u062A", callback_data: "vote:" + id + ":__refresh" }]);
+  } else if (over) {
+    rows.push([{ text: "\u{1F3C1} \u0646\u062A\u06CC\u062C\u0647 \u0646\u0647\u0627\u06CC\u06CC", callback_data: "vote:" + id + ":__refresh" }]);
   } else {
-    rows.push([{ text: "\u267B\uFE0F \u0628\u0647\u200C\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0646\u0645\u0648\u062f\u0627\u0631", callback_data: "vote:" + id + ":__refresh" }]);
+    rows.push([{ text: "\u267B\uFE0F \u0628\u0647\u200C\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06CC \u0646\u0645\u0648\u062F\u0627\u0631", callback_data: "vote:" + id + ":__refresh" }]);
   }
   return { inline_keyboard: rows };
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { renderLivePost: renderLivePost, liveKeyboard: liveKeyboard, liveTally: liveTally };
+}
+
+/* Live carousel renderer \u2014 one message whose photo changes *in place*.
+   Same rules as live_render.js: dependency-free, embedded into the worker
+   bundle by the build script, and reused by the delivery script so the first
+   message and every later edit are byte-identical.                          */
+
+var CAR_DOT_ON = "\u25CF";
+var CAR_DOT_OFF = "\u25CB";
+var CAR_DIGITS = "\u06F0\u06F1\u06F2\u06F3\u06F4\u06F5\u06F6\u06F7\u06F8\u06F9";
+
+function carouselEscape(v) {
+  return String(v == null ? "" : v)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function carouselFa(n) {
+  return String(n).replace(/[0-9]/g, function (d) { return CAR_DIGITS.charAt(Number(d)); });
+}
+function carouselIndex(state) {
+  const n = (state.slides || []).length;
+  if (!n) return 0;
+  let i = Number(state.idx || 0);
+  if (!isFinite(i)) i = 0;
+  i = Math.round(i);
+  return Math.max(0, Math.min(n - 1, i));
+}
+function carouselSlide(state) { return (state.slides || [])[carouselIndex(state)] || {}; }
+function carouselCaption(state) {
+  const slides = state.slides || [];
+  const n = slides.length;
+  const i = carouselIndex(state);
+  const s = slides[i] || {};
+  const dots = slides.map(function (_, k) { return k === i ? CAR_DOT_ON : CAR_DOT_OFF; }).join(" ");
+  const head = "<b>" + carouselEscape(s.title || "") + "</b>";
+  const body = s.caption ? "\n" + carouselEscape(s.caption) : "";
+  const counter = "\n" + carouselFa(i + 1) + " / " + carouselFa(n) + "   " + dots;
+  const hint = state.auto === true
+    ? "\n\u25B6\uFE0F \u067E\u062E\u0634 \u062E\u0648\u062F\u06A9\u0627\u0631 \u0631\u0648\u0634\u0646 \u2014 \u0647\u0631 \u062F\u0642\u06CC\u0642\u0647 \u064A\u06A9 \u0627\u0633\u0644\u0627\u064A\u062F \u062C\u0644\u0648 \u0645\u06CC\u200C\u0631\u0648\u0645"
+    : "";
+  const tail = "\n\u{1F3A0} \u06A9\u0627\u0631\u0648\u0633\u0644 \u0632\u0646\u062F\u0647 \u00B7 \u064A\u06A9 \u067E\u06CC\u0627\u0645\u060C " + carouselFa(n) + " \u0639\u06A9\u0633";
+  return head + body + counter + hint + tail;
+}
+function carouselKeyboard(state) {
+  const id = state.id;
+  const slides = state.slides || [];
+  const n = slides.length;
+  const i = carouselIndex(state);
+  const rows = [];
+  rows.push([
+    { text: "\u25C0\uFE0F", callback_data: "car:" + id + ":p" },
+    { text: carouselFa(i + 1) + " / " + carouselFa(n), callback_data: "car:" + id + ":x" },
+    { text: "\u25B6\uFE0F", callback_data: "car:" + id + ":n" }
+  ]);
+  const jump = [];
+  for (let k = 0; k < n; k++) {
+    jump.push({ text: (k === i ? CAR_DOT_ON + " " : "") + carouselFa(k + 1), callback_data: "car:" + id + ":" + k });
+  }
+  for (let r = 0; r < jump.length; r += 5) rows.push(jump.slice(r, r + 5));
+  rows.push([state.auto === true
+    ? { text: "\u23F8 \u0646\u06AF\u0647\u200C\u062F\u0627\u0634\u062A\u0646 \u067E\u062E\u0634 \u062E\u0648\u062F\u06A9\u0627\u0631", callback_data: "car:" + id + ":pause" }
+    : { text: "\u25B6\uFE0F \u067E\u062E\u0634 \u062E\u0648\u062F\u06A9\u0627\u0631", callback_data: "car:" + id + ":play" }]);
+  return { inline_keyboard: rows };
+}
+function carouselView(state) {
+  return { fileId: carouselSlide(state).fileId || null, caption: carouselCaption(state), keyboard: carouselKeyboard(state) };
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { carouselView: carouselView, carouselCaption: carouselCaption, carouselKeyboard: carouselKeyboard, carouselIndex: carouselIndex, carouselFa: carouselFa };
+}
+
+
+/* \u2500\u2500 live carousel \u2500\u2500
+   A carousel that lives inside one message: every tap rewrites the photo in
+   place (editMessageMedia), so a ten-slide post never becomes a ten-message
+   thread. The server can also walk it forward on its own (see applyLiveTick). */
+function carouselStripIcons(mk) {
+  if (!mk || !mk.inline_keyboard) return mk;
+  return { ...mk, inline_keyboard: mk.inline_keyboard.map((row) => row.map((b) => {
+    const { icon_custom_emoji_id, ...rest } = b;
+    return rest;
+  })) };
+}
+async function editCarouselMessage(env, chatId, msgId, view) {
+  const emojiMap = await getJson(env, "map", {});
+  const content = applyEmojiSubs(ensureRichHtmlStructure(String(view.caption || "").trim()), {}, emojiMap);
+  const caption = sanitizeTelegramHtml(content).slice(0, 1024);
+  const markup = decorateReplyMarkup(view.keyboard, emojiMap);
+  const media = { type: "photo", media: view.fileId, caption, parse_mode: "HTML" };
+  const unchanged = (res) => !!res && /not modified/i.test(String(res?.description || ""));
+  let res = null;
+  try {
+    res = await tgCall(env, "editMessageMedia", { chat_id: chatId, message_id: msgId, media, ...markup ? { reply_markup: markup } : {} });
+    if (res && res.ok) return res;
+    if (unchanged(res)) return { ok: true, result: { message_id: msgId }, unchanged: true };
+    const res2 = await tgCall(env, "editMessageMedia", { chat_id: chatId, message_id: msgId, media, ...markup ? { reply_markup: carouselStripIcons(markup) } : {} });
+    if (res2 && res2.ok) return res2;
+    if (unchanged(res2)) return { ok: true, result: { message_id: msgId }, unchanged: true };
+    res = res2 || res;
+  } catch (e) {
+    console.warn("carousel edit failed", e?.message);
+  }
+  return res;
+}
+async function handleCarouselTap(cb, env, origin) {
+  const qId = cb.id;
+  const chatId = cb.message?.chat?.id;
+  const msgId = cb.message?.message_id;
+  const parts = String(cb.data || "").split(":");
+  const id = parts[1] || "";
+  const action = parts[2] || "";
+  if (!id || !chatId || !msgId) return answerCallback(env, qId, "\u067E\u06CC\u0627\u0645 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F.", true);
+  const state = await getJson(env, `car:${id}`, null);
+  if (!state || !Array.isArray(state.slides) || !state.slides.length) return answerCallback(env, qId, "\u0627\u06CC\u0646 \u06A9\u0627\u0631\u0648\u0633\u0644 \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A.", true);
+  const n = state.slides.length;
+  const cur = carouselIndex(state);
+  const show = async (toast) => {
+    await editCarouselMessage(env, chatId, msgId, carouselView(state));
+    return answerCallback(env, qId, toast);
+  };
+  if (action === "x") {
+    return answerCallback(env, qId, `\u0627\u0633\u0644\u0627\u06CC\u062F ${carouselFa(cur + 1)} \u0627\u0632 ${carouselFa(n)} \u2014 \u0628\u0627 \u25C0\uFE0F \u0648 \u25B6\uFE0F \u0648\u0631\u0642 \u0628\u0632\u0646`);
+  }
+  if (action === "pause" || action === "play") {
+    const on = action === "play";
+    if (state.auto === on) return answerCallback(env, qId, on ? "\u067E\u062E\u0634 \u062E\u0648\u062F\u06A9\u0627\u0631 \u0627\u0632 \u0642\u0628\u0644 \u0631\u0648\u0634\u0646 \u0628\u0648\u062F" : "\u067E\u062E\u0634 \u062E\u0648\u062F\u06A9\u0627\u0631 \u0646\u06AF\u0647 \u062F\u0627\u0634\u062A\u0647 \u0634\u062F\u0647 \u0628\u0648\u062F");
+    state.auto = on;
+    state.updatedAt = Date.now();
+    await setJson(env, `car:${id}`, state, 30 * 86400);
+    return await show(on ? "\u25B6\uFE0F \u067E\u062E\u0634 \u062E\u0648\u062F\u06A9\u0627\u0631 \u0631\u0648\u0634\u0646 \u0634\u062F \u2014 \u0647\u0631 \u062F\u0642\u06CC\u0642\u0647 \u06CC\u06A9 \u0627\u0633\u0644\u0627\u06CC\u062F" : "\u23F8 \u067E\u062E\u0634 \u062E\u0648\u062F\u06A9\u0627\u0631 \u0646\u06AF\u0647 \u062F\u0627\u0634\u062A\u0647 \u0634\u062F");
+  }
+  let target = cur;
+  if (action === "n") target = (cur + 1) % n;
+  else if (action === "p") target = (cur - 1 + n) % n;
+  else {
+    const t = Number(action);
+    if (!isFinite(t) || t < 0 || t >= n) return answerCallback(env, qId, "\u0627\u0633\u0644\u0627\u06CC\u062F \u0646\u0627\u0645\u0639\u062A\u0628\u0631", true);
+    target = Math.round(t);
+  }
+  state.idx = target;
+  state.updatedAt = Date.now();
+  await setJson(env, `car:${id}`, state, 30 * 86400);
+  return await show(`\u0627\u0633\u0644\u0627\u06CC\u062F ${carouselFa(target + 1)} \u0627\u0632 ${carouselFa(n)} \u2713`);
+}
+
+/* \u2500\u2500 the server side of a live post \u2500\u2500
+   A scheduled job with kind:"live_tick" either appends a line to a coverage
+   post (entry/patch) or walks a carousel one slide forward (advance). */
+async function applyLiveTick(env, job) {
+  const id = job.liveId;
+  if (!id) return { ok: false, description: "tick without liveId" };
+  if (job.advance) {
+    const st = await getJson(env, `car:${id}`, null);
+    if (!st || !Array.isArray(st.slides) || !st.slides.length) return { ok: false, description: "carousel state missing" };
+    if (st.auto === false) return { ok: true, result: { message_id: job.messageId }, skipped: true };
+    st.idx = (carouselIndex(st) + 1) % st.slides.length;
+    st.updatedAt = Date.now();
+    await setJson(env, `car:${id}`, st, 30 * 86400);
+    const res = await editCarouselMessage(env, job.target, job.messageId, carouselView(st));
+    return res && res.ok ? { ok: true, result: { message_id: job.messageId } } : { ok: false, description: res?.description || "carousel advance failed" };
+  }
+  const st = await getJson(env, `live:${id}`, null);
+  if (!st) return { ok: false, description: "live state missing" };
+  st.entries = Array.isArray(st.entries) ? st.entries : [];
+  if (job.entry && job.entry.text) {
+    st.entries.push({ at: Number(job.entry.at) || Number(job.scheduledAt) || Date.now(), text: String(job.entry.text).slice(0, 280) });
+    if (st.entries.length > 40) st.entries = st.entries.slice(-40);
+  }
+  if (job.patch && typeof job.patch === "object") {
+    if (typeof job.patch.title === "string") st.title = job.patch.title.slice(0, 120);
+    if (typeof job.patch.subtitle === "string") st.subtitle = job.patch.subtitle.slice(0, 300);
+    if (typeof job.patch.status === "string") st.status = job.patch.status.slice(0, 120);
+  }
+  st.updatedAt = Date.now();
+  await setJson(env, `live:${id}`, st, 30 * 86400);
+  const res = await editLivePost(env, job.target, job.messageId, st);
+  return res && res.ok ? { ok: true, result: { message_id: job.messageId } } : { ok: false, description: res?.description || "live tick failed" };
 }
 
 /* \u2500\u2500 live posts \u2500\u2500
@@ -5313,7 +5518,7 @@ async function handleLiveVote(cb, env, origin) {
   const action = parts[2] || "";
   if (!id || !chatId || !msgId) return answerCallback(env, qId, "\u067e\u0633\u062a \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f.", true);
   const state = await getJson(env, `live:${id}`, null);
-  if (!state || !state.options) return answerCallback(env, qId, "\u0627\u06cc\u0646 \u0646\u0638\u0631\u0633\u0646\u062c\u06cc \u062f\u0631 \u062f\u0633\u062a\u0631\u0633 \u0646\u06cc\u0633\u062a.", true);
+  if (!state || (!state.options && action !== "__refresh")) return answerCallback(env, qId, "\u0627\u06cc\u0646 \u0646\u0638\u0631\u0633\u0646\u062c\u06cc \u062f\u0631 \u062f\u0633\u062a\u0631\u0633 \u0646\u06cc\u0633\u062a.", true);
   const now = Date.now();
   const over = !!(state.endsAt && now > state.endsAt);
   if (action === "__refresh") {
@@ -6069,8 +6274,13 @@ var index_default = {
               const jobIdx = (sched.jobs || []).findIndex((j) => j.id === g.id && j.status === "pending");
               if (jobIdx < 0) continue;
               const job = sched.jobs[jobIdx];
+              let tj = {};
+              if (job.kind === "live_tick") {
+                tj = await applyLiveTick(env, job);
+              } else {
               const tgRes = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendRichMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: job.target, rich_message: { html: job.html } }) });
-              const tj = await tgRes.json().catch(() => ({}));
+              tj = await tgRes.json().catch(() => ({}));
+              }
               if (tj.ok) {
                 job.status = "done";
                 job.doneAt = now;
