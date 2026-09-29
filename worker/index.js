@@ -4359,6 +4359,10 @@ var backButton = /* @__PURE__ */ __name22((origin) => ({
   inline_keyboard: [[{ text: "\u2190 \u0628\u0627\u0632\u06AF\u0634\u062A \u0628\u0647 \u0645\u0646\u0648", callback_data: "nav:home" }]]
 }), "backButton");
 async function handleCallback(cb, env, origin) {
+  // live-post votes come from channel subscribers, not from the operator
+  if (typeof cb.data === "string" && cb.data.indexOf("vote:") === 0) {
+    return handleLiveVote(cb, env, origin);
+  }
   const qId = cb.id;
   const chatId = cb.message?.chat?.id;
   const msgId2 = cb.message?.message_id;
@@ -5218,6 +5222,122 @@ async function handleSharedChannel(msg, env, origin) {
   });
 }
 __name(handleSharedChannel, "handleSharedChannel");
+
+/* Live-post renderer \u2014 the single source of truth for how an interactive post
+   looks. The worker bundle embeds this exact file (build-time injection), and
+   the delivery script uses it too, so the first message and every later edit
+   are byte-identical.  Keep it dependency-free plain JS. */
+
+var LIVE_BAR_SLOTS = 10;
+var LIVE_BAR_FULL = "\u2588";
+var LIVE_BAR_EMPTY = "\u2591";
+
+function liveEscape(v) {
+  return String(v == null ? "" : v)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function liveTally(state) {
+  const votes = state.votes || {};
+  const tally = {};
+  (state.options || []).forEach(function (o) { tally[o.key] = 0; });
+  Object.keys(votes).forEach(function (uid) {
+    const k = votes[uid];
+    if (tally[k] !== undefined) tally[k] += 1;
+  });
+  return { tally: tally, total: Object.keys(votes).length };
+}
+function liveBar(n, total) {
+  const pct = total > 0 ? (n * 100) / total : 0;
+  const filled = Math.max(0, Math.min(LIVE_BAR_SLOTS, Math.round((pct / 100) * LIVE_BAR_SLOTS)));
+  return LIVE_BAR_FULL.repeat(filled) + LIVE_BAR_EMPTY.repeat(LIVE_BAR_SLOTS - filled);
+}
+function liveClock(ms) { return Math.max(0, Math.floor(Number(ms || 0) / 1000)); }
+function renderLivePost(state, opts) {
+  const o = opts || {};
+  const t = liveTally(state);
+  const over = !!(state.endsAt && Date.now() > state.endsAt);
+  const head = "<h2>" + liveEscape(state.title || "\u0646\u0638\u0631\u0633\u0646\u062c\u06cc \u0632\u0646\u062f\u0647") + "</h2>";
+  const lead = state.subtitle ? "<p>" + liveEscape(state.subtitle) + "</p>" : "";
+  const clock = state.endsAt
+    ? "<p>\u23F3 " + (over ? "\u0645\u0647\u0644\u062a \u062a\u0645\u0627\u0645 \u0634\u062f \u2014 \u062f\u0631 " : "\u0645\u0647\u0644\u062a \u062f\u0627\u0631\u062f: ") +
+      "<tg-time unix=\"" + liveClock(state.endsAt) + "\">" + (over ? "\u0645\u0647\u0644\u062a \u062a\u0645\u0627\u0645" : "\u062f\u0631 \u062d\u0627\u0644 \u0634\u0645\u0631\u0634") + "</tg-time>" +
+      (over ? " \u0628\u0633\u062a\u0647 \u0634\u062f" : "") + "</p>"
+    : "";
+  const rows = (state.options || []).map(function (opt) {
+    const n = t.tally[opt.key] || 0;
+    const pct = t.total > 0 ? Math.round((n * 100) / t.total) : 0;
+    return "<tr><td>" + liveEscape(opt.label) + "</td><td>" + pct + "%</td><td><code>" + liveBar(n, t.total) + "</code></td><td><b>" + n + "</b></td></tr>";
+  }).join("");
+  const table = rows
+    ? "<table bordered striped compact><tr><th>\u06AF\u0632\u06cc\u0646\u0647</th><th>\u0633\u0647\u0645</th><th>\u0646\u0645\u0648\u062f\u0627\u0631</th><th>\u0631\u0623\u06cc</th></tr>" + rows + "</table>"
+    : "";
+  const foot = "<p>\u{1F465} \u0645\u062c\u0645\u0648\u0639 \u0622\u0631\u0627: <b>" + t.total + "</b>" +
+    (state.updatedAt ? " \u00B7 \u0622\u062e\u0631\u06cc\u0646 \u0628\u0647\u200C\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc: <tg-time unix=\"" + liveClock(state.updatedAt) + "\">\u0627\u0644\u0627\u0646</tg-time>" : "") +
+    "</p>" +
+    "<footer>\u26A1\uFE0F \u067E\u0633\u062A \u0632\u0646\u062F\u0647 \u2014 \u0647\u0631 \u0631\u0623\u06cc \u0628\u0644\u0627\u0641\u0627\u0635\u0644\u0647 \u0628\u0631\u0627\u06CC \u0647\u0645\u0647 \u062f\u06cc\u062f\u0647 \u0645\u06cc\u200C\u0634\u0648\u062f" + (o.brand ? " \u00B7 " + liveEscape(o.brand) : "") + "</footer>";
+  return head + lead + clock + table + foot;
+}
+function liveKeyboard(state, origin) {
+  const id = state.id;
+  const over = !!(state.endsAt && Date.now() > state.endsAt);
+  const btns = (state.options || []).map(function (opt) {
+    return { text: opt.label, callback_data: "vote:" + id + ":" + opt.key };
+  });
+  const rows = [];
+  for (let i = 0; i < btns.length; i += 2) rows.push(btns.slice(i, i + 2));
+  if (over) {
+    rows.push([{ text: "\u{1F3C1} \u0646\u062a\u06cc\u062c\u0647 \u0646\u0647\u0627\u06cc\u06cc", callback_data: "vote:" + id + ":__refresh" }]);
+  } else {
+    rows.push([{ text: "\u267B\uFE0F \u0628\u0647\u200C\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0646\u0645\u0648\u062f\u0627\u0631", callback_data: "vote:" + id + ":__refresh" }]);
+  }
+  return { inline_keyboard: rows };
+}
+
+/* \u2500\u2500 live posts \u2500\u2500
+   An interactive post: one message whose bars move as people vote. Votes arrive
+   through callback queries from ordinary channel subscribers, so they are
+   handled before anything that assumes the caller is the operator. */
+async function editLivePost(env, chatId, msgId, state) {
+  return await editPostMessage(env, chatId, msgId, {
+    html: renderLivePost(state),
+    replyMarkup: liveKeyboard(state)
+  }).catch((e) => { console.warn("live edit failed", e?.message); });
+}
+async function handleLiveVote(cb, env, origin) {
+  const qId = cb.id;
+  const chatId = cb.message?.chat?.id;
+  const msgId = cb.message?.message_id;
+  const uid = String(cb.from?.id || "");
+  const parts = String(cb.data || "").split(":");
+  const id = parts[1] || "";
+  const action = parts[2] || "";
+  if (!id || !chatId || !msgId) return answerCallback(env, qId, "\u067e\u0633\u062a \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f.", true);
+  const state = await getJson(env, `live:${id}`, null);
+  if (!state || !state.options) return answerCallback(env, qId, "\u0627\u06cc\u0646 \u0646\u0638\u0631\u0633\u0646\u062c\u06cc \u062f\u0631 \u062f\u0633\u062a\u0631\u0633 \u0646\u06cc\u0633\u062a.", true);
+  const now = Date.now();
+  const over = !!(state.endsAt && now > state.endsAt);
+  if (action === "__refresh") {
+    await editLivePost(env, chatId, msgId, state);
+    return answerCallback(env, qId, over ? "\u0646\u062a\u06cc\u062c\u0647\u0654 \u0646\u0647\u0627\u06cc\u06cc" : "\u0628\u0647\u200c\u0631\u0648\u0632 \u0634\u062f \u267b\ufe0f");
+  }
+  if (!state.options.some((o) => o.key === action)) return answerCallback(env, qId, "\u06af\u0632\u06cc\u0646\u0647\u0654 \u0646\u0627\u0645\u0639\u062a\u0628\u0631", true);
+  const prev = (state.votes || {})[uid];
+  if (prev === action) return answerCallback(env, qId, "\u0631\u0623\u06cc\u062a \u0647\u0645\u06cc\u0646 \u0628\u0648\u062f \u2014 \u0645\u06cc\u200c\u062a\u0648\u0627\u0646\u06cc \u0639\u0648\u0636\u0634 \u06a9\u0646\u06cc");
+  if (over) {
+    await editLivePost(env, chatId, msgId, state);
+    return answerCallback(env, qId, "\u23f3 \u0645\u0647\u0644\u062a \u0631\u0623\u06cc\u200c\u06af\u06cc\u0631\u06cc \u062a\u0645\u0627\u0645 \u0634\u062f", true);
+  }
+  state.votes = state.votes || {};
+  if (Object.keys(state.votes).length >= 5000 && !prev) return answerCallback(env, qId, "\u0638\u0631\u0641\u06cc\u062a \u0627\u06cc\u0646 \u0646\u0638\u0631\u0633\u0646\u062c\u06cc \u067e\u0631 \u0634\u062f\u0647 \u{1F64F}", true);
+  state.votes[uid] = action;
+  state.updatedAt = now;
+  await setJson(env, `live:${id}`, state, 30 * 86400);
+  await editLivePost(env, chatId, msgId, state);
+  const t = liveTally(state);
+  return answerCallback(env, qId, prev ? "\u0631\u0623\u06cc\u062a \u0639\u0648\u0636 \u0634\u062f \u2713" : `\u062b\u0628\u062a \u0634\u062f \u2713 (${t.tally[action] || 0} \u0631\u0623\u06cc)`);
+}
+__name(editLivePost, "editLivePost");
+__name(handleLiveVote, "handleLiveVote");
 
 async function handleBotMembership(mcm, env, origin) {
   const chat = mcm && mcm.chat;
