@@ -1455,7 +1455,11 @@ async function handleMiniAppApi(request, env, url) {
       await emojiWrite(env, store2, 2, packsMap);
     }
     const fresh = emojiTotals(packsMap);
-    const res = json({ ok: true, packs, total: packs.reduce((n, p) => n + p.count, 0), packCount: packs.length, pending: Math.max(0, fresh.packs - packs.length) }, 200, { "cache-control": "max-age=300" });
+    // no-store: Telegram's WebView happily served a half-hour-old list from its
+    // own cache, so the picker kept showing old packs even after a refresh. The
+    // edge copy above is still fine because its key carries the registry
+    // signature.
+    const res = json({ ok: true, packs, total: packs.reduce((n, p) => n + p.count, 0), packCount: packs.length, pending: Math.max(0, fresh.packs - packs.length) }, 200, { "cache-control": "no-store, no-cache, must-revalidate, max-age=0", "pragma": "no-cache" });
     if (cache) await cache.put(ckey, res.clone());
     return res;
   }
@@ -1471,7 +1475,7 @@ async function handleMiniAppApi(request, env, url) {
     if (!name) return bad("link");
     const saved = await savePackByName(env, name);
     if (!saved.ok) return json({ ok: false, error: saved.error || "pack" });
-    return json({ ok: true, name, title: saved.title, count: saved.stickersCount, emojis: saved.basesCount });
+    return json({ ok: true, name, title: saved.title, count: saved.stickersCount, emojis: saved.basesCount }, 200, { "cache-control": "no-store" });
   }
   if (path === "/api/emoji/pack/remove" && request.method === "POST") {
     let rmReq = {};
@@ -1482,7 +1486,7 @@ async function handleMiniAppApi(request, env, url) {
     delete packsMap[name];
     await emojiWrite(env, store2, 2, packsMap);
     const totals = emojiTotals(packsMap);
-    return json({ ok: true, packCount: totals.packs, total: totals.emojis });
+    return json({ ok: true, packCount: totals.packs, total: totals.emojis }, 200, { "cache-control": "no-store" });
   }
   if (path === "/api/emoji/img" && request.method === "GET") {
     const id = String(url.searchParams.get("id") || "").replace(/\D/g, "");
@@ -4273,7 +4277,7 @@ function getStartKeyboard(origin) {
         { text: "\u0637\u0631\u0627\u062D\u06CC \u067E\u0633\u062A \u062C\u062F\u06CC\u062F", callback_data: "act:new_post", style: "success", icon_custom_emoji_id: "5307891786088227313" }
       ],
       [
-        { text: "\u0631\u0650\u0633\u0627", web_app: { url: `${origin}/app?v=31` }, style: "primary", icon_custom_emoji_id: "5339209399120465044" }
+        { text: "\u0631\u0650\u0633\u0627", web_app: { url: `${origin}/app?v=32` }, style: "primary", icon_custom_emoji_id: "5339209399120465044" }
       ],
       [
         { text: "\u0645\u062F\u06CC\u0631\u06CC\u062A \u0648 \u0627\u062A\u0635\u0627\u0644 \u06A9\u0627\u0646\u0627\u0644", callback_data: "nav:channel", icon_custom_emoji_id: "4981474026779051847" },
@@ -5208,7 +5212,7 @@ async function handleSharedChannel(msg, env, origin) {
     .split("{T}").join(escapeHtml(title))
     .split("{U}").join(chat.username ? "\u0622\u062F\u0631\u0633: @" + escapeHtml(chat.username) + "\n\n" : ""),
     replyMarkup: { inline_keyboard: [
-      [{ text: "\u{1F4E1} \u0627\u062A\u0635\u0627\u0644\u0627\u062A \u06A9\u0627\u0646\u0627\u0644", web_app: { url: `${origin}/app?v=31#conn` }, style: "primary" }],
+      [{ text: "\u{1F4E1} \u0627\u062A\u0635\u0627\u0644\u0627\u062A \u06A9\u0627\u0646\u0627\u0644", web_app: { url: `${origin}/app?v=32#conn` }, style: "primary" }],
       [{ text: "\u{1F39B} \u0645\u062F\u06CC\u0631\u06CC\u062A \u06A9\u0627\u0646\u0627\u0644\u200C\u0647\u0627 \u062F\u0631 \u0631\u0628\u0627\u062A", callback_data: "nav:channel" }]
     ] }
   });

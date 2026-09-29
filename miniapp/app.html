@@ -649,7 +649,9 @@ var tg=null,initData='',token=null;
 try{tg=window.Telegram&&window.Telegram.WebApp;if(tg){tg.ready();tg.expand();initData=tg.initData||''}}catch(e){}
 function hap(k){try{var h=tg&&tg.HapticFeedback;if(!h)return;if(k==='ok')h.notificationOccurred('success');else if(k==='err')h.notificationOccurred('error');else if(k==='pick'&&h.selectionChanged)h.selectionChanged();else h.impactOccurred(k==='mid'?'medium':'light')}catch(e){}}
 function api(p,b){var h={'content-type':'application/json'};if(token)h['x-rasa-token']=token;
-  return fetch(p,{method:b?'POST':'GET',headers:h,body:b?JSON.stringify(b):undefined}).then(function(r){return r.json().catch(function(){return {ok:false,error:'http '+r.status}})},function(){return {ok:false,error:'network'}})}
+  return fetch(p,{method:b?'POST':'GET',headers:h,body:b?JSON.stringify(b):undefined,cache:'no-store'}).then(function(r){return r.json().catch(function(){return {ok:false,error:'http '+r.status}})},function(){return {ok:false,error:'network'}})}
+/* GET با نوسازی اجباری: بدون آن، WebView تلگرام پاسخ کهنه را برمی‌گرداند */
+function apiFresh(p){var u=p+(p.indexOf('?')<0?'?':'&')+'_='+Date.now();return api(u)}
 var tT;function toast(m,ms){var t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(tT);tT=setTimeout(function(){t.classList.remove('on')},ms||2200)}
 /* state */
 var S={name:'',uid:'',drafts:[],templates:[],media:[],channels:[],online:false,booted:false,saving:false,savedAt:0,offlineWhy:''};
@@ -974,9 +976,10 @@ function emNorm(x){return String(x||'').replace(/[\uFE0E\uFE0F\s]/g,'').toLowerC
 function emImg(id){return '/api/emoji/img?id='+encodeURIComponent(id)+(token?'&t='+encodeURIComponent(token).replace(/[_*~`|]/g,function(c){return '%'+c.charCodeAt(0).toString(16).toUpperCase()}):'')}
 var EM_STATS={total:0,packs:0,pending:0};
 function emLoad(cb){if(EM.packs)return cb();if(!S.online){EM.packs=EM_DEMO;EM_STATS={total:4,packs:1};return cb()}
-  api('/api/emoji/all').then(function(r){EM.packs=(r&&r.ok&&r.packs)||[];
+  apiFresh('/api/emoji/all').then(function(r){EM.packs=(r&&r.ok&&r.packs)||[];
     EM_STATS.total=(r&&r.total)||EM.packs.reduce(function(n,p){return n+p.items.length},0);
     EM_STATS.packs=(r&&r.packCount)||EM.packs.length;EM_STATS.pending=(r&&r.pending)||0;
+    EM_STATS.at=Date.now();
     if(!EM.packs.length)toast('پکی برای اموجی پیدا نشد');cb()})}
 function emReload(cb){EM.packs=null;emLoad(cb)}
 /* افزودن پک با لینک t.me/addemoji یا نام/یوزرنیم پک */
@@ -993,7 +996,7 @@ function emPackAdd(box){
     if(!r||!r.ok){if(out)out.innerHTML='<div class="vd bad">افزودن پک نشد — '+(r&&r.error?esc(r.error):'لینک را بررسی کن')+'</div>';hap('err');return}
     if(inp)inp.value='';hap('ok');toast('پک «'+esc(r.title||r.name)+'» با '+(r.count||'')+' اموجی اضافه شد');
     if(out)out.innerHTML='<div class="vd ok">پک «'+esc(r.title||r.name)+'» اضافه شد ✓</div>';
-    emReload(function(){paintEm(box)});
+    emRefresh(box);
     setTimeout(function(){emTrim(box)},2200);
   })} 
 /* حذف پک (اموجی‌ها برای رندر باقی می‌مانند) */
@@ -1001,8 +1004,21 @@ function emPackRemove(box,name){hap();if(box.__emRemoving)return;box.__emRemovin
   api('/api/emoji/pack/remove',{name:name}).then(function(r){
     box.__emRemoving=0;
     if(!r||!r.ok){toast('حذف نشد');return}
-    toast('پک حذف شد');emReload(function(){paintEm(box)})})}
+    toast('پک حذف شد');emRefresh(box)})}
 function emTrim(box){var out=box&&box.querySelector('#emPkOut');if(out)out.innerHTML=''}
+/* تازه‌سازی اجباری: حافظهٔ داخلی پاک می‌شود و درخواست با نوسازی زمانی می‌رود */
+function emRefresh(box,silent){var before=(EM_STATS.total||0)+'/'+(EM_STATS.packs||0);
+  EM.packs=null;
+  apiFresh('/api/emoji/all').then(function(r){
+    EM.packs=(r&&r.ok&&r.packs)||[];
+    EM_STATS.total=(r&&r.total)||EM.packs.reduce(function(n,p){return n+p.items.length},0);
+    EM_STATS.packs=(r&&r.packCount)||EM.packs.length;EM_STATS.pending=(r&&r.pending)||0;
+    var now=(EM_STATS.total||0)+'/'+(EM_STATS.packs||0);
+    if(!silent)toast(before===now?('فهرست به‌روز است — '+(EM_STATS.total)+' اموجی در '+(EM_STATS.packs)+' پک'):((EM_STATS.total)+' اموجی در '+(EM_STATS.packs)+' پک'));
+    if(box){paintEm(box);emUpdateStats(box);
+      if(box.querySelector('#emMg')&&box.querySelector('#emMg').style.display!=='none')emPackList(box);
+      if(box.querySelector('#emg')){var q=box.querySelector('#emq');if(q)q.dispatchEvent(new Event('input',{bubbles:true}))}}
+  })}
 /* قالبِ مدیریت پک‌ها + شمارنده‌ها */
 function emManageHTML(){return '<div class="emtb"><span class="emstats" id="emStats"></span><button class="chip" id="emMgBtn" data-mg="1">مدیریت پک‌ها</button>'
   +'<button class="chip" id="emRfBtn" data-mg="1">تازه‌سازی</button></div>'
@@ -1012,7 +1028,8 @@ function emManageHTML(){return '<div class="emtb"><span class="emstats" id="emSt
 function emUpdateStats(box){
   var el=box.querySelector('#emStats');if(!el)return;
   var n=EM.packs?EM.packs.reduce(function(a,p){return a+p.items.length},0):0;
-  el.textContent='📦 '+(EM_STATS.total||n)+' اموجی در '+(EM_STATS.packs||(EM.packs||[]).length)+' پک'+(EM_STATS.pending?' • +'+(EM_STATS.pending)+' در حال بارگذاری':'');}
+  var total=Math.max(EM_STATS.total||0,n), packs=Math.max(EM_STATS.packs||0,(EM.packs||[]).length);
+  el.textContent='📦 '+total+' اموجی در '+packs+' پک'+(EM_STATS.pending?' • '+EM_STATS.pending+' پک در حال بارگذاری':'');}
 function emPackList(box){
   var l=box.querySelector('#emPkList');if(!l)return;
   var packs=EM.packs||[];
@@ -1051,7 +1068,7 @@ function emMount(root,pick){var q=root.querySelector('#emq'),pp=root.querySelect
   if(!root.__emBound){root.__emBound=1;root.addEventListener('click',function(e){
     var mg=e.target.closest('[data-mg]');if(mg){var box=root.querySelector('#emMg');if(!box)return;hap();
       if(mg.id==='emMgBtn'){var open=!(box.dataset.open==='1');box.dataset.open=open?'1':'0';box.style.display=open?'block':'none';if(open)emPackList(root)}
-      else if(mg.id==='emRfBtn'){toast('تازه‌سازی پک‌ها…');emReload(function(){paintAll();emUpdateStats(root);if(root.querySelector('#emMg')&&root.querySelector('#emMg').style.display!=='none')emPackList(root)})}
+      else if(mg.id==='emRfBtn'){toast('تازه‌سازی پک‌ها…');emRefresh(root)}
       return}
     var add=e.target.closest('#emPkAdd');if(add){emPackAdd(root);return}
     var rm=e.target.closest('[data-pk]');if(rm){emPackRemove(root,rm.dataset.pk);return}
@@ -1059,7 +1076,9 @@ function emMount(root,pick){var q=root.querySelector('#emq'),pp=root.querySelect
   pp.onclick=function(e){var c=e.target.closest('.chip');if(!c||c.dataset.mg)return;hap('pick');cur=c.dataset.p;q.value='';paintAll()};
   g.onclick=function(e){var b=e.target.closest('.eo');if(!b)return;hap('ok');var it={id:b.dataset.id,e:b.dataset.e};
     EM.recent=[it].concat(EM.recent.filter(function(x){return x.id!==it.id})).slice(0,30);try{localStorage.setItem('em_recent',JSON.stringify(EM.recent))}catch(x){}pick(it.id,it.e)};
-  emLoad(function(){paint();emUpdateStats(root);emPackList(root)})}
+  var fromMemory=!!EM.packs;
+  emLoad(function(){paint();emUpdateStats(root);emPackList(root)});
+  if(fromMemory)emRefresh(root,true)   /* فهرست کهنه نماند، حتی اگر کاربر تازه‌سازی نزند */}
 function emTag(id,e){return '<tg-emoji emoji-id="'+id+'">'+e+'</tg-emoji>'}
 function emInsert(ta,s,e,id,em){var tag=emTag(id,em);ta.focus();try{ta.setRangeText(tag,s,e,'end')}catch(x){ta.value=ta.value.slice(0,s)+tag+ta.value.slice(e)}ta.dispatchEvent(new Event('input',{bubbles:true}))}
 function openEmojiSheet(ta,s,e){sheet('<h3>اموجی پرمیوم</h3>'+emHTML());var r=$('#sheet');emMount(r,function(id,em){closeSheet();emInsert(ta,s,e,id,em)})}

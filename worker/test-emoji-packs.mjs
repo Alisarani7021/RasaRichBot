@@ -92,6 +92,9 @@ doStore.set('packs', JSON.stringify(legPacks));
 /* library half in KV, as the live namespace holds it */
 kvData.set('emoji:packs', JSON.stringify({ MemeSetEmoji: { title: PACKS.MemeSetEmoji.title, count: 3, ts: Date.now() }, MeowieQ: { title: PACKS.MeowieQ.title, count: 3, ts: Date.now() }, CupidPack: { title: PACKS.CupidPack.title, count: 3, ts: Date.now() } }));
 
+/* raw response so headers can be asserted too */
+const callRaw = async (path, token) => worker.fetch(new Request(`${ORIGIN}${path}`, { method: 'GET', headers: { 'x-rasa-token': token || '' } }), env, { waitUntil: () => {} });
+
 const results = [];
 const check = (name, cond, extra) => { results.push([name, !!cond]); console.log(`  ${cond ? '✅' : '❌'} ${name}${extra ? ' — ' + extra : ''}`); };
 
@@ -106,6 +109,15 @@ check('پک‌های کتابخانه هم سرجایشان هستند', names.i
 check('هر پک آیتم‌هایش را دارد', (all.body.packs || []).every((p) => p.items && p.items.length === 3), JSON.stringify((all.body.packs || []).map((p) => p.count)));
 check('جمع اموجی درست گزارش می‌شود', all.body.total === 15, 'total=' + all.body.total);
 check('تعداد پک‌ها درست است', all.body.packCount === 5, 'packCount=' + all.body.packCount);
+
+console.log('— پاسخ فهرست کش‌نشدنی است (باگ WebView) —');
+{
+  const raw = await callRaw('/api/emoji/all', TOK);
+  const cc = String(raw.headers.get('cache-control') || '');
+  check('پاسخ فهرست اموجی no-store است', /no-store/.test(cc), cc || '(خالی)');
+  const rawAdd = await worker.fetch(new Request(`${ORIGIN}/api/emoji/pack/add`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-rasa-token': TOK }, body: JSON.stringify({ target: 'PartyTime' }) }), env, { waitUntil: () => {} });
+  check('پاسخ افزودن پک هم no-store است', /no-store/.test(String(rawAdd.headers.get('cache-control') || '')), String(rawAdd.headers.get('cache-control')));
+}
 
 console.log('— افزودن پک از مینیاپ —');
 const add = await call('/api/emoji/pack/add', { target: 'https://t.me/addemoji/PartyTime' }, TOK);

@@ -9,6 +9,8 @@ catch { JSDOM = require('/home/user/tools/jsdom-loader.js').loadJsdom(); } // sa
 
 const html = fs.readFileSync(process.argv[2] || 'app.html', 'utf8');
 const calls = [];
+const allCalls = [];
+let staleOnce = false;   // شبیه‌سازی پاسخ کهنهٔ کش‌شده فقط برای اولین درخواست
 const UID = 5982315292;
 
 /* two packs first, as the live bot had them, then a third arrives via the UI */
@@ -24,10 +26,17 @@ const dom = new JSDOM(html, {
     w.Telegram = { WebApp: { ready() {}, expand() {}, initData: 'user=%7B%22id%22%3A' + UID + '%7D&hash=x&auth_date=1', onEvent() {}, HapticFeedback: { notificationOccurred() {}, impactOccurred() {}, selectionChanged() {} } } };
     w.fetch = (url, opts) => {
       const p = String(url), body = opts && opts.body ? JSON.parse(opts.body) : {};
+      if (String(p).includes('/api/emoji/all')) allCalls.push({ url: String(p), cache: opts && opts.cache });
       let d = { ok: true };
       if (p.includes('/api/session')) d = { ok: true, token: 'TOK', user: { id: UID, name: 'Ali' } };
       else if (p.includes('/api/context')) d = { ok: true, drafts: [], templates: [], media: [], channels: [] };
-      else if (p.includes('/api/emoji/all')) d = { ok: true, packs: packs, ...stats() };
+      else if (p.includes('/api/emoji/all')) {
+        // WebView فقط وقتی پاسخ کهنه را برمی‌گرداند که نشانی نوسازی نخورده باشد؛
+        // درخواست با «?_=» همیشه تازه است.
+        const busted = /[?&]_=\d+/.test(p);
+        if (staleOnce && !busted) { d = { ok: true, packs: packs.slice(0, 2), total: 4, packCount: 2, pending: 0 }; }
+        else { staleOnce = false; d = { ok: true, packs: packs, ...stats() }; }
+      }
       else if (p.includes('/api/emoji/pack/add')) {
         const name = String(body.target || '').split('/').pop();
         if (/^addemoji|t\.me/.test(String(body.target)) || /^[A-Za-z0-9_]{4,}$/.test(name)) {
@@ -106,6 +115,16 @@ const check = (name, cond, extra) => { results.push([name, !!cond]); console.log
   check('دو پک هم‌نام با نام پک تفکیک می‌شوند', labels.filter(l => l.includes('Party Pack')).length === 2 && labels.some(l => l.includes('PartyPack2')), labels.join(' / '));
   const chips = [...sheet.querySelectorAll('#emp .chip')].map(c => c.textContent);
   check('چیپ‌های هم‌نام هم یکتا شده‌اند', new Set(chips).size === chips.length, chips.join(' / '));
+
+  /* ── کش کهنه: نوسازی باید فهرست تازه را بیاورد ── */
+  console.log('— مقاومت در برابر کش کهنهٔ WebView —');
+  staleOnce = true;
+  sheet.querySelector('#emRfBtn').click(); await wait(500);
+  const lastAll = allCalls[allCalls.length - 1];
+  check('درخواست فهرست با نوسازی زمانی فرستاده می‌شود', /[?&]_=\d+/.test(lastAll.url), lastAll.url.slice(-30));
+  check('درخواست با cache:no-store فرستاده می‌شود', lastAll.cache === 'no-store', String(lastAll.cache));
+  check('بعد از نوسازی، شمارنده عدد تازه را نشان می‌دهد (نه کش کهنه)', /5 اموجی در 3 پک/.test(sheet.querySelector('#emStats').textContent), sheet.querySelector('#emStats').textContent);
+  check('پک‌های تازه در فهرست مدیر هستند', sheet.querySelectorAll('#emPkList .empr').length === 3, 'rows=' + sheet.querySelectorAll('#emPkList .empr').length);
 
   const failed = results.filter(r => !r[1]);
   console.log(`\n${results.length - failed.length} passed, ${failed.length} failed`);
