@@ -563,13 +563,30 @@ $('#bd').addEventListener('click',closeSheet);
 var PK=[['text','متن'],['heading','عنوان'],['media','تصویر'],['btn1','دکمه'],['buttons','گروه دکمه'],['quote','نقل‌قول'],['table','جدول'],['formula','فرمول'],['details','بخش بازشونده'],['sep','خط جداکننده'],['list','فهرست']];
 function openAdd(){sheet('<h3>چی اضافه کنیم؟</h3><div class="pgrid">'+PK.map(function(p){return '<button class="pk" data-k="'+p[0]+'"><span>'+ic(p[0]==='btn1'?'btn':ICN[p[0]]||'btn',22)+'</span>'+p[1]+'</button>'}).join('')+'</div>'+emAddHTML());emAddInit()}
 function addKind(k){closeSheet();
-  if(k==='media'){openMedia();return}
+  if(k==='media'){
+    if(S.online){
+      var inp=document.getElementById('galFile')||document.getElementById('libFile');
+      if(inp){ inp.click(); return; }
+    }
+    openMedia();return
+  }
   if(k==='btn1'){openBuilder(0,0,null);return}
   if(k==='buttons'){openCatalog();return}
   insertBlock(mk(k))}
 $('#sheet').addEventListener('click',function(e){var p=e.target.closest('.pk');if(p){hap('pick');addKind(p.dataset.k)}});
-function openMedia(){sheet('<h3>کتابخانهٔ رسانه</h3>'+(S.media.length?S.media.map(function(m,i){return '<div class="kc"><span class="ti">'+ic(m.kind==='photo'?'image':'eye',20)+'</span><div><b>'+esc(m.name)+'</b><small>'+esc(m.kind)+'</small></div><button class="btn pri mp" data-mi="'+i+'">درج</button></div>'}).join(''):'<div class="empty"><b>رسانه‌ای نیست</b>'+(S.online?'عکس یا ویدیو را برای ربات بفرست تا اینجا ظاهر شود.':'برای دسترسی به رسانه‌ها، استودیو را از داخل ربات باز کن.')+'</div>'));
-  $$('[data-mi]').forEach(function(b){b.onclick=function(){insertMedia(S.media[+b.dataset.mi]);closeSheet()}})}
+function openMedia(){
+  var html='<h3>کتابخانهٔ رسانه</h3>';
+  html+='<div class="row" style="margin:10px 0"><button class="btn pri" id="mediaGalBtn">'+ic('plus',16)+' افزودن از گالری</button><small style="color:var(--mu)">عکس، ویدیو یا گیف از گوشی انتخاب کن</small></div>';
+  if(S.media.length){
+    html+= S.media.map(function(m,i){return '<div class="kc"><span class="ti">'+ic(m.kind==='photo'?'image':'eye',20)+'</span><div><b>'+esc(m.name)+'</b><small>'+esc(m.kind)+'</small></div><button class="btn pri mp" data-mi="'+i+'">درج</button></div>'}).join('');
+  } else {
+    html+= '<div class="empty"><b>رسانه‌ای نیست</b>'+(S.online?' از گالری بالا یک فایل انتخاب کن یا برای ربات بفرست.':' برای دسترسی به رسانه‌ها، استودیو را از داخل ربات باز کن.')+'</div>';
+  }
+  sheet(html);
+  var gb=document.getElementById('mediaGalBtn'); if(gb) gb.onclick=function(){var inp=document.getElementById('galFile')||document.getElementById('libFile'); if(inp) inp.click();};
+  $$('[data-mi]').forEach(function(b){b.onclick=function(){insertMedia(S.media[+b.dataset.mi]);closeSheet()}})
+}
+
 function insertMedia(m){if(m.kind!=='photo'&&m.kind!=='video'){toast('فقط عکس و ویدیو قابل درج است');return}insertBlock(nb('media',{kind:m.kind,fileId:m.fileId,name:m.name}),1);toast('رسانه درج شد')}
 /* ── button builder & catalog ── */
 var TYPES=[['url','لینک','link'],['copy_text','کپی','copy'],['callback_data','کال‌بک','chat'],['switch_inline_query','اینلاین','search'],['switch_inline_query_current_chat','اینلاین همین چت','search'],['switch_inline_query_chosen_chat','اینلاین انتخاب چت','search'],['disabled','غیرفعال','x']];
@@ -724,7 +741,8 @@ function paintLib(){var h='';
     var items=GUIDE_DATA[gname]||[];
     h+='<div class="card guide-card" data-g="'+gname+'"><div class="guide-head"><span class="ti g'+(gi+1)+'">'+ic(meta.icon,20)+'</span><div><b>'+esc(gname)+'</b><small>'+esc(meta.desc)+' — '+items.length+' قابلیت</small></div><span class="chev">⌄</span></div><div class="guide-body"><div class="chips">'+items.map(function(it){return '<button class="chip guide-chip" data-n="'+qa(it.name)+'" data-fa="'+qa(it.fa)+'" title="'+qa(it.name)+'">'+esc(it.fa)+'</button>'}).join('')+'</div><small style="color:var(--mu);display:block;margin-top:8px">روی هر قابلیت بزن تا نمونه‌اش به پیام اضافه شود</small></div></div>';
   }
-  $('#v-library').innerHTML=h;
+  h+='<div style="height:90px"></div>';
+   $('#v-library').innerHTML=h;
   // bind toggle
   $$('.guide-card .guide-head').forEach(function(head){
     head.onclick=function(){
@@ -778,16 +796,17 @@ function paintLib(){var h='';
   });
 }
 $('#v-library').addEventListener('click',function(e){
-  if(e.target.closest('#libPickBtn')){var inp=document.getElementById('libFile'); if(inp) inp.click(); return;}
+  if(e.target.closest('#libPickBtn')){var inp=document.getElementById('galFile')||document.getElementById('libFile'); if(inp) inp.click(); return;}
   var b=e.target.closest('[data-a]');if(!b)return;hap();var a=b.dataset.a,id=b.dataset.id;
   if(a==='ld')loadDraft(id);
   else if(a==='dd')api('/api/draft/delete',{id:id}).then(function(r){if(r&&r.ok===false){toast('حذف نشد');return}S.drafts=S.drafts.filter(function(x){return String(x.id)!==id});paintLib();toast('حذف شد')});
   else if(a==='lt')api('/api/template/load',{id:id}).then(function(r){if(!r.ok){hap('err');toast('قالب باز نشد');return}loadDoc(r.html,'قالب آماده شد');hap('ok')});
   else if(a==='lm'){if(!D.blocks.length){D.blocks=[];resetH()}insertMedia(S.media[+b.dataset.i]);setView('build')}});
 
-// file input change -> upload to Telegram via /api/media/upload
+// file input change -> upload to Telegram via /api/media/upload (from library or direct image add)
 document.addEventListener('change',function(e){
-  if(e.target && e.target.id==='libFile'){
+  var tid=e.target && e.target.id;
+  if(tid==='libFile' || tid==='galFile'){
     var file=e.target.files && e.target.files[0];
     if(!file) return;
     if(file.size>20*1024*1024){toast('فایل بیش از ۲۰ مگابایت است'); return;}
@@ -795,8 +814,15 @@ document.addEventListener('change',function(e){
     var fd=new FormData(); fd.append('file', file, file.name);
     fetch('/api/media/upload', {method:'POST', headers:{'x-rasa-token': token}, body: fd}).then(function(r){return r.json()}).then(function(j){
       if(!j.ok){toast('آپلود نشد: '+(j.error||'خطا')); hap('err'); return;}
-      S.media.unshift({name:j.media.name, kind:j.media.kind, fileId:j.media.fileId});
-      paintLib(); toast('به کتابخانه اضافه شد ✓'); hap('ok');
+      var nm={name:j.media.name, kind:j.media.kind, fileId:j.media.fileId};
+      S.media.unshift(nm);
+      paintLib();
+      // direct insert into post — same page flow for "تصویر"
+      if(!D.blocks.length){D.blocks=[];resetH()}
+      insertMedia(nm);
+      setView('build');
+      closeSheet();
+      toast('تصویر اضافه شد ✓'); hap('ok');
     }).catch(function(err){toast('خطای آپلود'); hap('err');});
     e.target.value='';
   }
@@ -855,5 +881,6 @@ window.addEventListener('beforeunload',function(e){if(D.dirty&&hasContent()){e.p
 boot();
 })();
 </script>
+<input type="file" id="galFile" accept="image/*,video/*,audio/*" class="hide">
 </body>
 </html>
