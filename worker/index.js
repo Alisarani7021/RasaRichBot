@@ -5462,13 +5462,50 @@ function carouselKeyboard(state) {
     : { text: "\u25B6\uFE0F \u067E\u062E\u0634 \u062E\u0648\u062F\u06A9\u0627\u0631", callback_data: "car:" + id + ":play" }]);
   return { inline_keyboard: rows };
 }
+
+/* The same carousel, but as a rich message: the photo sits inside the message
+   and the controls are real buttons inside it (tg-button-row), not a keyboard
+   strip below. Tap data is the very same "car:<id>:<action>" contract. */
+function carouselRichHtml(state, opts) {
+  const o = opts || {};
+  const slides = state.slides || [];
+  const n = slides.length;
+  const i = carouselIndex(state);
+  const s = slides[i] || {};
+  const dots = slides.map(function (_, k) { return k === i ? CAR_DOT_ON : CAR_DOT_OFF; }).join(" ");
+  const btn = function (label, action, style) {
+    return "<tg-button type=\"callback_data\" data=\"" + carouselEscape("car:" + state.id + ":" + action) + "\"" +
+      (style ? " style=\"" + style + "\"" : "") + ">" + label + "</tg-button>";
+  };
+  const img = (s.img && o.allowMedia !== false) ? "<img src=\"" + carouselEscape(s.img) + "\"/>" : "";
+  const head = "<h2>" + carouselEscape(s.title || "") + "</h2>";
+  const body = s.caption ? "<p>" + carouselEscape(s.caption) + "</p>" : "";
+  const counter = "<p>" + carouselFa(i + 1) + " / " + carouselFa(n) + "   " + dots + "</p>";
+  const hint = state.auto === true
+    ? "<p><b>\u25B6\uFE0F \u067E\u062E\u0634 \u062E\u0648\u062F\u06A9\u0627\u0631 \u0631\u0648\u0634\u0646 \u0627\u0633\u062A</b> \u2014 \u0647\u0631 \u062F\u0642\u06CC\u0642\u0647 \u062E\u0648\u062F\u0634 \u06CC\u06A9 \u0627\u0633\u0644\u0627\u06CC\u062F \u062C\u0644\u0648 \u0645\u06CC\u200C\u0631\u0648\u062F</p>"
+    : "<p>\u23F8 \u067E\u062E\u0634 \u062E\u0648\u062F\u06A9\u0627\u0631 \u0646\u06AF\u0647 \u062F\u0627\u0634\u062A\u0647 \u0634\u062F\u0647</p>";
+  const row1 = "<tg-button-row align=\"center\">" + btn("\u25C0\uFE0F", "p") + btn(carouselFa(i + 1) + " / " + carouselFa(n), "x") + btn("\u25B6\uFE0F", "n") + "</tg-button-row>";
+  const row2 = "<tg-button-row align=\"center\">" +
+    slides.map(function (_, k) { return btn((k === i ? "\u25CF " : "") + carouselFa(k + 1), String(k)); }).join("") +
+    "</tg-button-row>";
+  const row3 = "<tg-button-row align=\"center\">" + (state.auto === true
+    ? btn("\u23F8 \u0646\u06AF\u0647\u200C\u062F\u0627\u0634\u062A\u0646 \u067E\u062E\u0634 \u062E\u0648\u062F\u06A9\u0627\u0631", "pause", "danger")
+    : btn("\u25B6\uFE0F \u067E\u062E\u0634 \u062E\u0648\u062F\u06A9\u0627\u0631", "play", "success")) + "</tg-button-row>";
+  return img + head + body + counter + hint + row1 + row2 + row3;
+}
+
 function carouselView(state) {
   const slide = carouselSlide(state);
-  return { fileId: slide.fileId || null, rich: !!state.rich || !!(slide.html && !slide.fileId), caption: carouselCaption(state), keyboard: carouselKeyboard(state) };
+  if (state.rich) {
+    // in-message buttons: no keyboard strip, the controls live inside the post
+    const html = carouselRichHtml(state);
+    return { fileId: null, rich: true, html, caption: html, keyboard: null };
+  }
+  return { fileId: slide.fileId || null, rich: false, caption: carouselCaption(state), keyboard: carouselKeyboard(state) };
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { carouselView: carouselView, carouselCaption: carouselCaption, carouselKeyboard: carouselKeyboard, carouselIndex: carouselIndex, carouselFa: carouselFa };
+  module.exports = { carouselView: carouselView, carouselCaption: carouselCaption, carouselKeyboard: carouselKeyboard, carouselIndex: carouselIndex, carouselFa: carouselFa, carouselRichHtml: carouselRichHtml };
 }
 
 /* Community post renderer \u2014 a post that the audience itself builds, line by
@@ -5639,8 +5676,9 @@ function carouselStripIcons(mk) {
 }
 async function editCarouselMessage(env, chatId, msgId, view) {
   if (!view.fileId) {
-    // a text tab: the same message rewrites its rich content (images included)
-    return await editPostMessage(env, chatId, msgId, { html: view.caption, replyMarkup: view.keyboard }).catch((e) => {
+    // a text or rich tab: the same message rewrites its own content (in-message
+    // buttons included) \u2014 no keyboard strip involved
+    return await editPostMessage(env, chatId, msgId, { html: view.html || view.caption, ...view.keyboard ? { replyMarkup: view.keyboard } : {} }).catch((e) => {
       console.warn("text-tab edit failed", e?.message);
       return null;
     });

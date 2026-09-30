@@ -38,6 +38,10 @@ globalThis.fetch = async (url, opts = {}) => {
     sent.push({ m, chat_id: p.chat_id, message_id: p.message_id, fileId: p.media?.media, caption: p.media?.caption || '', markup: p.reply_markup });
     return Response.json({ ok: true, result: { message_id: p.message_id } });
   }
+  if (m === 'editMessageText' || m === 'editMessageCaption') {
+    sent.push({ m, chat_id: p.chat_id, message_id: p.message_id, html: p.rich_message?.html || p.text || p.caption || '', markup: p.reply_markup });
+    return Response.json({ ok: true, result: { message_id: p.message_id } });
+  }
   if (m === 'sendPhoto' || m === 'sendRichMessage' || m === 'sendMessage') {
     sent.push({ m, chat_id: p.chat_id, caption: p.caption || p.rich_message?.html || p.text || '' });
     return Response.json({ ok: true, result: { message_id: 999 } });
@@ -132,6 +136,36 @@ console.log('— کاروسل زندهٔ درجا —');
   check('تعداد اسلایدها در کپشن فارسی است', /۱ \/ ۴/.test(text(r11.last.caption)));
   const bad = await tap('car:c1:n', { msgId: 0 });
   check('تپ بدون message_id امن است', /پیام پیدا نشد/.test(bad.answers.map(a => a.text).join(' ')));
+}
+
+
+{
+  /* ۷) نسخهٔ ریچ: دکمه‌ها داخل خود پیام‌اند، نه زیرش */
+  kvData.clear(); doStore.clear();
+  const rich = {
+    id: 'r1', rich: true, auto: true, idx: 0, createdAt: Date.now(), updatedAt: Date.now(),
+    slides: [
+      { img: 'https://ex.test/a.jpg', title: 'A', caption: 'اول' },
+      { img: 'https://ex.test/b.jpg', title: 'B', caption: 'دوم' },
+      { img: 'https://ex.test/c.jpg', title: 'C', caption: 'سوم' }
+    ]
+  };
+  doStore.set('car:r1', JSON.stringify(rich));
+  kvData.set('car:r1', JSON.stringify(rich));
+  const rr = await tap('car:r1:n');
+  const html = rr.last?.html || '';
+  check('تپ روی دکمهٔ داخل پیام، همان پیام را ویرایش می‌کند', rr.last?.m === 'editMessageText' && rr.last.message_id === 77, rr.last?.m);
+  check('دکمه‌های ریچ داخل پیام ساخته می‌شوند', html.includes('<tg-button-row') && html.includes('type="callback_data"'), html.slice(0, 60));
+  check('کِیبورد پایین پیام حذف شده است', !rr.last?.markup, JSON.stringify(rr.last?.markup || null));
+  check('عکس اسلاید دوم داخل پیام می‌آید', html.includes('https://ex.test/b.jpg') && html.includes('B'));
+  check('دکمهٔ حالت فعال علامت ● دارد', /● ۲/.test(html));
+  const rp = await tap('car:r1:pause');
+  const h2 = rp.last?.html || '';
+  check('⏸ پخش خودکار از داخل پیام کار می‌کند', stateNow('r1').auto === false && /style="success"/.test(h2) && h2.includes('پخش خودکار</tg-button>'));
+  const rj = await tap('car:r1:2');
+  check('پرش با شمارهٔ داخل پیام هم کار می‌کند', stateNow('r1').idx === 2 && (rj.last?.html || '').includes('https://ex.test/c.jpg'));
+  const rplay = await tap('car:r1:play');
+  check('▶️ از داخل پیام دوباره روشن می‌شود', stateNow('r1').auto === true && /style="danger"/.test(rplay.last?.html || ''));
 }
 
 const failed = results.filter((r) => !r[1]);
