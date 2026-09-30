@@ -1733,10 +1733,10 @@ async function handleMiniAppApi(request, env, url) {
     const newId = (p) => p + Date.now().toString(36) + Math.floor(Math.random() * 46656).toString(36);
 
     if (need === "poll") {
-      const title = String(body?.title || "").trim().slice(0, 120) || "\u{1F5F3} \u0646\u0638\u0631\u0633\u0646\u062C\u06CC \u0632\u0646\u062F\u0647";
-      const subtitle = String(body?.subtitle || "").trim().slice(0, 300);
+      const title = plainEmojis(String(body?.title || "").trim()).slice(0, 120) || "\u{1F5F3} \u0646\u0638\u0631\u0633\u0646\u062C\u06CC \u0632\u0646\u062F\u0647";
+      const subtitle = plainEmojis(String(body?.subtitle || "").trim()).slice(0, 300);
       const labels = (Array.isArray(body?.options) ? body.options : [])
-        .map((x) => String(x || "").trim().slice(0, 60)).filter(Boolean).slice(0, 6);
+        .map((x) => plainEmojis(String(x || "").trim()).slice(0, 60)).filter(Boolean).slice(0, 6);
       if (labels.length < 2) return bad("\u062D\u062F\u0627\u0642\u0644 \u062F\u0648 \u06AF\u0632\u06CC\u0646\u0647 \u0644\u0627\u0632\u0645 \u0627\u0633\u062A");
       const minutes = Math.max(0, Math.min(10080, Number(body?.minutes) || 0));
       const id = newId("p");
@@ -1754,7 +1754,7 @@ async function handleMiniAppApi(request, env, url) {
     }
 
     if (need === "levels") {
-      const title = String(body?.title || "").trim().slice(0, 120);
+      const title = plainEmojis(String(body?.title || "").trim()).slice(0, 120);
       const lv = body?.levels || {};
       const short = convT(lv.short);
       const mid = convT(lv.mid) || short;
@@ -1786,7 +1786,7 @@ async function handleMiniAppApi(request, env, url) {
         .map((m) => ({ fileId: String(m?.fileId || "").trim() }))
         .filter((m) => m.fileId).slice(0, 8);
       if (media.length < 2) return bad("\u062D\u062F\u0627\u0642\u0644 \u062F\u0648 \u0639\u06A9\u0633 \u0644\u0627\u0632\u0645 \u0627\u0633\u062A");
-      const caption = String(body?.caption || "").trim().slice(0, 600);
+      const caption = plainEmojis(String(body?.caption || "").trim()).slice(0, 600);
       const html =
         (caption ? `<p>${escT(caption)}</p>` : "") +
         "<tg-slideshow>" +
@@ -2737,12 +2737,17 @@ function decorateReplyMarkup(replyMarkup, map = {}) {
     ...replyMarkup,
     inline_keyboard: replyMarkup.inline_keyboard.map((row) => row.map((button) => {
       if (!button || !button.text) return button;
-      const match = String(button.text).match(emojiRe);
-      if (!match) return button;
+      const text = plainEmojis(button.text);
+      const tagMatch = /^\s*<tg-emoji[^>]*emoji-id=["']?(\d+)["']?[^>]*>([\s\S]*?)<\/tg-emoji>/i.exec(String(button.text));
+      if (tagMatch) {
+        return { ...button, text: plainEmojis(String(button.text)).trim() || tagMatch[2], icon_custom_emoji_id: tagMatch[1] };
+      }
+      const match = text.match(emojiRe);
+      if (!match) return { ...button, text: text.trim() || button.text };
       const clean = match[2].replace(/\uFE0F/g, "");
       const icon = map[clean] || map[match[2]];
-      if (!icon) return button;
-      return { ...button, text: String(button.text).slice(match[0].length).trim() || match[2], icon_custom_emoji_id: String(icon) };
+      if (!icon) return { ...button, text };
+      return { ...button, text: text.slice(match[0].length).trim() || match[2], icon_custom_emoji_id: String(icon) };
     }))
   };
 }
@@ -2884,6 +2889,29 @@ async function sendPostMessage(env, chatId, { text, html, media, replyMarkup }) 
 __name(sendPostMessage, "sendPostMessage");
 __name2(sendPostMessage, "sendPostMessage");
 __name22(sendPostMessage, "sendPostMessage");
+/* Custom-emoji tags are a rich-body feature. Everywhere else — a button label,
+   a table cell, a title typed into a form — they are just text, so they are
+   folded back into the plain character they wrap. */
+function plainEmojis(value) {
+  return String(value == null ? "" : value)
+    .replace(/<tg-emoji[^>]*>([\s\S]*?)<\/tg-emoji>/gi, "$1")
+    .replace(/&lt;tg-emoji[^>]*&gt;([\s\S]*?)&lt;\/tg-emoji&gt;/gi, "$1")
+    .replace(/<img[^>]+src=["']tg:\/\/emoji\?id=\d+["'][^>]*\/?>/gi, "")
+    .replace(/&lt;img[^>]+src=&quot;tg:\/\/emoji\?id=\d+&quot;[^&]*&gt;/gi, "");
+}
+__name(plainEmojis, "plainEmojis");
+function plainEmojisDeep(state) {
+  if (!state || typeof state !== "object") return state;
+  const s = JSON.parse(JSON.stringify(state));
+  if (typeof s.title === "string") s.title = plainEmojis(s.title);
+  if (typeof s.subtitle === "string") s.subtitle = plainEmojis(s.subtitle);
+  if (typeof s.status === "string") s.status = plainEmojis(s.status);
+  if (Array.isArray(s.options)) s.options = s.options.map((o) => ({ ...o, label: plainEmojis(o && o.label) }));
+  if (Array.isArray(s.entries)) s.entries = s.entries.map((e) => ({ ...e, text: plainEmojis(e && e.text) }));
+  if (s.flow && typeof s.flow === "object" && typeof s.flow.label === "string") s.flow = { ...s.flow, label: plainEmojis(s.flow.label) };
+  return s;
+}
+__name(plainEmojisDeep, "plainEmojisDeep");
 async function editPostMessage(env, chatId, messageId, { text, html, media, replyMarkup, rich }) {
   const emojiMap = await getJson(env, "map", {});
   const content = applyEmojiSubs(ensureRichHtmlStructure((html || escapeHtml(text || "")).trim()), {}, emojiMap);
@@ -6094,9 +6122,10 @@ async function handleDeepCallback(cb, env, origin) {
    through callback queries from ordinary channel subscribers, so they are
    handled before anything that assumes the caller is the operator. */
 async function editLivePost(env, chatId, msgId, state) {
+  const clean = plainEmojisDeep(state);
   return await editPostMessage(env, chatId, msgId, {
-    html: renderLivePost(state),
-    replyMarkup: liveKeyboard(state),
+    html: renderLivePost(clean),
+    replyMarkup: liveKeyboard(clean),
     rich: true
   }).catch((e) => { console.warn("live edit failed", e?.message); });
 }

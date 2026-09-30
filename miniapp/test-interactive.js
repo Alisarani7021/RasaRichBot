@@ -131,8 +131,8 @@ const check = (name, cond, extra) => { results.push([name, !!cond]); console.log
 
   $('#intLvFull').value = '';
   $('#intLvFull').click();
-  doc.querySelector('[data-ib="table"]').click(); await wait(60);
-  check('دکمهٔ «+ جدول» اسکلت جدول را در فیلد فعال می‌گذارد', /<table bordered striped compact>/.test($('#intLvFull').value), $('#intLvFull').value.slice(0, 40).replace(/\n/g, '⏎'));
+  doc.querySelector('[data-ib="table"]').click(); await wait(80);
+  check('«+ جدول» سازندهٔ جدول را باز می‌کند (نه HTML خام)', $('#intTbBox').style.display === 'block' && !!$('#intTbGrid'));
   doc.querySelector('[data-ib="details"]').click(); await wait(60);
   check('دکمهٔ «+ بخش تاشو» درج می‌کند', /<details><summary>/.test($('#intLvFull').value));
 
@@ -142,11 +142,35 @@ const check = (name, cond, extra) => { results.push([name, !!cond]); console.log
   check('اموجی‌های پک‌دار با شناسهٔ پرمیوم علامت می‌خورند', emo && emo.dataset.iid === '111', 'iid=' + (emo && emo.dataset.iid));
   const before = $('#intLvFull').value;
   emo.click(); await wait(60);
-  check('تپ اموجی، تگ پرمیوم را داخل متن می‌گذارد', $('#intLvFull').value.includes('<tg-emoji emoji-id="111">🚀</tg-emoji>') && $('#intLvFull').value.length > before.length, $('#intLvFull').value.slice(-40));
+  check('تپ اموجی، کاراکتر ساده درج می‌کند (تگ خام نه)', $('#intLvFull').value.includes('🚀') && !$('#intLvFull').value.includes('tg-emoji') && $('#intLvFull').value.length > before.length, JSON.stringify($('#intLvFull').value.slice(-30)));
   $('#intLvFull').dispatchEvent(new window.Event('input'));
   await wait(320);
   check('پیش‌نمایش، اموجی پرمیوم را تصویر می‌کند', /class="ce"/.test($('#intLvPv').innerHTML));
   $('#intLvFull').value = '';
+
+  /* سازندهٔ جدول: مثل صفحهٔ اصلی، بدون HTML خام */
+  if ($('#intTbBox').style.display !== 'block') { doc.querySelector('[data-ib="table"]').click(); await wait(120); }
+  check('شبکهٔ اولیه ۲×۲ است', doc.querySelectorAll('#intTbGrid [data-tc]').length === 4);
+  const cell = (r, c) => doc.querySelector(`#intTbGrid [data-tc="${r}:${c}"]`);
+  cell(0, 0).value = 'بخش'; cell(0, 1).value = 'کار';
+  cell(1, 0).value = 'تیتر'; cell(1, 1).value = 'متن بلند';
+  doc.querySelector('[data-tb="rowAdd"]').click(); await wait(60);
+  check('«+ ردیف» یک ردیف اضافه می‌کند', doc.querySelectorAll('#intTbGrid .row').length === 3);
+  doc.querySelector('[data-tb="colAdd"]').click(); await wait(60);
+  check('«+ ستون» یک ستون اضافه می‌کند', doc.querySelectorAll('#intTbGrid [data-tc="0:2"]').length === 1);
+  doc.querySelector('[data-tb="colDel"]').click(); await wait(60);
+  const fld = $('#intLvFull');
+  fld.value = ''; fld.click();
+  doc.querySelector('[data-tb="insert"]').click(); await wait(120);
+  check('«درج در متن» جدول تمیز را داخل فیلد می‌گذارد', /<table bordered striped compact>/.test(fld.value) && /<th>بخش<\/th>/.test(fld.value) && /<td>متن بلند<\/td>/.test(fld.value), fld.value.slice(0, 80).replace(/\n/g, '⏎'));
+  check('سطر اول th و بقیه td می‌شوند', (fld.value.match(/<th>/g) || []).length === 2 && (fld.value.match(/<td>/g) || []).length === 4, 'th=' + (fld.value.match(/<th>/g) || []).length + ' td=' + (fld.value.match(/<td>/g) || []).length);
+  /* ویرایش همان جدول: دوباره درج = جای‌گزینی، نه تکرار */
+  cell(1, 1).value = 'متن کوتاه';
+  doc.querySelector('[data-tb="insert"]').click(); await wait(120);
+  check('درج دوباره، همان جدول را به‌روزرسانی می‌کند (تکراری نمی‌شود)', (fld.value.match(/<table/g) || []).length === 1 && /متن کوتاه/.test(fld.value));
+  fld.dispatchEvent(new window.Event('input')); await wait(300);
+  check('پیش‌نمایش، جدول ساخته‌شده را جدول نشان می‌دهد', /<table class="ipv-t">/.test($('#intLvPv').innerHTML) && /متن کوتاه/.test($('#intLvPv').innerHTML));
+  fld.value = '';
 
   /* مقصد کانال: پیام خطای فارسی و روشن */
   channelDenied = true;
