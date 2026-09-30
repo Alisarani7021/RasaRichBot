@@ -11,7 +11,7 @@ const UID = 5982315292;
 const calls = [];
 const channels = [{ chat: '@mychannel', title: 'کانال من', username: 'mychannel' }];
 let items = [];
-let lastPublish = null;
+let lastPublish = null, channelDenied = false;
 
 const dom = new JSDOM(html, {
   runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://rich-post-bot.4lisarani-1.workers.dev/app',
@@ -26,6 +26,7 @@ const dom = new JSDOM(html, {
       if (p.includes('/api/session')) d = { ok: true, token: 'TOK', user: { id: UID, name: 'Ali' } };
       else if (p.includes('/api/context')) d = { ok: true, drafts: [], templates: [], media: [], channels: channels };
       else if (p.includes('/api/interactive/list')) d = { ok: true, items: items };
+      else if (p.includes('/api/interactive/poll') && body.target && body.target !== 'me' && channelDenied) d = { ok: false, error: 'permissions', verdict: { ok: false, title: 'کانال من', bot: { admin: false }, user: { admin: true } } };
       else if (p.includes('/api/interactive/poll')) { lastPublish = { route: 'poll', body }; d = { ok: true, id: 'p1', kind: 'poll', message_id: 901, link: 'https://t.me/mychannel/901' }; items = [{ kind: 'poll', id: 'p1', title: body.title, at: Date.now(), votes: 0, link: d.link }].concat(items); }
       else if (p.includes('/api/interactive/levels')) { lastPublish = { route: 'levels', body }; d = { ok: true, id: 'd1', kind: 'levels', message_id: 902, link: null }; items = [{ kind: 'levels', id: 'd1', title: body.title, at: Date.now() }].concat(items); }
       else if (p.includes('/api/interactive/slideshow')) { lastPublish = { route: 'slideshow', body }; d = { ok: true, id: 's1', kind: 'slideshow', message_id: 903, link: null }; }
@@ -113,6 +114,18 @@ const check = (name, cond, extra) => { results.push([name, !!cond]); console.log
   $('#intSlBtn').click(); await wait(250);
   check('انتشار اسلایدشو فراخوانی می‌شود', lastPublish && lastPublish.route === 'slideshow');
   check('fileId های آپلودشده فرستاده می‌شوند', (lastPublish.body.media || []).length === 2 && lastPublish.body.media[0].fileId);
+
+  /* مقصد کانال: پیام خطای فارسی و روشن */
+  channelDenied = true;
+  sel.value = '@mychannel';
+  $('#intPlTitle').value = 'برای کانال';
+  const ins2 = $('#intPlOpts').querySelectorAll('input');
+  ins2[0].value = 'یک'; ins2[1].value = 'دو';
+  $('#intPlBtn').click(); await wait(250);
+  check('مقصد کانال بدون دسترسی، خطای روشن فارسی می‌دهد', /ادمین نیست/.test($('#intVerdict').innerHTML), $('#intVerdict').innerHTML.slice(0, 90));
+  check('در این حالت چیزی منتشر نمی‌شود', $('#intVerdict').innerHTML.includes('bad'));
+  channelDenied = false;
+  sel.value = 'me';
 
   /* فهرست منتشرشده‌ها */
   await wait(200);

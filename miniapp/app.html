@@ -1245,13 +1245,24 @@ function intLoad(){
   api('/api/interactive/list',{}).then(function(r){if(r&&r.ok)paintInterList(r.items||[])}).catch(function(){});
 }
 function paintInter(){intPaintTargets();intOptionsPaint();paintInterList();intLoad()}
+function intWhy(r){
+  var v=(r&&r.verdict)||null;
+  if(v){
+    if(v.error)return 'کانال بررسی نشد: '+v.error;
+    if(v.bot&&v.bot.admin===false)return 'ربات در «'+(v.title||'کانال')+'» ادمین نیست — اول ادمینش کن و دسترسیِ ارسال پیام بده';
+    if(v.user&&v.user.admin===false)return 'خودت در «'+(v.title||'کانال')+'» ادمین نیستی';
+    return 'دسترسی این کانال تأیید نشد';
+  }
+  if(r&&r.error==='session')return 'نشست منقضی شد — مینی‌اپ را از ربات دوباره باز کن';
+  return (r&&r.error)||'انتشار نشد';
+}
 function intPublish(route,payload,label){
   if(INT.busy)return;INT.busy=true;
   var t=intTargetValue();
   api('/api/interactive/'+route,Object.assign({target:t},payload)).then(function(r){
     INT.busy=false;
     if(!r||!r.ok){
-      var why=(r&&r.verdict&&r.verdict.h)?r.verdict.h:(r&&r.error)?r.error:'انتشار نشد';
+      var why=intWhy(r);
       document.getElementById('intVerdict').innerHTML='<div class="vd bad">'+esc(why)+'</div>';
       toast('انتشار نشد');hap('err');return;
     }
