@@ -1180,7 +1180,8 @@ function emMount(root,pick){var q=root.querySelector('#emq'),pp=root.querySelect
   if(fromMemory)emRefresh(root,true)   /* فهرست کهنه نماند، حتی اگر کاربر تازه‌سازی نزند */}
 function emTag(id,e){return '<tg-emoji emoji-id="'+id+'">'+e+'</tg-emoji>'}
 function emInsert(ta,s,e,id,em){var tag=emTag(id,em);ta.focus();try{ta.setRangeText(tag,s,e,'end')}catch(x){ta.value=ta.value.slice(0,s)+tag+ta.value.slice(e)}ta.dispatchEvent(new Event('input',{bubbles:true}))}
-function openEmojiSheet(ta,s,e){sheet('<h3>اموجی پرمیوم</h3>'+emHTML());var r=$('#sheet');emMount(r,function(id,em){closeSheet();emInsert(ta,s,e,id,em)})}
+function openEmojiSheet(ta,s,e,pick){sheet('<h3>اموجی پرمیوم</h3>'+emHTML());var r=$('#sheet');
+  emMount(r,pick?function(id,em){closeSheet();pick(id,em)}:function(id,em){closeSheet();emInsert(ta,s,e,id,em)})}
 var EMT=['text','heading','quote','list','details'];
 cv.addEventListener('focusout',function(e){var t=e.target;if(t.tagName==='TEXTAREA'){t.dataset.cs=t.selectionStart;t.dataset.ce=t.selectionEnd}});
 function emoBlk(b){var ta=document.querySelector('.blk[data-id="'+b.id+'"] textarea[data-f="t"]');if(!ta)return;var n=ta.value.length,s=ta.dataset.cs!=null?Math.min(+ta.dataset.cs,n):n,e=ta.dataset.ce!=null?Math.min(+ta.dataset.ce,n):n;openEmojiSheet(ta,s,e)}
@@ -1394,6 +1395,9 @@ function intTags(s){
 }
 function intRender(val){
   var s=intTags(esc(String(val||''))),stash=[];
+  /* نشانه‌های نامرئی قبل از هر چیز به تصویر آرت تبدیل می‌شوند */
+  s=s.replace(/(\p{Extended_Pictographic}\uFE0F?(?:\u200D\p{Extended_Pictographic}\uFE0F?)*)\u2063([0-9a-z]{1,13})\u2063/gu,
+    function(m,em,b36){stash.push(intImg(parseInt(b36,36),em));return '\u0001'+(stash.length-1)+'\u0001'});
   s=s.replace(/<tg-emoji\b[^>]*>([\s\S]*?)<\/tg-emoji>/gi,function(full,inner){
     var m=/emoji-id="?(\d+)"?/i.exec(full);stash.push(m?intImg(m[1],inner):inner);return '\u0001'+(stash.length-1)+'\u0001'});
   var map=intPrem(),n=0;
@@ -1424,6 +1428,15 @@ function intEmoPaint(){
 }
 function intFieldOf(){var f=INT.field;if(f&&document.contains(f))return f;
   return document.getElementById('intLvFull')||document.querySelector('#v-inter textarea')||document.querySelector('#v-inter input');}
+/* اموجی انتخاب‌شده = کاراکتر + نشانهٔ نامرئی + شناسهٔ base36؛
+   فیلد تمیز می‌ماند و سرور همان آرت پرمیوم را می‌سازد. */
+function intEmojiToken(id,em){
+  return id ? (em+'\u2063'+Number(id).toString(36)+'\u2063') : em;
+}
+function intMarkersToImages(s){
+  return String(s||'').replace(/(\p{Extended_Pictographic}\uFE0F?(?:\u200D\p{Extended_Pictographic}\uFE0F?)*)\u2063([0-9a-z]{1,13})\u2063/gu,
+    function(m,em,b36){return intImg(parseInt(b36,36),em)});
+}
 function intInsert(txt){
   var t=intFieldOf();if(!t)return;
   var s=(t.selectionStart==null)?t.value.length:t.selectionStart,e=(t.selectionEnd==null)?s:t.selectionEnd;
@@ -1438,10 +1451,18 @@ function intEmoBind(){
     sec.addEventListener('click',function(e){
       var eb=e.target.closest('[data-ie]');
       if(eb){
-        if(eb.dataset.ie==='__all'){var t=intFieldOf();if(t){var s=t.selectionStart==null?t.value.length:t.selectionStart;openEmojiSheet(t,s,t.selectionEnd==null?s:t.selectionEnd)}return}
-        /* اموجی ساده درج می‌شود؛ خود ربات داخل متن پرمیومش می‌کند و
-           برای دکمه‌ها هم آیکن پرمیوم ست می‌شود. تگ خام هیچ‌جا کار نمی‌کند. */
-        intInsert(eb.dataset.ie);
+        if(eb.dataset.ie==='__all'){
+          var t=intFieldOf();
+          if(t){
+            var st=t.selectionStart==null?t.value.length:t.selectionStart;
+            var en=t.selectionEnd==null?st:t.selectionEnd;
+            openEmojiSheet(t,st,en,function(id,em){intInsert(intEmojiToken(id,em))});
+          }
+          return;
+        }
+        /* همان آرتی که در نوار می‌بینی: نشانهٔ نامرئی + شناسه ذخیره می‌شود
+           تا فیلد تمیز بماند و سرور تگ پرمیوم واقعی را بسازد. */
+        intInsert(intEmojiToken(eb.dataset.iid, eb.dataset.ie));
         return;
       }
       var bb=e.target.closest('[data-ib]');

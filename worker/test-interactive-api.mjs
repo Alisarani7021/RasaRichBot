@@ -201,6 +201,27 @@ kvData.set('map', JSON.stringify({ '🚀': '999', '⚡': '888', '✅': '777', '�
   check('دکمهٔ سطح فعال با نشانهٔ ته‌خط مشخص می‌شود', JSON.stringify(tapEd?.p.reply_markup || {}).includes('خلاصه') || JSON.stringify(tapEd?.p.reply_markup || {}).includes('•'), JSON.stringify(tapEd?.p.reply_markup || {}).slice(0, 120));
   await apiCall('interactive/remove', { id: richId, kind: 'levels' });
 
+  /* ۴ب۲) اموجیِ انتخاب‌شده از نوار: نشانهٔ نامرئی → آرت پرمیوم همان اموجی */
+  const b36 = (x) => Number(x).toString(36);
+  const rocket = '🚀\u2063' + b36(12345) + '\u2063';
+  const heart = '❤\u2063253ir3xy\u2063';
+  tg = [];
+  const marked = await apiCall('interactive/poll', {
+    target: 'me',
+    title: 'نظرسنجی ' + rocket + ' تیتر',
+    options: ['گزینه ' + rocket, 'دوم ' + heart],
+    subtitle: 'زیرنویس ' + rocket
+  });
+  const mSent = lastTg('sendRichMessage');
+  const mHtml = mSent?.p.rich_message?.html || '';
+  const mButtons = JSON.stringify(mSent?.p.reply_markup || {});
+  check('نشانهٔ نامرئی در تیتر به تگ پرمیوم تبدیل می‌شود', /<h2>[^<]*<tg-emoji emoji-id="12345">🚀<\/tg-emoji>/.test(mHtml), mHtml.slice(0, 90));
+  check('نشانه در سلول جدول هم به آرت تبدیل می‌شود', /<td>گزینه <tg-emoji emoji-id="12345">🚀<\/tg-emoji>/.test(mHtml) && /<td>دوم <tg-emoji emoji-id="\d+">❤<\/tg-emoji>/.test(mHtml), (mHtml.match(/<td>[^<]*<tg-emoji[^>]*>/) || [''])[0]);
+  check('عنوان دکمه، آیکن پرمیوم همان آرت را می‌گیرد', /"text":"گزینه 🚀[^"]*","callback_data":"vote:[^"]+","icon_custom_emoji_id":"12345"/.test(mButtons), mButtons.slice(0, 170));
+  check('هیچ نشانهٔ نامرئی‌ای در پیام نمی‌ماند', !/\u2063/.test(mHtml) && !/\u2063/.test(mButtons));
+  const mId = marked.json?.id;
+  await apiCall('interactive/remove', { id: mId, kind: 'poll' });
+
   /* ۴ج) تگی که کاربر خودش از پیکر انتخاب کرده، پرمیوم می‌ماند */
   tg = [];
   const picked = await apiCall('interactive/levels', { target: 'me', levels: { short: 'خلاصه', full: 'یک <tg-emoji emoji-id="4242">✨</tg-emoji> انتخاب‌شده' } });

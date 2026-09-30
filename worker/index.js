@@ -1669,7 +1669,7 @@ async function handleMiniAppApi(request, env, url) {
     const sendAny = async (chatId, html, markup) => {
       let i = 0;
       const media = [];
-      const mapped = String(ensureRichHtmlStructure(String(html))).replace(/<img[^>]+src=["']tg:\/\/photo\?id=([^"']+)["'][^>]*\/?>/gi, (full, fid) => {
+      const mapped = String(markerTags(ensureRichHtmlStructure(String(html)))).replace(/<img[^>]+src=["']tg:\/\/photo\?id=([^"']+)["'][^>]*\/?>/gi, (full, fid) => {
         const mid = "m" + i++;
         media.push({ id: mid, media: { type: "photo", media: fid } });
         return full.replace(fid, mid);
@@ -1678,12 +1678,13 @@ async function handleMiniAppApi(request, env, url) {
       // هیچ جانشینی خودکار اموجی اینجا نیست: اموجی‌هایی که کاربر تایپ کرده
       // شکل خودشان را نگه می‌دارند و فقط تگ‌هایی که خودش از پیکر انتخاب کرده
       // پرمیوم می‌مانند.
+      const buttons = markup ? markerButtons(markup) : null;
       try {
-        return await tg.sendRich(chatId, rich, markup ? { reply_markup: markup } : {});
+        return await tg.sendRich(chatId, rich, buttons ? { reply_markup: buttons } : {});
       } catch (e) {
         const why = String(e?.description || e?.message || e);
-        if (!markup || !/icon|emoji|custom/i.test(why)) throw e;
-        return await tg.sendRich(chatId, rich, { reply_markup: stripMediaIcons(markup) });
+        if (!buttons || !/icon|emoji|custom/i.test(why)) throw e;
+        return await tg.sendRich(chatId, rich, { reply_markup: stripMediaIcons(buttons) });
       }
     };
     const box = async () => await store2.get(`intx:${uid}`, { items: [] });
@@ -1745,7 +1746,7 @@ async function handleMiniAppApi(request, env, url) {
       };
       const sent = await sendAny(chatId, renderLivePost(state), liveKeyboard(state));
       await setJson(env, `live:${id}`, state, 30 * 86400);
-      const entry = { kind: "poll", id, title, at: Date.now(), chat: String(chatId), msg: sent.message_id, link: linkOf(sent.message_id), minutes };
+      const entry = { kind: "poll", id, title: plainEmojisText(title), at: Date.now(), chat: String(chatId), msg: sent.message_id, link: linkOf(sent.message_id), minutes };
       await listAdd(entry);
       return json({ ok: true, ...entry, message_id: sent.message_id });
     }
@@ -1773,7 +1774,7 @@ async function handleMiniAppApi(request, env, url) {
         id, chatId, msgId: sent.message_id, level: "short", levels,
         title: title || "", createdAt: Date.now(), updatedAt: Date.now()
       }, 30 * 86400);
-      const entry = { kind: "levels", id, title: title || "\u{1F4DA} \u067E\u0633\u062A \u0686\u0646\u062F\u062D\u0627\u0644\u062A\u0647", at: Date.now(), chat: String(chatId), msg: sent.message_id, link: linkOf(sent.message_id) };
+      const entry = { kind: "levels", id, title: plainEmojisText(title) || "\u{1F4DA} \u067E\u0633\u062A \u0686\u0646\u062F\u062D\u0627\u0644\u062A\u0647", at: Date.now(), chat: String(chatId), msg: sent.message_id, link: linkOf(sent.message_id) };
       await listAdd(entry);
       return json({ ok: true, ...entry, message_id: sent.message_id });
     }
@@ -2889,6 +2890,8 @@ __name22(sendPostMessage, "sendPostMessage");
 /* Custom-emoji tags are a rich-body feature. Everywhere else — a button label,
    a table cell, a title typed into a form — they are just text, so they are
    folded back into the plain character they wrap. */
+function plainEmojisText(value) { return markerStrip(plainEmojis(value)); }
+__name(plainEmojisText, "plainEmojisText");
 function plainEmojis(value) {
   return String(value == null ? "" : value)
     .replace(/<tg-emoji[^>]*>([\s\S]*?)<\/tg-emoji>/gi, "$1")
@@ -2897,6 +2900,40 @@ function plainEmojis(value) {
     .replace(/&lt;img[^>]+src=&quot;tg:\/\/emoji\?id=\d+&quot;[^&]*&gt;/gi, "");
 }
 __name(plainEmojis, "plainEmojis");
+/* «کاراکتر + نشانهٔ نامرئی + شناسه base36» = اموجی پرمیومی که کاربر
+   خودش از پیکر انتخاب کرده است. تگ فقط جایی معنا دارد که تلگرام ریچ را
+   پارس می‌کند؛ همه‌جای دیگر نشانه حذف می‌شود تا متن تمیز بماند. */
+var INT_MARK = /(\p{Extended_Pictographic}\uFE0F?(?:\u200D\p{Extended_Pictographic}\uFE0F?)*)\u2063([0-9a-z]{1,13})\u2063/gu;
+function markerTags(value) {
+  return String(value == null ? "" : value).replace(INT_MARK, (m, em, b36) => {
+    const id = parseInt(b36, 36);
+    return id ? `<tg-emoji emoji-id="${id}">${em}</tg-emoji>` : em;
+  });
+}
+function markerStrip(value) {
+  return String(value == null ? "" : value).replace(/\u2063[0-9a-z]{1,13}\u2063/g, "");
+}
+__name(markerTags, "markerTags");
+__name(markerStrip, "markerStrip");
+/* دکمه‌ها نمی‌توانند تگ داشته باشند؛ اموجی انتخاب‌شده می‌شود آیکن پرمیوم دکمه. */
+function markerButtons(markup) {
+  if (!markup || !markup.inline_keyboard) return markup;
+  return { ...markup, inline_keyboard: markup.inline_keyboard.map((row) => row.map((button) => {
+    if (!button || typeof button.text !== "string") return button;
+    const marker = INT_MARK.exec(button.text);
+    INT_MARK.lastIndex = 0;
+    if (marker) {
+      const id = parseInt(marker[2], 36);
+      const text = markerStrip(button.text).trim() || marker[1];
+      return id ? { ...button, text, icon_custom_emoji_id: String(id) } : { ...button, text };
+    }
+    const tag = /^\s*<tg-emoji[^>]*emoji-id=["']?(\d+)["']?[^>]*>([\s\S]*?)<\/tg-emoji>/i.exec(button.text);
+    if (tag) return { ...button, text: markerStrip(button.text).replace(/<[^>]*>/g, "").trim() || tag[2], icon_custom_emoji_id: String(tag[1]) };
+    const clean = markerStrip(button.text);
+    return clean === button.text ? button : { ...button, text: clean };
+  })) };
+}
+__name(markerButtons, "markerButtons");
 function plainEmojisDeep(state) {
   if (!state || typeof state !== "object") return state;
   const s = JSON.parse(JSON.stringify(state));
@@ -2911,8 +2948,8 @@ function plainEmojisDeep(state) {
 __name(plainEmojisDeep, "plainEmojisDeep");
 async function editPostMessage(env, chatId, messageId, { text, html, media, replyMarkup, rich, plain }) {
   const emojiMap = plain ? {} : await getJson(env, "map", {});
-  const content = applyEmojiSubs(ensureRichHtmlStructure((html || escapeHtml(text || "")).trim()), {}, emojiMap);
-  const effectiveReplyMarkup = plain ? replyMarkup : decorateReplyMarkup(replyMarkup, emojiMap);
+  const content = markerTags(applyEmojiSubs(ensureRichHtmlStructure((html || escapeHtml(text || "")).trim()), {}, emojiMap));
+  const effectiveReplyMarkup = markerButtons(plain ? replyMarkup : decorateReplyMarkup(replyMarkup, emojiMap));
   const stripIconIds = /* @__PURE__ */ __name((mk) => {
     if (!mk?.inline_keyboard) return mk;
     return { ...mk, inline_keyboard: mk.inline_keyboard.map((row) => row.map((b) => {
@@ -5503,6 +5540,35 @@ var LIVE_BAR_SLOTS = 10;
 var LIVE_BAR_FULL = "\u2588";
 var LIVE_BAR_EMPTY = "\u2591";
 
+var LIVE_MARK = /(\p{Extended_Pictographic}\uFE0F?(?:\u200D\p{Extended_Pictographic}\uFE0F?)*)\u2063([0-9a-z]{1,13})\u2063/gu;
+function liveTagify(s) {
+  return String(s == null ? "" : s)
+    .replace(LIVE_MARK, function (m, em, b36) {
+      const id = parseInt(b36, 36);
+      return id ? '<tg-emoji emoji-id="' + id + '">' + em + "</tg-emoji>" : em;
+    })
+    .replace(/&lt;tg-emoji[^&]*emoji-id=&quot;(\d+)&quot;[^&]*&gt;([\s\S]*?)&lt;\/tg-emoji&gt;/gi,
+      function (m, id, inner) { return '<tg-emoji emoji-id="' + id + '">' + inner + "</tg-emoji>"; });
+}
+__name(liveTagify, "liveTagify");
+function liveRich(v) { return liveTagify(liveEscape(v)); }
+__name(liveRich, "liveRich");
+function livePlainText(v) { return String(v == null ? "" : v).replace(/\u2063[0-9a-z]{1,13}\u2063/g, ""); }
+__name(livePlainText, "livePlainText");
+function liveButton(b) {
+  if (!b || typeof b.text !== "string") return b;
+  const marker = LIVE_MARK.exec(b.text);
+  LIVE_MARK.lastIndex = 0;
+  if (marker) {
+    const id = parseInt(marker[2], 36);
+    const text = livePlainText(b.text).trim() || marker[1];
+    return id ? { ...b, text, icon_custom_emoji_id: String(id) } : { ...b, text };
+  }
+  const tag = /^\s*<tg-emoji[^>]*emoji-id=["']?(\d+)["']?[^>]*>([\s\S]*?)<\/tg-emoji>/i.exec(b.text);
+  if (tag) return { ...b, text: livePlainText(b.text).replace(/<[^>]*>/g, "").trim() || tag[2], icon_custom_emoji_id: String(tag[1]) };
+  return { ...b, text: livePlainText(b.text) };
+}
+__name(liveButton, "liveButton");
 function liveEscape(v) {
   return String(v == null ? "" : v)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -5540,9 +5606,9 @@ function renderLivePost(state, opts) {
   const t = liveTally(state);
   const votesOn = (state.options || []).length > 0;
   const over = !!(state.endsAt && Date.now() > state.endsAt);
-  const head = "<h2>" + liveEscape(state.title || "\u0646\u0638\u0631\u0633\u0646\u062c\u06cc \u0632\u0646\u062f\u0647") + "</h2>";
-  const lead = state.subtitle ? "<p>" + liveEscape(state.subtitle) + "</p>" : "";
-  const status = state.status ? "<p><b>" + liveEscape(state.status) + "</b></p>" : "";
+  const head = "<h2>" + liveRich(state.title || "\u0646\u0638\u0631\u0633\u0646\u062c\u06cc \u0632\u0646\u062f\u0647") + "</h2>";
+  const lead = state.subtitle ? "<p>" + liveRich(state.subtitle) + "</p>" : "";
+  const status = state.status ? "<p><b>" + liveRich(state.status) + "</b></p>" : "";
   const clock = state.endsAt
     ? "<p>\u23F3 " + (over ? "\u0645\u0647\u0644\u062a \u062a\u0645\u0627\u0645 \u0634\u062f \u2014 \u062f\u0631 " : "\u0645\u0647\u0644\u062a \u062f\u0627\u0631\u062f: ") +
       "<tg-time unix=\"" + liveClock(state.endsAt) + "\">" + (over ? "\u0645\u0647\u0644\u062a \u062a\u0645\u0627\u0645" : "\u062f\u0631 \u062d\u0627\u0644 \u0634\u0645\u0631\u0634") + "</tg-time>" +
@@ -5551,7 +5617,7 @@ function renderLivePost(state, opts) {
   const rows = (state.options || []).map(function (opt) {
     const n = t.tally[opt.key] || 0;
     const pct = t.total > 0 ? Math.round((n * 100) / t.total) : 0;
-    return "<tr><td>" + liveEscape(opt.label) + "</td><td>" + pct + "%</td><td><code>" + liveBar(n, t.total) + "</code></td><td><b>" + n + "</b></td></tr>";
+    return "<tr><td>" + liveRich(opt.label) + "</td><td>" + pct + "%</td><td><code>" + liveBar(n, t.total) + "</code></td><td><b>" + n + "</b></td></tr>";
   }).join("");
   const table = rows
     ? "<table bordered striped compact><tr><th>\u06AF\u0632\u06cc\u0646\u0647</th><th>\u0633\u0647\u0645</th><th>\u0646\u0645\u0648\u062f\u0627\u0631</th><th>\u0631\u0623\u06cc</th></tr>" + rows + "</table>"
@@ -5560,12 +5626,12 @@ function renderLivePost(state, opts) {
   const timeline = entries.length
     ? "<h3>\u{1F6F0} \u0644\u062D\u0638\u0647\u200C\u0628\u0647\u200C\u0644\u062D\u0638\u0647</h3>" +
       entries.slice(-12).map(function (e) {
-        return "<p>\u2022 " + liveEscape(e.text || "") +
+        return "<p>\u2022 " + liveRich(e.text || "") +
           (e.at ? " \u2014 <tg-time unix=\"" + liveClock(e.at) + "\">\u0627\u0644\u0627\u0646</tg-time>" : "") + "</p>";
       }).join("")
     : "";
   const flow = (state.flow && typeof state.flow === "object")
-    ? "<h3>" + liveEscape(state.flow.emoji || "\u{1F30A}") + " " + liveEscape(state.flow.label || "") + "</h3>" +
+    ? "<h3>" + liveRich(state.flow.emoji || "\u{1F30A}") + " " + liveRich(state.flow.label || "") + "</h3>" +
       "<p><b>" + liveEscape(String(state.flow.value)) + liveEscape(state.flow.unit || "") + "</b>" +
       (state.updatedAt ? " \u2014 <tg-time unix=\"" + liveClock(state.updatedAt) + "\">\u0627\u0644\u0627\u0646</tg-time>" : "") + "</p>" +
       (Array.isArray(state.flow.series) && state.flow.series.length > 1
@@ -5587,7 +5653,7 @@ function liveKeyboard(state, origin) {
   const votesOn = (state.options || []).length > 0;
   const over = !!(state.endsAt && Date.now() > state.endsAt);
   const btns = (state.options || []).map(function (opt) {
-    return { text: opt.label, callback_data: "vote:" + id + ":" + opt.key };
+    return liveButton({ text: opt.label, callback_data: "vote:" + id + ":" + opt.key });
   });
   const rows = [];
   for (let i = 0; i < btns.length; i += 2) rows.push(btns.slice(i, i + 2));

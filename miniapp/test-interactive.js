@@ -142,7 +142,11 @@ const check = (name, cond, extra) => { results.push([name, !!cond]); console.log
   check('اموجی‌های پک‌دار با شناسهٔ پرمیوم علامت می‌خورند', emo && emo.dataset.iid === '111', 'iid=' + (emo && emo.dataset.iid));
   const before = $('#intLvFull').value;
   emo.click(); await wait(60);
-  check('تپ اموجی، کاراکتر ساده درج می‌کند (تگ خام نه)', $('#intLvFull').value.includes('🚀') && !$('#intLvFull').value.includes('tg-emoji') && $('#intLvFull').value.length > before.length, JSON.stringify($('#intLvFull').value.slice(-30)));
+  /* اموجی انتخاب‌شده = کاراکتر + نشانهٔ نامرئی + شناسه base36 (نه تگ خام) */
+  const token = $('#intLvFull').value;
+  check('تپ اموجی، خودِ کاراکتر را درج می‌کند (بدون تگ خام)', token.includes('🚀') && !token.includes('tg-emoji'), JSON.stringify(token.slice(-24)));
+  check('شناسهٔ پرمیوم به‌صورت نامرئی ذخیره می‌شود', /\u2063[0-9a-z]+\u2063/.test(token), JSON.stringify(token.slice(-24)));
+  check('هیچ نشانهٔ نامرئیِ اضافه‌ای در فیلد نمی‌ماند', !/\u2063/.test(token.replace(/\u2063[0-9a-z]+\u2063/g, '')));
   $('#intLvFull').dispatchEvent(new window.Event('input'));
   await wait(320);
   check('پیش‌نمایش، اموجی پرمیوم را تصویر می‌کند', /class="ce"/.test($('#intLvPv').innerHTML));
@@ -175,6 +179,16 @@ const check = (name, cond, extra) => { results.push([name, !!cond]); console.log
   check('با «+ جدول» دوباره باز می‌شود و همان خانه‌ها سرجایشان‌اند', $('#intTbBox').style.display === 'block' && (() => { const c = doc.querySelector('#intTbGrid [data-tc="1:1"]'); return c && c.value === 'متن کوتاه'; })());
   doc.querySelector('[data-ib="table"]').click(); await wait(60);
   fld.value = '';
+
+  /* همان نشانه در فیلدهای نظرسنجی هم باید درست بماند */
+  $('#intLvFull').value = '';
+  const optIns = $('#intPlOpts').querySelectorAll('input');
+  optIns[0].focus(); await wait(60);
+  const emoR = Array.prototype.find.call(doc.querySelectorAll('#intEmo2 [data-ie]'), (b) => b.dataset.ie === '✅');
+  emoR.click(); await wait(60);
+  check('نوار اموجی کارت نظرسنجی هم نشانهٔ نامرئی می‌گذارد', /✅\u2063[0-9a-z]+\u2063/.test(optIns[0].value) && !optIns[0].value.includes('tg-emoji'), JSON.stringify(optIns[0].value));
+  optIns[0].value = '';
+  optIns[1].value = '';
 
   /* مقصد کانال: پیام خطای فارسی و روشن */
   channelDenied = true;

@@ -11,6 +11,35 @@ var LIVE_BAR_SLOTS = 10;
 var LIVE_BAR_FULL = "\u2588";
 var LIVE_BAR_EMPTY = "\u2591";
 
+/* ── اموجی پرمیوم داخل پست زنده ──
+   کاربر اموجی‌ای که انتخاب کرده را به شکل «کاراکتر + نشانهٔ نامرئی + شناسهٔ base36»
+   تایپ می‌کند تا فیلدها تمیز بمانند؛ همین‌جا آن نشانه به تگ واقعی پرمیوم تبدیل
+   می‌شود. تگ‌هایی که کاربر خودش نوشته باشد هم برگردانده می‌شوند. */
+var LIVE_MARK = /(\p{Extended_Pictographic}\uFE0F?(?:\u200D\p{Extended_Pictographic}\uFE0F?)*)\u2063([0-9a-z]{1,13})\u2063/gu;
+function liveTagify(s) {
+  return String(s == null ? "" : s)
+    .replace(LIVE_MARK, function (m, em, b36) {
+      var id = parseInt(b36, 36);
+      return id ? '<tg-emoji emoji-id="' + id + '">' + em + "</tg-emoji>" : em;
+    })
+    .replace(/&lt;tg-emoji[^&]*emoji-id=&quot;(\d+)&quot;[^&]*&gt;([\s\S]*?)&lt;\/tg-emoji&gt;/gi,
+      function (m, id, inner) { return '<tg-emoji emoji-id="' + id + '">' + inner + "</tg-emoji>"; });
+}
+function liveRich(v) { return liveTagify(liveEscape(v)); }
+function livePlain(v) { return String(v == null ? "" : v).replace(/\u2063[0-9a-z]{1,13}\u2063/g, ""); }
+function liveButton(b) {
+  if (!b || typeof b.text !== "string") return b;
+  var marker = LIVE_MARK.exec(b.text);
+  LIVE_MARK.lastIndex = 0;
+  if (marker) {
+    return Object.assign({}, b, { text: livePlain(b.text).trim() || marker[1], icon_custom_emoji_id: String(parseInt(marker[2], 36)) });
+  }
+  var tag = /^\s*<tg-emoji[^>]*emoji-id=["']?(\d+)["']?[^>]*>([\s\S]*?)<\/tg-emoji>/i.exec(b.text);
+  if (tag) {
+    return Object.assign({}, b, { text: livePlain(b.text).replace(/<[^>]*>/g, "").trim() || tag[2], icon_custom_emoji_id: tag[1] });
+  }
+  return Object.assign({}, b, { text: livePlain(b.text) });
+}
 function liveEscape(v) {
   return String(v == null ? "" : v)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -48,9 +77,9 @@ function renderLivePost(state, opts) {
   const t = liveTally(state);
   const votesOn = (state.options || []).length > 0;
   const over = !!(state.endsAt && Date.now() > state.endsAt);
-  const head = "<h2>" + liveEscape(state.title || "\u0646\u0638\u0631\u0633\u0646\u062c\u06cc \u0632\u0646\u062f\u0647") + "</h2>";
-  const lead = state.subtitle ? "<p>" + liveEscape(state.subtitle) + "</p>" : "";
-  const status = state.status ? "<p><b>" + liveEscape(state.status) + "</b></p>" : "";
+  const head = "<h2>" + liveRich(state.title || "\u0646\u0638\u0631\u0633\u0646\u062c\u06cc \u0632\u0646\u062f\u0647") + "</h2>";
+  const lead = state.subtitle ? "<p>" + liveRich(state.subtitle) + "</p>" : "";
+  const status = state.status ? "<p><b>" + liveRich(state.status) + "</b></p>" : "";
   const clock = state.endsAt
     ? "<p>\u23F3 " + (over ? "\u0645\u0647\u0644\u062a \u062a\u0645\u0627\u0645 \u0634\u062f \u2014 \u062f\u0631 " : "\u0645\u0647\u0644\u062a \u062f\u0627\u0631\u062f: ") +
       "<tg-time unix=\"" + liveClock(state.endsAt) + "\">" + (over ? "\u0645\u0647\u0644\u062a \u062a\u0645\u0627\u0645" : "\u062f\u0631 \u062d\u0627\u0644 \u0634\u0645\u0631\u0634") + "</tg-time>" +
@@ -59,7 +88,7 @@ function renderLivePost(state, opts) {
   const rows = (state.options || []).map(function (opt) {
     const n = t.tally[opt.key] || 0;
     const pct = t.total > 0 ? Math.round((n * 100) / t.total) : 0;
-    return "<tr><td>" + liveEscape(opt.label) + "</td><td>" + pct + "%</td><td><code>" + liveBar(n, t.total) + "</code></td><td><b>" + n + "</b></td></tr>";
+    return "<tr><td>" + liveRich(opt.label) + "</td><td>" + pct + "%</td><td><code>" + liveBar(n, t.total) + "</code></td><td><b>" + n + "</b></td></tr>";
   }).join("");
   const table = rows
     ? "<table bordered striped compact><tr><th>\u06AF\u0632\u06cc\u0646\u0647</th><th>\u0633\u0647\u0645</th><th>\u0646\u0645\u0648\u062f\u0627\u0631</th><th>\u0631\u0623\u06cc</th></tr>" + rows + "</table>"
@@ -68,12 +97,12 @@ function renderLivePost(state, opts) {
   const timeline = entries.length
     ? "<h3>\u{1F6F0} \u0644\u062D\u0638\u0647\u200C\u0628\u0647\u200C\u0644\u062D\u0638\u0647</h3>" +
       entries.slice(-12).map(function (e) {
-        return "<p>\u2022 " + liveEscape(e.text || "") +
+        return "<p>\u2022 " + liveRich(e.text || "") +
           (e.at ? " \u2014 <tg-time unix=\"" + liveClock(e.at) + "\">\u0627\u0644\u0627\u0646</tg-time>" : "") + "</p>";
       }).join("")
     : "";
   const flow = (state.flow && typeof state.flow === "object")
-    ? "<h3>" + liveEscape(state.flow.emoji || "\u{1F30A}") + " " + liveEscape(state.flow.label || "") + "</h3>" +
+    ? "<h3>" + liveRich(state.flow.emoji || "\u{1F30A}") + " " + liveRich(state.flow.label || "") + "</h3>" +
       "<p><b>" + liveEscape(String(state.flow.value)) + liveEscape(state.flow.unit || "") + "</b>" +
       (state.updatedAt ? " \u2014 <tg-time unix=\"" + liveClock(state.updatedAt) + "\">\u0627\u0644\u0627\u0646</tg-time>" : "") + "</p>" +
       (Array.isArray(state.flow.series) && state.flow.series.length > 1
@@ -95,7 +124,7 @@ function liveKeyboard(state, origin) {
   const votesOn = (state.options || []).length > 0;
   const over = !!(state.endsAt && Date.now() > state.endsAt);
   const btns = (state.options || []).map(function (opt) {
-    return { text: opt.label, callback_data: "vote:" + id + ":" + opt.key };
+    return liveButton({ text: opt.label, callback_data: "vote:" + id + ":" + opt.key });
   });
   const rows = [];
   for (let i = 0; i < btns.length; i += 2) rows.push(btns.slice(i, i + 2));
@@ -110,5 +139,5 @@ function liveKeyboard(state, origin) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { renderLivePost: renderLivePost, liveKeyboard: liveKeyboard, liveTally: liveTally, liveSpark: liveSpark };
+  module.exports = { renderLivePost: renderLivePost, liveKeyboard: liveKeyboard, liveTally: liveTally, liveSpark: liveSpark, liveTagify: liveTagify, liveRich: liveRich, livePlain: livePlain, liveButton: liveButton };
 }
