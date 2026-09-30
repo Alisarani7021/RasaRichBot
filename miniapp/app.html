@@ -574,10 +574,15 @@ body.mn{-webkit-font-smoothing:antialiased;background-image:radial-gradient(520p
         </select>
         <label style="font-size:12px;color:var(--mu)"><input type="checkbox" id="intTbHead" checked> سطر اول عنوان باشد</label>
       </div>
-      <div id="intTbGrid"></div>
+      <span class="lbl">جدول در کدام نسخه بنشیند؟</span>
+      <div class="row" style="gap:6px" id="intTbTarget">
+        <button class="btn grow" data-tgt="short">⚡ خلاصه</button>
+        <button class="btn grow" data-tgt="mid">📚 متوسط</button>
+        <button class="btn pri grow" data-tgt="full">✅ کامل</button>
+      </div>
+      <div id="intTbGrid" style="margin-top:8px"></div>
       <div class="row" style="gap:6px;margin-top:8px">
         <button class="btn pri grow" data-tb="insert">درج / به‌روزرسانی جدول در متن</button>
-        <button class="btn" data-tb="toFull">هدف: نسخهٔ کامل</button>
       </div>
     </div>
     <span class="lbl">اموجی پرمیوم — روی هر فیلد که کرسر هست درج می‌شود</span>
@@ -764,6 +769,7 @@ function mk(type,o){var base; switch(type){case'details':base=nb(type,{s:'عنو
 function inl(s,out){var e=esc(s);
   if(!out&&S.online){
     e=e.replace(/&lt;tg-emoji emoji-id="(\d+)"[^&]*&gt;([\s\S]*?)&lt;\/tg-emoji&gt;/gi,function(_,i,f){return '<img class="ce" src="'+emImg(i)+'" alt="'+f+'">'});
+    e=pickArt(e);
   } else if(out){
     e=e.replace(/&lt;(tg-emoji emoji-id="(\d+)"[^&]*?)&gt;([\s\S]*?)&lt;\/tg-emoji&gt;/gi,'<$1>$3</tg-emoji>')
      .replace(/&lt;(tg-time[^&]*?)&gt;([\s\S]*?)&lt;\/tg-time&gt;/gi,'<$1>$2</tg-time>');
@@ -806,7 +812,7 @@ function mdBlocks(t){var L=String(t).split('\n'),o=[],buf=[],i=0,m;
     if(/^\|.*\|$/.test(l.trim())){fl();var rows=[];while(i<L.length&&/^\|.*\|$/.test(L[i].trim())){if(!/^\|[\s:-]+\|$/.test(L[i].trim()))rows.push(L[i].trim().slice(1,-1).split('|').map(function(c){return c.trim()}));i++}o.push(nb('table',{rows:rows}));continue}
     buf.push(l);i++}
   fl();return o}
-function parseAny(txt){txt=String(txt||'').replace(/\r/g,'');
+function parseAny(txt){txt=absorbTags(txt).replace(/\r/g,'');
   if(!/<\/?[a-z][^>]*>/i.test(txt))return mdBlocks(txt);
   var doc=new DOMParser().parseFromString('<body>'+txt+'</body>','text/html'),out=[];
   [].slice.call(doc.body.childNodes).forEach(function(n){
@@ -857,7 +863,7 @@ function kbBtn(x){
     l=raw.replace(/<tg-emoji emoji-id="(\d+)"[^>]*>([\s\S]*?)<\/tg-emoji>/g, function(_,id,e){ return '<img class="ce" style="width:20px;height:20px;vertical-align:middle" src="'+emImg(id)+'" alt="'+esc(e)+'">'; }).replace(/<[^>]+>/g,'');
     l=esc(l)||'دکمه';
   } else {
-    l=esc(lblPlain(raw)||'دکمه');
+    l=pickArt(esc(lblPlain(raw)||'دکمه'));
   }
   var ex=x.type==='url'?ic('link',14):x.type==='copy_text'?ic('copy',14):'';
   return (x.type==='url'&&/^(https?|tg):\/\//.test(x.val||''))?'<a class="kbtn'+st+'" href="'+qa(x.val)+'" target="_blank" rel="noopener">'+l+ex+'</a>':'<span class="kbtn'+st+'">'+l+ex+'</span>'
@@ -866,7 +872,7 @@ function pv(b){var t=b.t||'';switch(b.type){
   case'text':return t.trim()?'<p>'+inl(t)+'</p>':'';case'heading':return t.trim()?'<h2>'+inl(t)+'</h2>':'';case'quote':return t.trim()?'<blockquote>'+inl(t)+'</blockquote>':'';
   case'list':var tg=b.ord?'ol':'ul';return '<'+tg+'>'+t.split('\n').filter(function(x){return x.trim()}).map(function(x){return '<li>'+inl(x)+'</li>'}).join('')+'</'+tg+'>';
   case'sep':return '<hr>';case'details':return '<details open><summary>'+esc(b.s)+'</summary>'+inl(t)+'</details>';
-  case'table':return '<table>'+b.rows.map(function(r,i){return '<tr>'+r.map(function(c){return '<'+(i?'td':'th')+'>'+esc(c)+'</'+(i?'td':'th')+'>'}).join('')+'</tr>'}).join('')+'</table>';
+  case'table':return '<table>'+b.rows.map(function(r,i){return '<tr>'+r.map(function(c){return '<'+(i?'td':'th')+'>'+pickArt(esc(c))+'</'+(i?'td':'th')+'>'}).join('')+'</tr>'}).join('')+'</table>';
   case'formula':return t.trim()?'<div class="mth">'+tex(t)+'</div>':'';
   case'media':return '<div class="mc">'+ic(b.kind==='photo'?'image':'eye',18)+esc(b.name||'رسانه')+' — در تلگرام نمایش داده می‌شود</div>';
   case'raw':return t||'';
@@ -1178,7 +1184,18 @@ function emMount(root,pick){var q=root.querySelector('#emq'),pp=root.querySelect
   var fromMemory=!!EM.packs;
   emLoad(function(){paint();emUpdateStats(root);emPackList(root)});
   if(fromMemory)emRefresh(root,true)   /* فهرست کهنه نماند، حتی اگر کاربر تازه‌سازی نزند */}
-function emTag(id,e){return '<tg-emoji emoji-id="'+id+'">'+e+'</tg-emoji>'}
+var PICK={};
+function pickKey(e){return String(e||'').replace(/\uFE0F/g,'')}
+function pickSet(id,e){var k=pickKey(e);if(id&&k)PICK[k]=String(id)}
+/* اموجی انتخاب‌شده در فیلد فقط کاراکتر ساده است؛ تگ پرمیوم سمت سرور
+   ساخته می‌شود تا فیلد تمیز و جمع‌وجور بماند. */
+function emTag(id,e){pickSet(id,e);return e}
+function absorbTags(html){return String(html==null?'':html).replace(/<tg-emoji[^>]*emoji-id="?(\d+)"?[^>]*>([\s\S]*?)<\/tg-emoji>/gi,function(_,i,em){pickSet(i,em);return em})}
+function pickArt(srcEsc){var ks=Object.keys(PICK);if(!ks.length||!S.online)return srcEsc;
+  var re=new RegExp(ks.map(function(k){return k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}).join('|'),'gu');
+  return srcEsc.replace(re,function(m){return '<img class="ce" src="'+emImg(PICK[pickKey(m)])+'" alt="'+esc(m)+'">'})}
+function pickTags(){var o={};Object.keys(PICK).forEach(function(k){o[k]=PICK[k]});return o}
+
 function emInsert(ta,s,e,id,em){var tag=emTag(id,em);ta.focus();try{ta.setRangeText(tag,s,e,'end')}catch(x){ta.value=ta.value.slice(0,s)+tag+ta.value.slice(e)}ta.dispatchEvent(new Event('input',{bubbles:true}))}
 function openEmojiSheet(ta,s,e,pick){sheet('<h3>اموجی پرمیوم</h3>'+emHTML());var r=$('#sheet');
   emMount(r,pick?function(id,em){closeSheet();pick(id,em)}:function(id,em){closeSheet();emInsert(ta,s,e,id,em)})}
@@ -1250,7 +1267,7 @@ $('#btnTheme').innerHTML=ic('moon',20);
 
 
 /* ═══════════ قالب‌های تعاملی ═══════════ */
-var INT={files:[],items:[],busy:false};
+var INT={files:[],items:[],busy:false,picks:{}};
 function intTargetValue(){var s=document.getElementById('intTarget');return s&&s.value?s.value:'me'}
 function intPaintTargets(){
   var s=document.getElementById('intTarget');if(!s)return;
@@ -1303,7 +1320,8 @@ function intWhy(r){
 function intPublish(route,payload,label){
   if(INT.busy)return;INT.busy=true;
   var t=intTargetValue();
-  api('/api/interactive/'+route,Object.assign({target:t},payload)).then(function(r){
+  var pk={};for(var k in INT.picks)pk[k]=INT.picks[k];
+  api('/api/interactive/'+route,Object.assign({target:t,picks:pk},payload)).then(function(r){
     INT.busy=false;
     if(!r||!r.ok){
       var why=intWhy(r);
@@ -1395,14 +1413,11 @@ function intTags(s){
 }
 function intRender(val){
   var s=intTags(esc(String(val||''))),stash=[];
-  /* نشانه‌های نامرئی قبل از هر چیز به تصویر آرت تبدیل می‌شوند */
-  s=s.replace(/(\p{Extended_Pictographic}\uFE0F?(?:\u200D\p{Extended_Pictographic}\uFE0F?)*)\u2063([0-9a-z]{1,13})\u2063/gu,
-    function(m,em,b36){stash.push(intImg(parseInt(b36,36),em));return '\u0001'+(stash.length-1)+'\u0001'});
   s=s.replace(/<tg-emoji\b[^>]*>([\s\S]*?)<\/tg-emoji>/gi,function(full,inner){
     var m=/emoji-id="?(\d+)"?/i.exec(full);stash.push(m?intImg(m[1],inner):inner);return '\u0001'+(stash.length-1)+'\u0001'});
-  var map=intPrem(),n=0;
-  for(var k in map)n++;n=n>0?1:0;
-  if(n)s=s.replace(/(\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*)/gu,function(ch){
+  var map={};
+  for(var pk in INT.picks)map[pk]=INT.picks[pk];
+  if(Object.keys(map).length)s=s.replace(/(\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*)/gu,function(ch){
     var id=map[ch]||map[ch.replace(/[\uFE0E\uFE0F]/g,'')];return id?intImg(id,ch):ch});
   s=s.replace(/\u0001(\d+)\u0001/g,function(_,i){return stash[+i]});
   s=s.replace(/<tg-time[^>]*>([\s\S]*?)<\/tg-time>/gi,'$1');
@@ -1428,14 +1443,12 @@ function intEmoPaint(){
 }
 function intFieldOf(){var f=INT.field;if(f&&document.contains(f))return f;
   return document.getElementById('intLvFull')||document.querySelector('#v-inter textarea')||document.querySelector('#v-inter input');}
-/* اموجی انتخاب‌شده = کاراکتر + نشانهٔ نامرئی + شناسهٔ base36؛
-   فیلد تمیز می‌ماند و سرور همان آرت پرمیوم را می‌سازد. */
+/* اموجی انتخاب‌شده: فقط خودِ کاراکتر داخل متن می‌رود و «آرت انتخابی» جدا و
+   نامرئی در INT.picks ذخیره می‌شود؛ موقع انتشار همراه درخواست به سرور می‌رود
+   تا همان اموجی‌ها پرمیوم شوند. هیچ متن اضافه‌ای در فیلد دیده نمی‌شود. */
 function intEmojiToken(id,em){
-  return id ? (em+'\u2063'+Number(id).toString(36)+'\u2063') : em;
-}
-function intMarkersToImages(s){
-  return String(s||'').replace(/(\p{Extended_Pictographic}\uFE0F?(?:\u200D\p{Extended_Pictographic}\uFE0F?)*)\u2063([0-9a-z]{1,13})\u2063/gu,
-    function(m,em,b36){return intImg(parseInt(b36,36),em)});
+  if(id){INT.picks[em]=String(id)}
+  return em;
 }
 function intInsert(txt){
   var t=intFieldOf();if(!t)return;
@@ -1460,8 +1473,8 @@ function intEmoBind(){
           }
           return;
         }
-        /* همان آرتی که در نوار می‌بینی: نشانهٔ نامرئی + شناسه ذخیره می‌شود
-           تا فیلد تمیز بماند و سرور تگ پرمیوم واقعی را بسازد. */
+        /* فقط خود کاراکتر در فیلد می‌نشیند؛ شناسهٔ پرمیوم جدا در INT.picks
+           نگه داشته می‌شود و همراه پیام به سرور می‌رود. */
         intInsert(intEmojiToken(eb.dataset.iid, eb.dataset.ie));
         return;
       }
@@ -1471,6 +1484,8 @@ function intEmoBind(){
         intInsert(INT_BLK[bb.dataset.ib]||'');
         return;
       }
+      var tg2=e.target.closest('[data-tgt]');
+      if(tg2){intTableAction('tgt:'+tg2.dataset.tgt);return}
       var tb=e.target.closest('[data-tb]');
       if(tb){intTableAction(tb.dataset.tb);}
     });
@@ -1491,10 +1506,18 @@ function intEmoBind(){
 function intBindExtras(){intEmoBind();if(document.getElementById('intTbBox')&&INT.tbl&&INT.tbl.open)intTablePaint()}
 
 /* ── سازندهٔ جدول: بدون HTML خام ── */
-INT.tbl={rows:2,cols:2,cells:[['',''],['','']],last:'',open:false};
+INT.tbl={rows:2,cols:2,cells:[['',''],['','']],last:'',open:false,to:'full'};
 function intTableTarget(){
-  var z=INT.tblField;if(z&&document.contains(z))return z;
-  return document.getElementById('intLvFull');
+  var id={short:'intLvShort',mid:'intLvMid',full:'intLvFull'}[INT.tbl.to||'full'];
+  return document.getElementById(id)||document.getElementById('intLvFull');
+}
+function intTableTargetPaint(){
+  var box=document.getElementById('intTbTarget');if(!box)return;
+  var cur=INT.tbl.to||'full';
+  box.querySelectorAll('[data-tgt]').forEach(function(b){
+    var on=b.dataset.tgt===cur;
+    b.className='btn grow'+(on?' pri':'');
+  });
 }
 function intTablePaint(){
   var g=document.getElementById('intTbGrid');if(!g)return;
@@ -1517,7 +1540,7 @@ function intTableToggle(){
   var ib=document.querySelector('[data-ib="table"]');
   if(ib)ib.textContent=INT.tbl.open?'🧮 جدول (بستن)':'+ جدول';
   if(INT.tbl.open){
-    INT.tblField=intFieldOf();intTablePaint();
+    INT.tblField=intFieldOf();intTablePaint();intTableTargetPaint();
     var hint=document.getElementById('intTbHint');
     if(hint)hint.textContent='خانه‌ها را پر کن، بعد «درج در متن»';
     hap('pick');
@@ -1547,26 +1570,31 @@ function intTableAction(a){
   else if(a==='colAdd'){t.cols++;intTablePaint()}
   else if(a==='rowDel'&&t.rows>2){t.rows--;t.cells.length=t.rows;intTablePaint()}
   else if(a==='colDel'&&t.cols>2){t.cols--;intTablePaint()}
-  else if(a==='toFull'){INT.tblField=document.getElementById('intLvFull');toast('جدول داخل «نسخهٔ کامل» درج می‌شود')}
+  else if(a&&a.indexOf('tgt:')===0){INT.tbl.to=a.slice(4);intTableTargetPaint();hap('pick')}
   else if(a==='insert'){
-    f=intTableTarget();if(!f){toast('اول یک فیلد متن را انتخاب کن');hap('err');return}
+    f=intTableTarget();
+    if(!f){toast('فیلد متن پیدا نشد');hap('err');return}
     var html=intTableHtml();
-    if(t.last&&f.value.indexOf(t.last)>=0){f.value=f.value.replace(t.last,html)}
+    var wasLast=t.last&&f.value.indexOf(t.last)>=0;
+    if(wasLast){f.value=f.value.replace(t.last,html)}
     else{
-      var s=(f.selectionStart==null)?f.value.length:f.selectionStart;
-      f.value=f.value.slice(0,s)+(s&&f.value[s-1]!=='\n'?'\n':'')+html+'\n'+f.value.slice(s);
+      var tail=f.value.trim().length?('\n'+html):html;
+      f.value=f.value.replace(/\s*$/,'')+tail;
     }
     t.last=html;f.dispatchEvent(new Event('input',{bubbles:true}));
+    try{intPreview()}catch(e){}
+    try{f.scrollIntoView({block:'center'})}catch(e){}
     /* بعد از درج، پنل جمع می‌شود تا صفحه بزرگ نشود */
     t.open=false;
     var bx=document.getElementById('intTbBox');
-    if(bx){bx.style.display='none';
-      var hint=document.getElementById('intTbHint');
-      if(hint)hint.textContent='جدول نشست — برای ویرایش دوباره روی «+ جدول» بزن';
-      var ib=document.querySelector('[data-ib="table"]');
-      if(ib)ib.textContent='🧮 جدول (ویرایش)';
-    }
-    toast('جدول در متن نشست');hap('ok');
+    if(bx)bx.style.display='none';
+    var hint=document.getElementById('intTbHint');
+    var lbl={short:'خلاصه',mid:'متوسط',full:'کامل'}[t.to||'full'];
+    if(hint)hint.textContent='آماده — جدول در «نسخهٔ '+lbl+'» نشست';
+    var ib=document.querySelector('[data-ib="table"]');
+    if(ib)ib.textContent='🧮 جدول (ویرایش)';
+    toast(wasLast?('جدول در «'+lbl+'» به‌روزرسانی شد'):('جدول در «'+lbl+'» نشست'));
+    hap('ok');
   }
   hap('pick');
 }
@@ -1586,7 +1614,7 @@ $('#code').addEventListener('input',function(){D.blocks=parseAny(this.value);D.d
 $('#code').addEventListener('blur',syncCodeOut);
 /* ── server calls ── */
 var P={step:1,html:'',ver:-1,target:null,busy:false,res:null,verdict:null};
-function render(){return api('/api/render',{text:ser(D.blocks,false)}).then(function(r){if(!r.ok){toast('رندر نشد: '+(r.error||'خطا'));hap('err');return null}P.html=r.html;P.ver=D.ver;return r.html})}
+function render(){return api('/api/render',{text:ser(D.blocks,false),picks:pickTags()}).then(function(r){if(!r.ok){toast('رندر نشد: '+(r.error||'خطا'));hap('err');return null}P.html=r.html;P.ver=D.ver;return r.html})}
 function titleOf(){var b=D.blocks.find(function(x){return(x.type==='heading'||x.type==='text')&&(x.t||'').trim()});return b?b.t.split('\n')[0].replace(/[#*`>_~=|]/g,'').trim().slice(0,40):'پیش‌نویس'}
 function saveDraft(){if(!S.online){toast('برای ذخیره، استودیو را از داخل ربات باز کن');hap('err');return}
   if(!hasContent()){toast('هنوز چیزی برای ذخیره نیست');return}
@@ -1737,7 +1765,7 @@ $('#pubBox').addEventListener('click',function(e){var b=e.target.closest('[data-
       P.verdict=v;paintPub()})}
   else if(p==='s1'||p==='s2'||p==='s3'){P.step=+p[1];paintPub()}
   else if(p==='go'){P.busy=true;paintPub();var pr=(P.ver===D.ver&&P.html)?Promise.resolve(P.html):render();
-    pr.then(function(h){if(!h){P.busy=false;paintPub();return}var delChk=$('#delMediaChk'); var delMedia=delChk&&delChk.checked; return api('/api/publish',{target:P.target.chat,rich:{html:h,deleteMedia:delMedia}}).then(function(r){P.busy=false;P.res=r;P.step=4;paintPub();hap(r.ok?'ok':'err'); if(delMedia&&r.ok){ S.media=[]; }})})}
+    pr.then(function(h){if(!h){P.busy=false;paintPub();return}var delChk=$('#delMediaChk'); var delMedia=delChk&&delChk.checked; return api('/api/publish',{target:P.target.chat,rich:{html:h,deleteMedia:delMedia},picks:pickTags()}).then(function(r){P.busy=false;P.res=r;P.step=4;paintPub();hap(r.ok?'ok':'err'); if(delMedia&&r.ok){ S.media=[]; }})})}
   else if(p==='again'){P={step:1,html:'',ver:-1,target:null,busy:false,res:null,verdict:null};newDoc()}});
 
 /* ─────────────── اتصالات کانال ─────────────── */

@@ -879,6 +879,20 @@ async function libraryMap(store2) {
   return map;
 }
 __name(libraryMap, "libraryMap");
+/* انتخاب‌های پرمیوم استودیو: { کاراکتر: شناسه } — دقیقاً همان چیزی که
+   کاربر از نوار اموجی زده. هیچ جانشینی خودکاری اینجا نیست. */
+function cleanStudioPicks(x) {
+  const out = {};
+  if (x && typeof x === "object") {
+    Object.keys(x).slice(0, 80).forEach((k) => {
+      const ch = String(k || "").replace(/\uFE0F/g, "").slice(0, 8);
+      const id = String(x[k] || "").replace(/\D/g, "").slice(0, 25);
+      if (ch && id) out[ch] = id;
+    });
+  }
+  return out;
+}
+__name(cleanStudioPicks, "cleanStudioPicks");
 function premiumize(html, map) {
   const src = String(html);
   if (!map || map.size === 0) return src;
@@ -893,6 +907,8 @@ function premiumize(html, map) {
   const keys = [...map.keys()].sort((a, b) => b.length - a.length);
   const pattern = keys.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
   const out = zoned.replace(new RegExp(pattern, "gu"), (match, offset) => {
+    const head = zoned.slice(0, offset);
+    if (head.split("<tg-emoji").length > head.split("</tg-emoji>").length) return match;
     const before = zoned.slice(Math.max(0, offset - 64), offset);
     if (/emoji-id="[^"]*$/.test(before)) return match;
     const id = map.get(match);
@@ -1082,11 +1098,14 @@ async function renderPayload(env, store2, uid, body) {
   }
   // Both namespaces, both layers: the preview must know every premium emoji the
   // bot knows, not just the ones the library half happened to hold.
+  const picks = cleanStudioPicks(body?.picks);
+  let htmlPicked = html;
+  if (Object.keys(picks).length) htmlPicked = applyEmojiSubs(html, picks, {});
   const map = new Map(Object.entries(await emojiReadMerged(env, store2, 0)));
-  let final = html;
+  let final = htmlPicked;
   if (map.size) {
-    const premium = premiumize(html, map);
-    if (premium !== html) final = premium;
+    const premium = premiumize(htmlPicked, map);
+    if (premium !== htmlPicked) final = premium;
   }
   return json({ ok: true, html: final, plain: plain(final).slice(0, 120), premium: final !== html });
 }
@@ -1125,6 +1144,7 @@ async function channelCheck(tg, uid, targetRaw) {
     ok: botAdmin && userAdmin,
     title: chat?.title || String(chatId),
     username: chat?.username || "",
+    type: chat?.type || "",
     bot: { admin: botAdmin },
     user: { admin: userAdmin, status: them?.status || "unknown" }
   });
@@ -1187,12 +1207,13 @@ function replyMarkupFromRich(html) {
   return rows.length ? { inline_keyboard: rows } : null;
 }
 __name(replyMarkupFromRich, "replyMarkupFromRich");
-async function publishNow(tg, targetRaw, rich, uid) {
+async function publishNow(tg, targetRaw, rich, uid, picks) {
   const target = parseTarget(targetRaw);
   if (!target) return bad("target");
   let clean = String(rich?.html || rich?.markdown || "").trim();
   if (!clean) return bad("empty");
   clean = HTML_TAG_RE.test(clean) ? mixedToHtml(clean) : mdToHtml(clean);
+  if (picks && Object.keys(picks).length) clean = applyEmojiSubs(clean, picks, {});
   const notices = [];
   const extractMedia = /* @__PURE__ */ __name((html) => {
     const imgs = [...String(html || "").matchAll(/<img[^>]+src=["']tg:\/\/photo\?id=([^"']+)["'][^>]*\/?>/gi)].map((m) => ({ kind: "photo", fileId: m[1] }));
@@ -1666,26 +1687,66 @@ async function handleMiniAppApi(request, env, url) {
         return rest;
       })) };
     };
-    const sendAny = async (chatId, html, markup) => {
+    const sendAny = async (chatId, html, markup, picks, uid, embedBtns) => {
       let i = 0;
       const media = [];
-      const mapped = String(markerTags(ensureRichHtmlStructure(String(html)))).replace(/<img[^>]+src=["']tg:\/\/photo\?id=([^"']+)["'][^>]*\/?>/gi, (full, fid) => {
+      const chosen = picks && typeof picks === "object" ? picks : {};
+      const reg = await emojiRegistryCached(env);
+      const mapped = String(premiumizeSafe(ensureRichHtmlStructure(String(html)), chosen, reg.map)).replace(/<img[^>]+src=["']tg:\/\/photo\?id=([^"']+)["'][^>]*\/?>/gi, (full, fid) => {
         const mid = "m" + i++;
         media.push({ id: mid, media: { type: "photo", media: fid } });
         return full.replace(fid, mid);
       });
       const rich = { html: mapped, ...media.length ? { media } : {} };
-      // هیچ جانشینی خودکار اموجی اینجا نیست: اموجی‌هایی که کاربر تایپ کرده
-      // شکل خودشان را نگه می‌دارند و فقط تگ‌هایی که خودش از پیکر انتخاب کرده
-      // پرمیوم می‌مانند.
-      const buttons = markup ? markerButtons(markup) : null;
+      // اموجی‌ای که کاربر خودش از پیکر انتخاب کرده دقیقاً همان آرت می‌شود؛
+      // بقیهٔ اموجی‌های متن آرت پرمیوم خود ربات را می‌گیرند — همان قاعدهٔ استودیو.
+      const buttons = markup ? premiumButtons(markup, chosen, reg.map) : null;
+      const artN = (mapped.match(/<tg-emoji/g) || []).length;
+      const iconN = buttons ? (JSON.stringify(buttons).match(/icon_custom_emoji_id/g) || []).length : 0;
+      const withArt = artN > 0 || iconN > 0;
+      const trace = [];
+      const meta = `map:${Object.keys(reg.map || {}).length} art:${artN} icons:${iconN} dst:${String(chatId).slice(0, 24)}`;
+      /* کانال اجازهٔ اموجی پرمیوم از طرف ربات را نمی‌دهد؛ مسیر امن کپی از پیوی است. */
+      if (withArt && uid && String(chatId) !== String(uid)) {
+        /* مسیر بومی: پیام «در پاسخ» + ادیت؛ مزیتش این است که بعداً هم می‌شود
+           همین پیام را با آرت به‌روز کرد (بدون پیام تازه). دکمه‌های نظرسنجی
+           کانال داخل خود پیام می‌نشینند تا آیکن پرمیومشان حذف نشود. */
+        const embed = !!embedBtns && !!buttons;
+        const native = await sendPremiumReply(env, chatId, embed ? richButtonRows(mapped, markup, chosen, reg.map) : mapped, media, embed ? null : markup, chosen, reg);
+        if (native && native.message_id && native.rep) return { message_id: native.message_id, via: "channel-native", premium: true };
+        if (native && native.message_id) await tgCall(env, "deleteMessage", { chat_id: chatId, message_id: native.message_id }).catch(() => {});
+        const moved = await copyIntoChannel(env, uid, chatId, rich, buttons, chosen, reg);
+        if (moved && moved.message_id) return { message_id: moved.message_id, via: moved.via || "premium-dm-copy", premium: true };
+        trace.push({ s: "sendany", ok: false, e: "native+copy missed " + meta });
+      } else {
+        trace.push({ s: "sendany", ok: true, e: "direct " + meta });
+      }
       try {
-        return await tg.sendRich(chatId, rich, buttons ? { reply_markup: buttons } : {});
+        const sent = await tg.sendRich(chatId, rich, buttons ? { reply_markup: buttons } : {});
+        if (trace.length) await dbgChan(env, trace.concat([{ s: "direct", ok: true, e: "" }]));
+        return { ...(sent && typeof sent === "object" ? sent : {}), premium: withArt, via: "direct" };
       } catch (e) {
         const why = String(e?.description || e?.message || e);
+        await dbgChan(env, trace.concat([{ s: "direct", ok: false, e: why.slice(0, 160) }]));
         if (!buttons || !/icon|emoji|custom/i.test(why)) throw e;
-        return await tg.sendRich(chatId, rich, { reply_markup: stripMediaIcons(buttons) });
+        /* تلگرام آیکن یا تگ پرمیوم را قبول نکرد: همان نوشته با اموجی ساده می‌رود تا
+           پیام از دست نرود و چیزی از متن دکمه کم نشود. */
+        const plainButtons = markerButtons(markup);
+        return await tg.sendRich(chatId, { ...rich, html: stripPremium(rich.html) }, plainButtons ? { reply_markup: plainButtons } : {});
       }
+    };
+    /* انتخاب‌های پرمیومِ کاربر: { کاراکتر: شناسه }. هیچ اموجی‌ای خودکار
+       جانشین نمی‌شود؛ فقط چیزی که خودش انتخاب کرده پرمیوم می‌شود. */
+    const cleanPicks = (x) => {
+      const out = {};
+      if (x && typeof x === "object") {
+        Object.keys(x).slice(0, 60).forEach((k) => {
+          const ch = String(k || "").slice(0, 8);
+          const id = String(x[k] || "").replace(/\D/g, "").slice(0, 25);
+          if (ch && id) out[ch] = id;
+        });
+      }
+      return out;
     };
     const box = async () => await store2.get(`intx:${uid}`, { items: [] });
     const listAdd = async (entry) => {
@@ -1717,9 +1778,11 @@ async function handleMiniAppApi(request, env, url) {
     const rawTarget = String(body?.target || "").trim();
     const toMe = !rawTarget || rawTarget === "me" || rawTarget === "self";
     let chatId = uid;
+    let isChan = false;
     if (!toMe) {
       const verdict = await (await channelCheck(tg, uid, rawTarget)).json();
       if (!verdict.ok) return json({ ok: false, error: "permissions", verdict });
+      isChan = verdict.type === "channel";
       const parsed = parseTarget(rawTarget);
       if (!parsed) return bad("target");
       chatId = parsed.chat;
@@ -1737,14 +1800,20 @@ async function handleMiniAppApi(request, env, url) {
         .map((x) => plainEmojis(String(x || "").trim()).slice(0, 60)).filter(Boolean).slice(0, 6);
       if (labels.length < 2) return bad("\u062D\u062F\u0627\u0642\u0644 \u062F\u0648 \u06AF\u0632\u06CC\u0646\u0647 \u0644\u0627\u0632\u0645 \u0627\u0633\u062A");
       const minutes = Math.max(0, Math.min(10080, Number(body?.minutes) || 0));
+      const picks = cleanPicks(body?.picks);
       const id = newId("p");
       const state = {
-        id, title, subtitle,
+        id, title, subtitle, picks,
         options: labels.map((l, k) => ({ key: "o" + (k + 1), label: l })),
         votes: {}, createdAt: Date.now(), updatedAt: Date.now(),
         ...minutes ? { endsAt: Date.now() + minutes * 60000 } : {}
       };
-      const sent = await sendAny(chatId, renderLivePost(state), liveKeyboard(state));
+      const sent = await sendAny(chatId, renderLivePost(state), liveKeyboard(state), picks, uid, isChan);
+      state.owner = uid;
+      state.chan = isChan;
+      state.richBtns = !!isChan;
+      state.premium = !!sent.premium;
+      state.via = sent.via || "";
       await setJson(env, `live:${id}`, state, 30 * 86400);
       const entry = { kind: "poll", id, title: plainEmojisText(title), at: Date.now(), chat: String(chatId), msg: sent.message_id, link: linkOf(sent.message_id), minutes };
       await listAdd(entry);
@@ -1759,19 +1828,22 @@ async function handleMiniAppApi(request, env, url) {
       const full = convT(lv.full);
       if (!short || !full) return bad("\u062E\u0644\u0627\u0635\u0647 \u0648 \u0646\u0633\u062E\u0647\u0654 \u06A9\u0627\u0645\u0644 \u0644\u0627\u0632\u0645 \u0627\u0633\u062A");
       const id = newId("d");
+      const picks = cleanPicks(body?.picks);
       const levels = {
         short: { label: "\u26A1 \u062E\u0644\u0627\u0635\u0647\u0654 \u06F3\u06F0 \u062B\u0627\u0646\u06CC\u0647", html: short },
         mid: { label: "\u{1F4DA} \u0646\u0633\u062E\u0647\u0654 \u0645\u062A\u0648\u0633\u0637", html: mid },
         full: { label: "\u2705 \u0646\u0633\u062E\u0647\u0654 \u06A9\u0627\u0645\u0644", html: full }
       };
       const head = title ? `<h2>${escT(title)}</h2>\n` : "";
-      const rows = Object.keys(levels).map((k) => ([{
-        text: levels[k].label + (k === "short" ? " \u2022" : ""),
-        callback_data: `deep:${id}:${k}`
-      }]));
-      const sent = await sendAny(chatId, head + levels.short.html, { inline_keyboard: rows });
+      const icons = await levelIcons(env, picks, Object.keys(levels).map((k) => levels[k].label));
+      const rows = pickedButtons({ inline_keyboard: Object.keys(levels).map((k) => ([{
+        text: levels[k].label + (k === "short" ? " •" : ""),
+        callback_data: "deep:" + id + ":" + k
+      }])) }, icons).inline_keyboard;
+      const sent = await sendAny(chatId, head + levels.short.html, { inline_keyboard: rows }, picks, uid, isChan);
       await setJson(env, `deep:${id}`, {
-        id, chatId, msgId: sent.message_id, level: "short", levels,
+        id, chatId, msgId: sent.message_id, level: "short", levels, picks, icons,
+        owner: uid, chan: isChan, premium: !!sent.premium, via: sent.via || "",
         title: title || "", createdAt: Date.now(), updatedAt: Date.now()
       }, 30 * 86400);
       const entry = { kind: "levels", id, title: plainEmojisText(title) || "\u{1F4DA} \u067E\u0633\u062A \u0686\u0646\u062F\u062D\u0627\u0644\u062A\u0647", at: Date.now(), chat: String(chatId), msg: sent.message_id, link: linkOf(sent.message_id) };
@@ -1790,7 +1862,8 @@ async function handleMiniAppApi(request, env, url) {
         "<tg-slideshow>" +
         media.map((m) => `<img src="tg://photo?id=${m.fileId}"/>`).join("") +
         "</tg-slideshow>";
-      const sent = await sendAny(chatId, html);
+      const picks = cleanPicks(body?.picks);
+      const sent = await sendAny(chatId, html, null, picks, uid);
       const entry = { kind: "slideshow", id: newId("s"), title: caption.slice(0, 60) || "\u0627\u0633\u0644\u0627\u06CC\u062F\u0634\u0648", at: Date.now(), chat: String(chatId), msg: sent.message_id, link: linkOf(sent.message_id), count: media.length };
       await listAdd(entry);
       return json({ ok: true, ...entry, message_id: sent.message_id });
@@ -1805,7 +1878,17 @@ async function handleMiniAppApi(request, env, url) {
       await setJson(env, `live:${id}`, st, 30 * 86400);
       const it = await findItem(id);
       if (it?.chat && it?.msg) {
-        await editPostMessage(env, Number(it.chat) || it.chat, it.msg, { html: renderLivePost(st), replyMarkup: liveKeyboard(st) }).catch(() => null);
+        if (!st.owner && isChanDest(it.chat)) { st.owner = String(uid); st.chan = true; await setJson(env, `live:${id}`, st, 30 * 86400); }
+        const liveChat = Number(it.chat) || it.chat;
+        let movedEnd = null;
+        if (st.owner && st.chan) movedEnd = await republishPremium(env, st.owner, liveChat, it.msg, renderLivePost(plainEmojisDeep(st)), liveKeyboard(plainEmojisDeep(st)), st.picks || {}, true);
+        if (movedEnd && movedEnd.message_id) {
+          it.msg = movedEnd.message_id;
+          await dropItem(id);
+          await listAdd(it);
+        } else {
+          await editPostMessage(env, liveChat, it.msg, { html: renderLivePost(st), replyMarkup: liveKeyboard(st), rich: true, emojiSubs: st.picks || {} }).catch(() => null);
+        }
       }
       return json({ ok: true, id });
     }
@@ -1879,7 +1962,7 @@ async function handleMiniAppApi(request, env, url) {
     const check = await channelCheck(tg, uid, body?.target);
     const verdict = await check.json();
     if (!verdict.ok) return json({ ok: false, error: "permissions", verdict });
-    return publishNow(tg, body?.target, body?.rich || { html: body?.html }, uid);
+    return publishNow(tg, body?.target, body?.rich || { html: body?.html }, uid, cleanStudioPicks(body?.picks));
   }
   if (path === "/api/invite/status" && request.method === "POST") {
     const data = await store2.get(`invites:${uid}`, { invited: [], credits: 0, total: 0, used: 0, forwards: [], sigKept: 0 });
@@ -2934,6 +3017,52 @@ function markerButtons(markup) {
   })) };
 }
 __name(markerButtons, "markerButtons");
+/* اموجی‌ای که کاربر از پیکر انتخاب کرده، هرجای متن دکمه که باشد آیکن پرمیوم
+   همان آرت می‌شود؛ خود کاراکتر از متن دکمه برداشته می‌شود تا متن تمیز بماند. */
+function pickedButtons(markup, picks) {
+  if (!markup || !markup.inline_keyboard) return markup;
+  const wanted = Object.keys(picks && typeof picks === "object" ? picks : {})
+    .map((k) => [String(k).split(String.fromCharCode(0xFE0F)).join(""), String(picks[k] || "").split(String.fromCharCode(0xFE0F)).join("")])
+    .map((pair) => [pair[0], pair[1].split("").filter((c) => c >= "0" && c <= "9").join("")])
+    .filter((pair) => pair[0] && pair[1]);
+  if (!wanted.length) return markup;
+  const run = /\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*/gu;
+  return { ...markup, inline_keyboard: markup.inline_keyboard.map((row) => row.map((button) => {
+    if (!button || typeof button.text !== "string" || button.icon_custom_emoji_id) return button;
+    let hit = null;
+    let m;
+    run.lastIndex = 0;
+    while ((m = run.exec(button.text))) {
+      const key = m[0].split(String.fromCharCode(0xFE0F)).join("");
+      const found = wanted.find((pair) => pair[0] === key);
+      if (found) { hit = { at: m.index, len: m[0].length, id: found[1], raw: m[0] }; break; }
+    }
+    if (!hit) return button;
+    const rest = (button.text.slice(0, hit.at) + " " + button.text.slice(hit.at + hit.len)).replace(/\s{2,}/g, " ").trim();
+    return { ...button, text: rest || hit.raw, icon_custom_emoji_id: hit.id };
+  })) };
+}
+__name(pickedButtons, "pickedButtons");
+async function levelIcons(env, picks, labels) {
+  const out = {};
+  const base = picks && typeof picks === "object" ? picks : {};
+  for (const k of Object.keys(base)) out[String(k).split(String.fromCharCode(0xFE0F)).join("")] = String(base[k]);
+  const need = [];
+  for (const label of labels) {
+    const m = /\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*/u.exec(String(label || ""));
+    if (!m) continue;
+    const ch = m[0].split(String.fromCharCode(0xFE0F)).join("");
+    if (ch && !out[ch]) need.push(ch);
+  }
+  if (!need.length) return out;
+  let reg = {};
+  try { reg = await emojiReadMerged(env, null, 0); } catch { reg = {}; }
+  const norm = {};
+  for (const k of Object.keys(reg || {})) norm[String(k).split(String.fromCharCode(0xFE0F)).join("")] = reg[k];
+  for (const ch of need) if (norm[ch]) out[ch] = String(norm[ch]);
+  return out;
+}
+__name(levelIcons, "levelIcons");
 function plainEmojisDeep(state) {
   if (!state || typeof state !== "object") return state;
   const s = JSON.parse(JSON.stringify(state));
@@ -2946,10 +3075,10 @@ function plainEmojisDeep(state) {
   return s;
 }
 __name(plainEmojisDeep, "plainEmojisDeep");
-async function editPostMessage(env, chatId, messageId, { text, html, media, replyMarkup, rich, plain }) {
-  const emojiMap = plain ? {} : await getJson(env, "map", {});
+async function editPostMessage(env, chatId, messageId, { text, html, media, replyMarkup, rich, emojiSubs }) {
+  const emojiMap = emojiSubs !== undefined ? emojiSubs : await getJson(env, "map", {});
   const content = markerTags(applyEmojiSubs(ensureRichHtmlStructure((html || escapeHtml(text || "")).trim()), {}, emojiMap));
-  const effectiveReplyMarkup = markerButtons(plain ? replyMarkup : decorateReplyMarkup(replyMarkup, emojiMap));
+  const effectiveReplyMarkup = markerButtons(decorateReplyMarkup(pickedButtons(replyMarkup, emojiMap), emojiMap));
   const stripIconIds = /* @__PURE__ */ __name((mk) => {
     if (!mk?.inline_keyboard) return mk;
     return { ...mk, inline_keyboard: mk.inline_keyboard.map((row) => row.map((b) => {
@@ -6155,10 +6284,11 @@ async function handleCommunityCallback(cb, env, origin) {
 /* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 three-state posts: one message, three depths \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
 function deepKeyboard(st) {
   const levels = st.levels || {};
-  return { inline_keyboard: Object.keys(levels).map((k) => ([{
-    text: (levels[k].label || k) + (k === st.level ? " \u2022" : ""),
-    callback_data: `deep:${st.id}:${k}`
-  }])) };
+  const rows = Object.keys(levels).map((k) => ([{
+    text: (levels[k].label || k) + (k === st.level ? " •" : ""),
+    callback_data: "deep:" + st.id + ":" + k
+  }]));
+  return pickedButtons({ inline_keyboard: rows }, st.icons || st.picks || {});
 }
 async function handleDeepCallback(cb, env, origin) {
   const qId = cb.id;
@@ -6169,14 +6299,24 @@ async function handleDeepCallback(cb, env, origin) {
   const level = parts[2] || "";
   const st = await getJson(env, `deep:${id}`, null);
   if (!st || !st.levels || !st.levels[level]) return answerCallback(env, qId, "\u0627\u06CC\u0646 \u0646\u0633\u062E\u0647 \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A.", true);
+  if (!st.owner) { if (await healChannelOwner(env, st, id, chatId, cb.message?.chat?.type)) await setJson(env, `deep:${id}`, st, 30 * 86400); }
+  if (!st.icons) st.icons = await levelIcons(env, st.picks || {}, Object.keys(st.levels || {}).map((k) => (st.levels[k] || {}).label || ""));
   st.chatId = chatId;
   st.msgId = msgId;
   st.level = level;
   st.updatedAt = Date.now();
   await setJson(env, `deep:${id}`, st, 30 * 86400);
-  await editPostMessage(env, chatId, msgId, { html: st.levels[level].html, replyMarkup: deepKeyboard(st), rich: true, plain: true }).catch((e) => {
-    console.warn("deep edit failed", e?.message);
-  });
+  let movedDeep = null;
+  if (st.owner && st.chan) movedDeep = await republishPremium(env, st.owner, chatId, msgId, st.levels[level].html, deepKeyboard(st), st.picks || {}, true);
+  if (movedDeep && movedDeep.message_id) {
+    st.msgId = movedDeep.message_id;
+    await setJson(env, `deep:${id}`, st, 30 * 86400);
+    await retargetListItem(env, st.owner, st.id, movedDeep.message_id);
+  } else {
+    await editPostMessage(env, chatId, msgId, { html: st.levels[level].html, replyMarkup: deepKeyboard(st), rich: true, emojiSubs: st.picks || {} }).catch((e) => {
+      console.warn("deep edit failed", e?.message);
+    });
+  }
   return answerCallback(env, qId, `\u062D\u0627\u0644\u062A: ${st.levels[level].label || level}`);
 }
 
@@ -6184,13 +6324,406 @@ async function handleDeepCallback(cb, env, origin) {
    An interactive post: one message whose bars move as people vote. Votes arrive
    through callback queries from ordinary channel subscribers, so they are
    handled before anything that assumes the caller is the operator. */
+/* کش جیبی برای فهرست اموجی‌های پرمیوم ربات (۶۰ ثانیه). */
+let EMOJI_REG_CACHE = { at: 0, map: null, rev: {} };
+async function emojiRegistryCached(env) {
+  const now = Date.now();
+  if (EMOJI_REG_CACHE.map && now - EMOJI_REG_CACHE.at < 60000) return EMOJI_REG_CACHE;
+  let map = {};
+  try { map = (await emojiReadMerged(env, null, 0)) || {}; } catch { map = {}; }
+  const rev = {};
+  for (const k of Object.keys(map)) { const v = map[k]; if (v) rev[String(v)] = k; }
+  EMOJI_REG_CACHE = { at: now, map, rev };
+  return EMOJI_REG_CACHE;
+}
+__name(emojiRegistryCached, "emojiRegistryCached");
+/* اموجی‌های داخل کد و فرمول دست‌نخورده می‌مانند؛ بقیه آرت پیش‌فرض ربات را می‌گیرند. */
+function premiumizeSafe(html, picks, map) {
+  const keep = [];
+  const zoned = String(html == null ? "" : html).replace(/<(pre|code|tg-math|tg-math-block|tg-code)[^>]*>[\s\S]*?<\/\1>/gi, (m) => {
+    keep.push(m);
+    return "\u0000" + (keep.length - 1) + "\u0000";
+  });
+  const out = applyEmojiSubs(zoned, picks && typeof picks === "object" ? picks : {}, map || {});
+  return out.replace(/\u0000(\d+)\u0000/g, (_, i) => keep[Number(i)]);
+}
+__name(premiumizeSafe, "premiumizeSafe");
+/* انتخاب کاربر هرجای متن دکمه که باشد آیکن می‌شود؛ بعد بقیهٔ اموجی‌های سرِ متن
+   از پک‌های خود ربات آیکن می‌گیرند — همان قاعدهٔ استودیو. */
+function premiumButtons(markup, picks, map) {
+  if (!markup || !markup.inline_keyboard) return markup;
+  return markerButtons(decorateReplyMarkup(pickedButtons(markup, picks && typeof picks === "object" ? picks : {}), map || {}));
+}
+__name(premiumButtons, "premiumButtons");
+function reverseEmojiMap(picks) {
+  const out = {};
+  const p = picks && typeof picks === "object" ? picks : {};
+  for (const k of Object.keys(p)) if (p[k]) out[String(p[k])] = k;
+  return out;
+}
+__name(reverseEmojiMap, "reverseEmojiMap");
+/* اگر تلگرام آیکن را قبول نکرد، همان اموجی به متن دکمه برمی‌گردد تا چیزی گم نشود. */
+function restoreIconsToText(markup, lookup) {
+  if (!markup || !markup.inline_keyboard) return markup;
+  return { ...markup, inline_keyboard: markup.inline_keyboard.map((row) => row.map((b) => {
+    const icon = b && b.icon_custom_emoji_id;
+    if (!icon) return b;
+    const { icon_custom_emoji_id, ...rest } = b;
+    const ch = lookup ? lookup[String(icon)] : null;
+    return ch ? { ...rest, text: (ch + " " + String(rest.text || "")).trim() } : rest;
+  })) };
+}
+__name(restoreIconsToText, "restoreIconsToText");
+/* پیام را در پیوی خود اپراتور می‌سازیم و همان را داخل کانال کپی می‌کنیم؛
+   آرت پرمیوم همراه کپی می‌ماند و پیام موقت پیوی پاک می‌شود. */
+/* ردیابیِ مسیر کانال: هر گام (پیوی، کپی، دکمه‌ها) با پاسخ تلگرام در KV
+   ذخیره می‌شود تا اگر آرت نرسید، دقیقاً بدانیم کجا رد شده. */
+async function dbgChan(env, events) {
+  try {
+    const kv = env?.KV_FRESH || env?.KV;
+    if (!kv || typeof kv.put !== "function") return;
+    let box = [];
+    try {
+      const raw = await kv.get("dbg:chan");
+      if (raw) box = JSON.parse(raw);
+    } catch { box = []; }
+    if (!Array.isArray(box)) box = [];
+    box = box.concat(events).slice(-24);
+    await kv.put("dbg:chan", JSON.stringify(box).slice(0, 6000), { expirationTtl: 2 * 86400 });
+  } catch {
+  }
+}
+__name(dbgChan, "dbgChan");
+/* ساخت پیام در پیوی و کپیِ آن به کانال.
+   نکتهٔ مهم (با آزمون زندهٔ تلگرام ثابت شد): کپیِ همراهِ reply_markup اموجی
+   پرمیوم را به اموجی ساده تبدیل می‌کند؛ پس کپی خالی انجام می‌شود و دکمه‌ها
+   بعد از کپی با editMessageReplyMarkup روی همان پیام می‌نشینند. */
+async function copyIntoChannel(env, owner, chatId, rich, buttons, picks, reg) {
+  const trace = [];
+  const say = (step, ok, desc) => trace.push({ s: step, ok: !!ok, e: String(desc || "").slice(0, 160) });
+  const call = async (method, payload) => {
+    try { return await tgCall(env, method, payload); } catch (e) { return { ok: false, description: String(e?.message || e) }; }
+  };
+  try {
+    const dm = await call("sendRichMessage", { chat_id: owner, rich_message: rich, disable_notification: true });
+    const dmId = dm && dm.ok && dm.result ? dm.result.message_id : null;
+    say("dm", !!dmId, dmId ? "" : (dm?.description || "no message_id"));
+    if (!dmId) {
+      await dbgChan(env, trace);
+      return null;
+    }
+    let copy = null, used = "";
+    const tries = [
+      ["copy", "copyMessage", { chat_id: chatId, from_chat_id: owner, message_id: dmId, disable_notification: true }],
+      ["forward", "forwardMessage", { chat_id: chatId, from_chat_id: owner, message_id: dmId, disable_notification: true }]
+    ];
+    for (const [label, method, payload] of tries) {
+      const res = await call(method, payload);
+      const got = !!(res && res.ok && res.result && res.result.message_id);
+      say(label, got, got ? "" : (res?.description || "no id"));
+      if (got) { copy = res.result; used = label; break; }
+    }
+    await call("deleteMessage", { chat_id: owner, message_id: dmId });
+    if (!copy || !copy.message_id) {
+      await dbgChan(env, trace);
+      return null;
+    }
+    /* دکمه‌ها بعد از کپی: هم آرت متن و هم دکمه‌های اینلاین سرِ جایشان می‌مانند. */
+    if (buttons) {
+      const lookup = { ...(reg && reg.rev ? reg.rev : {}), ...reverseEmojiMap(picks) };
+      const a = await call("editMessageReplyMarkup", { chat_id: chatId, message_id: copy.message_id, reply_markup: buttons });
+      say("markup:icons", !!(a && a.ok), a?.description || "");
+      if (!(a && a.ok)) {
+        const b = await call("editMessageReplyMarkup", { chat_id: chatId, message_id: copy.message_id, reply_markup: restoreIconsToText(buttons, lookup) });
+        say("markup:text", !!(b && b.ok), b?.description || "");
+      }
+    }
+    copy.via = "channel-" + used;
+    say("done", true, "");
+    await dbgChan(env, trace);
+    return copy;
+  } catch (e) {
+    say("throw", false, e?.message);
+    await dbgChan(env, trace);
+    console.warn("channel premium copy failed", e?.message);
+    return null;
+  }
+}
+__name(copyIntoChannel, "copyIntoChannel");
+/* ویرایش‌های کانال: نسخهٔ تازه ساخته و جای پیام قبلی می‌نشیند تا آرت پرمیوم
+   از دست نرود (کانال اجازهٔ اموجی پرمیوم از طرف ربات را نمی‌دهد). */
+/* چند آرت داخل پاسخِ ذخیره‌شدهٔ تلگرام هست؟ (پاسخ ادیت، blocks را برمی‌گرداند) */
+function artCountIn(msg) {
+  const s = JSON.stringify(msg == null ? {} : msg);
+  return (s.match(/custom_emoji/g) || []).length + (s.match(/<tg-emoji/g) || []).length;
+}
+__name(artCountIn, "artCountIn");
+/* پیام «در پاسخ» بساز: لنگرِ کوچک → ارسال در پاسخ به آن → ادیت برای نشاندن آرت
+   → دکمه‌ها → پاک کردن لنگر. اگر تلگرام آرت را نگه نداشت، null برمی‌گردد تا
+   مسیر قدیمیِ کپی از پیوی جایگزین شود. */
+function richEsc(v) {
+  return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+__name(richEsc, "richEsc");
+/* دکمه‌های اینلاین → ردیف‌های دکمهٔ ریچ با آرت پرمیوم در متن دکمه. */
+function richButtonRows(html, markup, picks, map) {
+  const rows = markup && markup.inline_keyboard ? markup.inline_keyboard.filter((r) => Array.isArray(r) && r.length) : [];
+  if (!rows.length) return String(html == null ? "" : html);
+  const reg = map && typeof map === "object" ? map : {};
+  const rev = {};
+  for (const k of Object.keys(reg)) if (reg[k]) rev[String(reg[k])] = k;
+  const chosen = picks && typeof picks === "object" ? picks : {};
+  for (const k of Object.keys(chosen)) if (chosen[k]) rev[String(chosen[k])] = String(k);
+  const rowsHtml = rows.map((row) => "<tg-button-row>" + row.map((b) => {
+    if (!b || typeof b !== "object") return "";
+    const id = b.icon_custom_emoji_id ? String(b.icon_custom_emoji_id) : "";
+    const ch = id ? rev[id] : "";
+    let label = String(b.text == null ? "" : b.text);
+    /* اگر کاراکتر همان آرت داخل متن دکمه مانده بود، فقط یک‌بار نشان داده شود. */
+    if (ch && label.indexOf(ch) === 0) label = label.slice(ch.length).trim();
+    const icon = ch ? `<tg-emoji emoji-id="${richEsc(id)}">${richEsc(ch)}</tg-emoji> ${richEsc(label)}` : richEsc(label);
+    let action = " disabled";
+    if (b.callback_data) action = ` type="callback_data" data="${richEsc(b.callback_data)}"`;
+    else if (b.url) action = ` type="url" url="${richEsc(b.url)}"`;
+    else if (b.web_app && b.web_app.url) action = ` type="web_app" url="${richEsc(b.web_app.url)}"`;
+    else if (b.copy_text) action = ` type="copy_text" text="${richEsc(b.copy_text.text || b.text || "")}"`;
+    return `<tg-button${action}>${icon || richEsc(label)}</tg-button>`;
+  }).join("") + "</tg-button-row>").join("\n");
+  return String(html == null ? "" : html).replace(/\s+$/, "") + "\n" + rowsHtml;
+}
+__name(richButtonRows, "richButtonRows");
+async function sendPremiumReply(env, chatId, html, media, markup, picks, reg) {
+  const chosen = picks && typeof picks === "object" ? picks : {};
+  const body = premiumizeSafe(ensureRichHtmlStructure(String(html)), chosen, reg.map);
+  const art = /<tg-emoji/.test(body);
+  const buttons = markup ? premiumButtons(markup, chosen, reg.map) : null;
+  const rich = { html: body, ...media && media.length ? { media } : {} };
+  const trace = [];
+  let anchorId = null;
+  try {
+    if (art) {
+      const an = await tgCall(env, "sendMessage", { chat_id: chatId, text: "\u0640", disable_notification: true });
+      anchorId = an && an.ok && an.result ? an.result.message_id : null;
+      trace.push({ s: "anchor", ok: !!anchorId, e: an?.description || "" });
+    }
+    const sent = await tgCall(env, "sendRichMessage", {
+      chat_id: chatId,
+      rich_message: rich,
+      disable_notification: true,
+      ...(anchorId ? { reply_parameters: { chat_id: chatId, message_id: anchorId } } : {})
+    });
+    const sentId = sent && sent.ok && sent.result ? sent.result.message_id : null;
+    trace.push({ s: "send", ok: !!sentId, e: sent?.description || "" });
+    if (!sentId) {
+      if (anchorId) await tgCall(env, "deleteMessage", { chat_id: chatId, message_id: anchorId });
+      await dbgChan(env, trace);
+      return null;
+    }
+    let kept = true;
+    if (art) {
+      const out = await tryEditRich(env, chatId, sentId, rich);
+      /* خطای گذرا یعنی ادیتِ هم‌زمانِ خودمان؛ پیام را دوباره نساز. */
+      kept = out.state === "kept" || out.state === "unchanged" || out.state === "transient";
+      trace.push({ s: "art-edit", ok: kept, e: kept ? out.state : (out.res?.description || "art not kept") });
+    }
+    if (buttons) {
+      const mk = await tgCall(env, "editMessageReplyMarkup", { chat_id: chatId, message_id: sentId, reply_markup: buttons });
+      trace.push({ s: "markup", ok: !!(mk && mk.ok), e: mk?.description || "" });
+    }
+    if (anchorId) await tgCall(env, "deleteMessage", { chat_id: chatId, message_id: anchorId });
+    await dbgChan(env, trace);
+    if (!kept) return { message_id: sentId, rep: false, via: "channel-plain" };
+    return { message_id: sentId, rep: art, via: "channel-native" };
+  } catch (e) {
+    if (anchorId) await tgCall(env, "deleteMessage", { chat_id: chatId, message_id: anchorId }).catch(() => {});
+    trace.push({ s: "throw", ok: false, e: String(e?.message || e).slice(0, 140) });
+    await dbgChan(env, trace);
+    return null;
+  }
+}
+__name(sendPremiumReply, "sendPremiumReply");
+/* به‌روزرسانی در همان پیام. اگر پیام «در پاسخ» نباشد و آرت هم داشته باشیم،
+   تلگرام آرت را می‌خورد و null برمی‌گردانیم تا مسیر بازنشر فعال شود. */
+function sleepMs(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+__name(sleepMs, "sleepMs");
+/* خطای گذرای تلگرام؟ (ادیت هم‌زمان، شلوغی، قطعی موقت) */
+function isTransientTg(res) {
+  const why = String((res && (res.description || res.message)) || "");
+  return /canceled by new edit|too many requests|retry after|retry later|internal server|server error|timed out|timeout|not modified|message is not modified/i.test(why);
+}
+__name(isTransientTg, "isTransientTg");
+/* پیام واقعاً وجود ندارد؟ */
+function isGoneTg(res) {
+  const why = String((res && (res.description || res.message)) || "");
+  return /message to edit not found|message was deleted|message not found|chat not found/i.test(why);
+}
+__name(isGoneTg, "isGoneTg");
+/* ادیتِ آرت‌دار با تلاش دوباره؛ خروجی: "kept" | "unchanged" | "transient" | "lost" | "gone" */
+async function tryEditRich(env, chatId, msgId, rich) {
+  let res = await tgCall(env, "editMessageText", { chat_id: chatId, message_id: msgId, rich_message: rich });
+  let n = 0;
+  /* نه‌که دوباره بزنیم، ولی برای این دو حالت یک بار دیگر تلاش می‌کنیم. */
+  while (res && !res.ok && /canceled by new edit|too many requests|retry after|internal server|timed out|server error/i.test(String(res.description || "")) && n < 2) {
+    await sleepMs(320 * (n + 1));
+    n++;
+    res = await tgCall(env, "editMessageText", { chat_id: chatId, message_id: msgId, rich_message: rich });
+  }
+  if (res && res.ok) return { state: artCountIn(res.result) ? "kept" : "lost", res };
+  if (isGoneTg(res)) return { state: "gone", res };
+  if (/not modified/i.test(String(res?.description || ""))) return { state: "unchanged", res };
+  if (isTransientTg(res)) return { state: "transient", res };
+  return { state: "lost", res };
+}
+__name(tryEditRich, "tryEditRich");
+/* حفاظت ضد اسباب‌کشی: در هر کانال حداکثر یک «پیام تازه جای قبلی» در هر ۲۰ ثانیه.
+   (پست تازه که مینی‌اپ می‌سازد از این حفاظت رد نمی‌شود؛ فقط بازنشرِ به‌روزرسانی‌ها.) */
+async function chanReplaceGuard(env, chatId) {
+  const kv = env?.KV_FRESH || env?.KV;
+  if (!kv || typeof kv.get !== "function") return true;
+  try {
+    const key = `chg:${String(chatId)}`;
+    const last = Number(await kv.get(key)) || 0;
+    const now = Date.now();
+    if (now - last < 20000) return false;
+    await kv.put(key, String(now), { expirationTtl: 3600 });
+    return true;
+  } catch {
+    return true;
+  }
+}
+__name(chanReplaceGuard, "chanReplaceGuard");
+/* به‌روزرسانی در همان پیام، بدون اسباب‌کشی. */
+async function editPremiumRep(env, chatId, msgId, html, media, markup, picks, reg) {
+  const chosen = picks && typeof picks === "object" ? picks : {};
+  const body = premiumizeSafe(ensureRichHtmlStructure(String(html)), chosen, reg.map);
+  const art = /<tg-emoji/.test(body);
+  const buttons = markup ? premiumButtons(markup, chosen, reg.map) : null;
+  const rich = { html: body, ...media && media.length ? { media } : {} };
+  const out = await tryEditRich(env, chatId, msgId, rich);
+  const why = String(out.res?.description || "");
+  if (buttons && out.state !== "gone") {
+    await tgCall(env, "editMessageReplyMarkup", { chat_id: chatId, message_id: msgId, reply_markup: buttons }).catch(() => {});
+  }
+  await dbgChan(env, [{ s: "inplace", ok: out.state === "kept" || out.state === "unchanged" || out.state === "transient", e: out.state + (why ? " · " + why.slice(0, 90) : "") }]);
+  if (out.state === "gone") return null;
+  if (out.state === "kept" || out.state === "unchanged") return { message_id: msgId, via: "channel-inplace", premium: art };
+  if (out.state === "transient") return { message_id: msgId, via: "channel-inplace", premium: art, note: "transient" };
+  return art ? null : { message_id: msgId, via: "channel-inplace", premium: false, note: "plain-ok" };
+}
+__name(editPremiumRep, "editPremiumRep");
+async function republishPremium(env, owner, chatId, oldMsgId, html, markup, picks, embed) {
+  if (!owner || String(owner) === String(chatId)) return null;
+  const reg = await emojiRegistryCached(env);
+  const chosen = picks && typeof picks === "object" ? picks : {};
+  /* نظرسنجیِ کانال: دکمه‌ها داخل پیام (آرت پرمیوم روی دکمه‌ها می‌ماند). */
+  if (embed && markup) {
+    html = richButtonRows(html, markup, chosen, reg.map);
+    markup = null;
+  }
+  const body = premiumizeSafe(ensureRichHtmlStructure(String(html)), chosen, reg.map);
+  const hasArt = /<tg-emoji/.test(body);
+  /* ۱) تغییر در همان پیام — پستِ «در پاسخ» آرت را در ادیت نگه می‌دارد. */
+  if (oldMsgId) {
+    const kept = await editPremiumRep(env, chatId, oldMsgId, html, null, markup, chosen, reg);
+    if (kept) return kept;
+  }
+  /* ۲) فقط وقتی پیام واقعاً از دست رفته: حداکثر هر ۲۰ ثانیه یک جایگزینی. */
+  if (hasArt && !(await chanReplaceGuard(env, chatId))) {
+    await dbgChan(env, [{ s: "republish", ok: false, e: "guard: replacement too soon" }]);
+    return oldMsgId ? { message_id: oldMsgId, via: "channel-inplace", premium: true, note: "guarded" } : null;
+  }
+  if (hasArt) {
+    const fresh = await sendPremiumReply(env, chatId, html, null, markup, chosen, reg);
+    if (fresh && fresh.message_id && fresh.rep) {
+      if (oldMsgId) await tgCall(env, "deleteMessage", { chat_id: chatId, message_id: oldMsgId }).catch(() => {});
+      return fresh;
+    }
+    if (fresh && fresh.message_id) await tgCall(env, "deleteMessage", { chat_id: chatId, message_id: fresh.message_id }).catch(() => {});
+  }
+  /* ۳) آخرین راه: کپی از پیوی (آرت تضمینی، ولی پیام تازه). */
+  const buttons = markup ? premiumButtons(markup, chosen, reg.map) : null;
+  const moved = await copyIntoChannel(env, owner, chatId, { html: body }, buttons, chosen, reg);
+  if (moved && moved.message_id) {
+    if (oldMsgId) await tgCall(env, "deleteMessage", { chat_id: chatId, message_id: oldMsgId });
+    return moved;
+  }
+  await dbgChan(env, [{ s: "republish", ok: false, e: "inplace+native+copy missed, plain edit next" }]);
+  return null;
+}
+__name(republishPremium, "republishPremium");
+/* شناسهٔ پیام تازه در فهرست مینی‌اپ هم به‌روز می‌شود. */
+async function retargetListItem(env, owner, id, msgId) {
+  try {
+    const kv = env?.RASA_KV;
+    if (!kv || !owner || !id || !msgId) return;
+    const key = `intx:${owner}`;
+    const raw = await kv.get(key);
+    const box = raw ? JSON.parse(raw) : { items: [] };
+    let hit = false;
+    for (const it of box.items || []) {
+      if (String(it.id) === String(id)) { it.msg = msgId; hit = true; }
+    }
+    if (hit) await kv.put(key, JSON.stringify(box), { expirationTtl: 120 * 86400 });
+  } catch {
+  }
+}
+__name(retargetListItem, "retargetListItem");
+
+/* مقصد کانالی است؟ (شناسهٔ -100… یا @نام‌کاربری) */
+function isChanDest(x) {
+  const v = String(x == null ? "" : x).trim();
+  return /^-\d{6,}$/.test(v) || /^@[A-Za-z0-9_]{4,}$/.test(v);
+}
+__name(isChanDest, "isChanDest");
+/* پست‌های کانالی که پیش از این نسخه منتشر شده‌اند سازنده را در وضعیت ندارند؛
+   از فهرست مینی‌اپ پیدایش می‌کنیم تا آن‌ها هم با اولین تپ آرت پرمیوم بگیرند. */
+async function healChannelOwner(env, state, id, chatId, chatType) {
+  try {
+    if (!state || state.owner) return false;
+    const isChan = chatType === "channel" || isChanDest(chatId);
+    if (!isChan) return false;
+    const kv = env?.RASA_KV;
+    if (!kv || !id || !kv.list) return false;
+    const listing = await kv.list({ prefix: "intx:", limit: 1000 });
+    for (const key of (listing?.keys || [])) {
+      const uid = String(key?.name || "").slice(5);
+      if (!uid) continue;
+      const raw = await kv.get(key.name);
+      if (!raw) continue;
+      let box = null;
+      try { box = JSON.parse(raw); } catch { continue; }
+      for (const it of (box?.items || [])) {
+        if (String(it?.id) !== String(id)) continue;
+        if (!isChanDest(it?.chat)) continue;
+        state.owner = String(uid);
+        state.chan = true;
+        return true;
+      }
+    }
+  } catch {
+  }
+  return false;
+}
+__name(healChannelOwner, "healChannelOwner");
 async function editLivePost(env, chatId, msgId, state) {
   const clean = plainEmojisDeep(state);
+  /* پست کانالی: نسخهٔ تازه با همان آرت پرمیوم جای پیام قبلی می‌نشیند. */
+  if (clean.owner && clean.chan) {
+    const moved = await republishPremium(env, clean.owner, chatId, msgId, renderLivePost(clean), liveKeyboard(clean), clean.picks || {}, true);
+    if (moved && moved.message_id) {
+      state.msgId = moved.message_id;
+      try { await setJson(env, `live:${state.id}`, state, 30 * 86400); } catch {}
+      await retargetListItem(env, clean.owner, state.id, moved.message_id);
+      return moved;
+    }
+  }
   return await editPostMessage(env, chatId, msgId, {
     html: renderLivePost(clean),
     replyMarkup: liveKeyboard(clean),
     rich: true,
-    plain: true
+    emojiSubs: clean.picks || {}
   }).catch((e) => { console.warn("live edit failed", e?.message); });
 }
 async function handleLiveVote(cb, env, origin) {
@@ -6205,6 +6738,7 @@ async function handleLiveVote(cb, env, origin) {
   const state = await getJson(env, `live:${id}`, null);
   if (!state || (!state.options && action !== "__refresh")) return answerCallback(env, qId, "\u0627\u06cc\u0646 \u0646\u0638\u0631\u0633\u0646\u062c\u06cc \u062f\u0631 \u062f\u0633\u062a\u0631\u0633 \u0646\u06cc\u0633\u062a.", true);
   const now = Date.now();
+  if (!state.owner) { if (await healChannelOwner(env, state, id, chatId, cb.message?.chat?.type)) await setJson(env, `live:${id}`, state, 30 * 86400); }
   const over = !!(state.endsAt && now > state.endsAt);
   if (action === "__refresh") {
     await editLivePost(env, chatId, msgId, state);
