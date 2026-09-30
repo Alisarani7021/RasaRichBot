@@ -919,6 +919,18 @@ Full deployment guide: [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) · Architect
 
 اگر می‌خواهی قابلیت تازه‌ای اضافه کنی، پیشنهاد می‌کنم اول در [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) بخوانی که لایه‌ها کجا از هم جدا می‌شوند — رعایت همان مرزها کار را چند برابر ساده‌تر می‌کند.
 
+راهنمای کامل مشارکت: [`CONTRIBUTING.md`](./CONTRIBUTING.md) · سیاست امنیتی و گزارش خصوصی: [`SECURITY.md`](./SECURITY.md) · آیین‌نامهٔ رفتار: [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) · تاریخچهٔ تغییرات: [`CHANGELOG.md`](./CHANGELOG.md)
+
+### ✅ تست‌ها
+
+هر تغییری باید با تست بیاید؛ کل مجموعه بدون هیچ وابستگی بیرونی اجرا می‌شود:
+
+```bash
+npm test        # ۹ مجموعه / ۲۶۱ سنجه روی وورکر — با ماسک تلگرام و KV جعلی
+```
+
+تست‌ها روی هر پوش و پول‌ریکوئست در [CI](./.github/workflows/ci.yml) هم اجرا می‌شوند. توضیح هر مجموعه در [`tests/README.md`](./tests/README.md) است.
+
 ---
 
 ## 📄 مجوز
