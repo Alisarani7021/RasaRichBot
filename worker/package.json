@@ -4,7 +4,7 @@
   "description": "رِسا — Telegram Post Studio with Premium Emoji Engine",
   "type": "module",
   "scripts": {
-    "test": "node test-integration.mjs && node test-manual-flow.mjs && node test-channel-connect.mjs && node test-emoji-packs.mjs && node test-live-post.mjs && node test-carousel.mjs && node test-live-tick.mjs && node test-wave2.mjs",
+    "test": "node test-integration.mjs && node test-manual-flow.mjs && node test-channel-connect.mjs && node test-emoji-packs.mjs && node test-live-post.mjs && node test-carousel.mjs && node test-live-tick.mjs && node test-wave2.mjs && node test-interactive-api.mjs",
     "deploy": "wrangler deploy"
   },
   "dependencies": {}
