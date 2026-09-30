@@ -1669,18 +1669,24 @@ async function handleMiniAppApi(request, env, url) {
     const sendAny = async (chatId, html, markup) => {
       let i = 0;
       const media = [];
-      const mapped = String(html).replace(/<img[^>]+src=["']tg:\/\/photo\?id=([^"']+)["'][^>]*\/?>/gi, (full, fid) => {
+      // same premium-emoji pass the edit path uses: every emoji the bot knows
+      // about becomes a custom emoji in the very first message too
+      const earlyMap = await getJson(env, "map", {});
+      const cooked = applyEmojiSubs(ensureRichHtmlStructure(String(html)), {}, earlyMap);
+      const mapped = String(cooked).replace(/<img[^>]+src=["']tg:\/\/photo\?id=([^"']+)["'][^>]*\/?>/gi, (full, fid) => {
         const mid = "m" + i++;
         media.push({ id: mid, media: { type: "photo", media: fid } });
         return full.replace(fid, mid);
       });
       const rich = { html: mapped, ...media.length ? { media } : {} };
+      const emojiMap = await getJson(env, "map", {});
+      const decorated = markup ? decorateReplyMarkup(markup, emojiMap) : null;
       try {
-        return await tg.sendRich(chatId, rich, markup ? { reply_markup: markup } : {});
+        return await tg.sendRich(chatId, rich, decorated ? { reply_markup: decorated } : {});
       } catch (e) {
         const why = String(e?.description || e?.message || e);
-        if (!markup || !/icon|emoji|custom/i.test(why)) throw e;
-        return await tg.sendRich(chatId, rich, { reply_markup: stripMediaIcons(markup) });
+        if (!decorated || !/icon|emoji|custom/i.test(why)) throw e;
+        return await tg.sendRich(chatId, rich, { reply_markup: stripMediaIcons(decorated) });
       }
     };
     const box = async () => await store2.get(`intx:${uid}`, { items: [] });
@@ -1757,12 +1763,12 @@ async function handleMiniAppApi(request, env, url) {
       const id = newId("d");
       const levels = {
         short: { label: "\u26A1 \u062E\u0644\u0627\u0635\u0647\u0654 \u06F3\u06F0 \u062B\u0627\u0646\u06CC\u0647", html: short },
-        mid: { label: "\u{1F4D6} \u0646\u0633\u062E\u0647\u0654 \u0645\u062A\u0648\u0633\u0637", html: mid },
+        mid: { label: "\u{1F4DA} \u0646\u0633\u062E\u0647\u0654 \u0645\u062A\u0648\u0633\u0637", html: mid },
         full: { label: "\u2705 \u0646\u0633\u062E\u0647\u0654 \u06A9\u0627\u0645\u0644", html: full }
       };
       const head = title ? `<h2>${escT(title)}</h2>\n` : "";
       const rows = Object.keys(levels).map((k) => ([{
-        text: (k === "short" ? "\u25CF " : "") + levels[k].label,
+        text: levels[k].label + (k === "short" ? " \u2022" : ""),
         callback_data: `deep:${id}:${k}`
       }]));
       const sent = await sendAny(chatId, head + levels.short.html, { inline_keyboard: rows });
@@ -1770,7 +1776,7 @@ async function handleMiniAppApi(request, env, url) {
         id, chatId, msgId: sent.message_id, level: "short", levels,
         title: title || "", createdAt: Date.now(), updatedAt: Date.now()
       }, 30 * 86400);
-      const entry = { kind: "levels", id, title: title || "\u067E\u0633\u062A \u0686\u0646\u062F\u062D\u0627\u0644\u062A\u0647", at: Date.now(), chat: String(chatId), msg: sent.message_id, link: linkOf(sent.message_id) };
+      const entry = { kind: "levels", id, title: title || "\u{1F4DA} \u067E\u0633\u062A \u0686\u0646\u062F\u062D\u0627\u0644\u062A\u0647", at: Date.now(), chat: String(chatId), msg: sent.message_id, link: linkOf(sent.message_id) };
       await listAdd(entry);
       return json({ ok: true, ...entry, message_id: sent.message_id });
     }
@@ -2878,7 +2884,7 @@ async function sendPostMessage(env, chatId, { text, html, media, replyMarkup }) 
 __name(sendPostMessage, "sendPostMessage");
 __name2(sendPostMessage, "sendPostMessage");
 __name22(sendPostMessage, "sendPostMessage");
-async function editPostMessage(env, chatId, messageId, { text, html, media, replyMarkup }) {
+async function editPostMessage(env, chatId, messageId, { text, html, media, replyMarkup, rich }) {
   const emojiMap = await getJson(env, "map", {});
   const content = applyEmojiSubs(ensureRichHtmlStructure((html || escapeHtml(text || "")).trim()), {}, emojiMap);
   const effectiveReplyMarkup = decorateReplyMarkup(replyMarkup, emojiMap);
@@ -2889,7 +2895,8 @@ async function editPostMessage(env, chatId, messageId, { text, html, media, repl
       return rest;
     })) };
   }, "stripIconIds");
-  const sanitized = sanitizeTelegramHtml(content);
+  const sanitized = rich ? content : sanitizeTelegramHtml(content);
+  const degraded = rich ? sanitizeTelegramHtml(content) : sanitized;
   const captionHtml = sanitized.slice(0, 1024);
   const captionPlain = captionHtml.replace(/<[^>]*>/g, "").slice(0, 1024);
   const editCaption = /* @__PURE__ */ __name(async () => {
@@ -2931,6 +2938,7 @@ async function editPostMessage(env, chatId, messageId, { text, html, media, repl
       console.warn("edit rich_message error:", e);
     }
     if (richRes && richRes.ok) return richRes;
+    if (richRes && /not modified/i.test(String(richRes.description || ""))) return { ok: true, result: { message_id: messageId }, unchanged: true };
     if (captionTarget(richRes)) return await editCaption();
     console.warn("edit rich_message rejected:", richRes?.description || "unknown error");
     let res2 = null;
@@ -2938,7 +2946,7 @@ async function editPostMessage(env, chatId, messageId, { text, html, media, repl
       res2 = await tgCall(env, "editMessageText", {
         chat_id: chatId,
         message_id: messageId,
-        text: sanitized,
+        text: degraded,
         parse_mode: "HTML",
         disable_web_page_preview: true,
         ...replyMarkup ? { reply_markup: effectiveReplyMarkup } : {}
@@ -2953,7 +2961,7 @@ async function editPostMessage(env, chatId, messageId, { text, html, media, repl
       res2b = await tgCall(env, "editMessageText", {
         chat_id: chatId,
         message_id: messageId,
-        text: sanitized,
+        text: degraded,
         parse_mode: "HTML",
         disable_web_page_preview: true,
         ...replyMarkup ? { reply_markup: stripIconIds(effectiveReplyMarkup) } : {}
@@ -5849,7 +5857,7 @@ async function editCarouselMessage(env, chatId, msgId, view) {
   if (!view.fileId) {
     // a text or rich tab: the same message rewrites its own content (in-message
     // buttons included) \u2014 no keyboard strip involved
-    return await editPostMessage(env, chatId, msgId, { html: view.html || view.caption, ...view.keyboard ? { replyMarkup: view.keyboard } : {} }).catch((e) => {
+    return await editPostMessage(env, chatId, msgId, { html: view.html || view.caption, rich: true, ...view.keyboard ? { replyMarkup: view.keyboard } : {} }).catch((e) => {
       console.warn("text-tab edit failed", e?.message);
       return null;
     });
@@ -6057,7 +6065,7 @@ async function handleCommunityCallback(cb, env, origin) {
 function deepKeyboard(st) {
   const levels = st.levels || {};
   return { inline_keyboard: Object.keys(levels).map((k) => ([{
-    text: (k === st.level ? "\u25CF " : "") + (levels[k].label || k),
+    text: (levels[k].label || k) + (k === st.level ? " \u2022" : ""),
     callback_data: `deep:${st.id}:${k}`
   }])) };
 }
@@ -6075,7 +6083,7 @@ async function handleDeepCallback(cb, env, origin) {
   st.level = level;
   st.updatedAt = Date.now();
   await setJson(env, `deep:${id}`, st, 30 * 86400);
-  await editPostMessage(env, chatId, msgId, { html: st.levels[level].html, replyMarkup: deepKeyboard(st) }).catch((e) => {
+  await editPostMessage(env, chatId, msgId, { html: st.levels[level].html, replyMarkup: deepKeyboard(st), rich: true }).catch((e) => {
     console.warn("deep edit failed", e?.message);
   });
   return answerCallback(env, qId, `\u062D\u0627\u0644\u062A: ${st.levels[level].label || level}`);
@@ -6088,7 +6096,8 @@ async function handleDeepCallback(cb, env, origin) {
 async function editLivePost(env, chatId, msgId, state) {
   return await editPostMessage(env, chatId, msgId, {
     html: renderLivePost(state),
-    replyMarkup: liveKeyboard(state)
+    replyMarkup: liveKeyboard(state),
+    rich: true
   }).catch((e) => { console.warn("live edit failed", e?.message); });
 }
 async function handleLiveVote(cb, env, origin) {

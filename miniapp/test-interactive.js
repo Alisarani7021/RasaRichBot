@@ -32,6 +32,8 @@ const dom = new JSDOM(html, {
       else if (p.includes('/api/interactive/slideshow')) { lastPublish = { route: 'slideshow', body }; d = { ok: true, id: 's1', kind: 'slideshow', message_id: 903, link: null }; }
       else if (p.includes('/api/interactive/end')) d = { ok: true, id: body.id };
       else if (p.includes('/api/interactive/remove')) { items = items.filter((x) => x.id !== body.id); d = { ok: true }; }
+      else if (p.includes('/api/emoji/all')) d = { ok: true, packs: [{ name: 't', title: 'تست', count: 3, items: [{ id: '111', e: '🚀' }, { id: '222', e: '✅' }, { id: '333', e: '📚' }] }], total: 3 };
+      else if (p.includes('/api/emoji/img')) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}), text: () => Promise.resolve('') });
       else if (p.includes('/api/media/upload')) d = { ok: true, media: { name: 'p.jpg', kind: 'photo', fileId: 'F' + (calls.length + 1) } };
       calls.push({ p, body, json: d });
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(d), text: () => Promise.resolve(JSON.stringify(d)) });
@@ -114,6 +116,37 @@ const check = (name, cond, extra) => { results.push([name, !!cond]); console.log
   $('#intSlBtn').click(); await wait(250);
   check('انتشار اسلایدشو فراخوانی می‌شود', lastPublish && lastPublish.route === 'slideshow');
   check('fileId های آپلودشده فرستاده می‌شوند', (lastPublish.body.media || []).length === 2 && lastPublish.body.media[0].fileId);
+
+  /* پیش‌نمایش تلگرامی + کمک‌ابزارها + اموجی سریع */
+  $('#intLvFull').value = '<table bordered striped compact><tr><th>بخش</th><th>کار</th></tr><tr><td>تیتر</td><td>متن بلند</td></tr></table>';
+  $('#intLvFull').dispatchEvent(new window.Event('input'));
+  await wait(320);
+  const pv = $('#intLvPv');
+  check('پیش‌نمایش، جدول را واقعاً جدول نشان می‌دهد', /<table class="ipv-t">/.test(pv.innerHTML) && /<th>/.test(pv.innerHTML), pv.innerHTML.slice(0, 70).replace(/\n/g, ''));
+  check('پیش‌نمایش ستون‌ها و سلول‌ها را می‌سازد', /<tr><td>تیتر<\/td>/.test(pv.innerHTML));
+  $('#intLvFull').value = '<blockquote>جمله<cite>منبع</cite></blockquote>';
+  $('#intLvFull').dispatchEvent(new window.Event('input'));
+  await wait(320);
+  check('نقل‌قول و منبع استایل می‌گیرند', /ipv-q/.test($('#intLvPv').innerHTML) && /ipv-ci/.test($('#intLvPv').innerHTML));
+
+  $('#intLvFull').value = '';
+  $('#intLvFull').click();
+  doc.querySelector('[data-ib="table"]').click(); await wait(60);
+  check('دکمهٔ «+ جدول» اسکلت جدول را در فیلد فعال می‌گذارد', /<table bordered striped compact>/.test($('#intLvFull').value), $('#intLvFull').value.slice(0, 40).replace(/\n/g, '⏎'));
+  doc.querySelector('[data-ib="details"]').click(); await wait(60);
+  check('دکمهٔ «+ بخش تاشو» درج می‌کند', /<details><summary>/.test($('#intLvFull').value));
+
+  await wait(300); /* فهرست اموجی پک‌ها */
+  const emo = Array.prototype.find.call(doc.querySelectorAll('#intEmo1 [data-ie]'), (b) => b.dataset.ie === '🚀');
+  check('نوار اموجی پرمیوم پر می‌شود', !!emo && doc.querySelectorAll('#intEmo1 [data-ie]').length >= 20, 'count=' + doc.querySelectorAll('#intEmo1 [data-ie]').length);
+  check('اموجی‌های پک‌دار با شناسهٔ پرمیوم علامت می‌خورند', emo && emo.dataset.iid === '111', 'iid=' + (emo && emo.dataset.iid));
+  const before = $('#intLvFull').value;
+  emo.click(); await wait(60);
+  check('تپ اموجی، تگ پرمیوم را داخل متن می‌گذارد', $('#intLvFull').value.includes('<tg-emoji emoji-id="111">🚀</tg-emoji>') && $('#intLvFull').value.length > before.length, $('#intLvFull').value.slice(-40));
+  $('#intLvFull').dispatchEvent(new window.Event('input'));
+  await wait(320);
+  check('پیش‌نمایش، اموجی پرمیوم را تصویر می‌کند', /class="ce"/.test($('#intLvPv').innerHTML));
+  $('#intLvFull').value = '';
 
   /* مقصد کانال: پیام خطای فارسی و روشن */
   channelDenied = true;

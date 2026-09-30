@@ -88,6 +88,7 @@ console.log('— API قالب‌های تعاملی —');
   check('بدون نشست مینیاپ ۴۰۱ می‌گیرد', r.status === 401, 'status=' + r.status);
 }
 let pollId = null, pollMsg = null, levelsId = null, slideMsg = null;
+kvData.set('map', JSON.stringify({ '🚀': '999', '⚡': '888', '✅': '777', '📚': '666', '🗳': '555' }));
 {
   /* ۱) نظرسنجی در پیوی خودم */
   tg = [];
@@ -114,6 +115,7 @@ let pollId = null, pollMsg = null, levelsId = null, slideMsg = null;
   check('رأی روی نظرسنجی مینیاپی ثبت می‌شود', st && Object.keys(st.votes || {}).length === 1, JSON.stringify(st?.votes || {}));
   check('پیام همان نظرسنجی ویرایش می‌شود', !!edited && String(edited.p.message_id) === String(pollMsg), 'msg=' + edited?.p.message_id);
   check('نمودار رأی را نشان می‌دهد', /(?:█|░){10}/.test(edited?.p.rich_message?.html || edited?.p.text || ''));
+  check('جدول نظرسنجی بعد از رأی سالم می‌ماند', /<table bordered striped compact>/.test(edited?.p.rich_message?.html || ''), (edited?.p.rich_message?.html || edited?.p.text || '').slice(0, 60));
   const items = await listItems();
   check('شمارندهٔ رأی در فهرست می‌آید', items[0]?.votes === 1, 'votes=' + items[0]?.votes);
 }
@@ -143,6 +145,7 @@ let pollId = null, pollMsg = null, levelsId = null, slideMsg = null;
   const st = deepState(levelsId);
   check('وضعیت سه‌سطحی ذخیره شد و نسخهٔ متوسط از خلاصه پر شد', !!st && st.levels.mid.html.length > 0);
   check('HTML سطح کامل تبدیل شده', /<b>کامل<\/b>/.test(st.levels.full.html));
+  check('دکمه‌های سطح، اموجی را به آیکن پرمیوم تبدیل می‌کنند', JSON.stringify(sent?.p.reply_markup || {}).includes('"icon_custom_emoji_id":"888"'), JSON.stringify(sent?.p.reply_markup || {}).slice(0, 130));
   const miss = await apiCall('interactive/levels', { target: 'me', levels: { short: 'فقط خلاصه' } });
   check('بدون نسخهٔ کامل خطا می‌دهد', miss.json.ok === false);
   /* کلیک واقعی روی دکمهٔ سطح */
@@ -153,6 +156,25 @@ let pollId = null, pollMsg = null, levelsId = null, slideMsg = null;
   check('تپ «نسخهٔ کامل» همان پیام را عوض می‌کند', /کامل/.test(ed?.p.rich_message?.html || ''), (ed?.p.rich_message?.html || '').slice(0, 50));
 }
 {
+  /* ۴ب) جدول و اموجی پرمیوم در پست چندحالته */
+  tg = [];
+  const rich = await apiCall('interactive/levels', { target: 'me', title: '🚀 تیتر', levels: { short: 'خلاصه', full: '<h3>بخش</h3><table bordered striped compact><tr><th>الف</th><th>ب</th></tr><tr><td>۱</td><td>۲</td></tr></table><p>🚀 پایان</p>' } });
+  const sentRich = lastTg('sendRichMessage');
+  const richHtml = sentRich?.p.rich_message?.html || '';
+  check('پیام اول همان خلاصه را نشان می‌دهد (بدون جدول)', /<h2>/.test(richHtml) && !/<table/.test(richHtml), richHtml.slice(0, 70));
+  check('اموجی پرمیوم از همان پیام اول تبدیل می‌شود', /<tg-emoji emoji-id="999">🚀<\/tg-emoji>/.test(richHtml), richHtml.slice(0, 80));
+  const richId = rich.json.id;
+  tg = [];
+  await worker.fetch(new Request(`${ORIGIN}/telegram/webhook`, { method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 's3cret', 'content-type': 'application/json' }, body: JSON.stringify({ update_id: 7009, callback_query: { id: 'cb9', from: { id: UID, first_name: 'Test' }, message: { message_id: rich.json.message_id, date: 0, chat: { id: UID, type: 'private' } }, data: `deep:${richId}:full` } }) }), env, { waitUntil: () => {} });
+  await new Promise((r) => setTimeout(r, 120));
+  const tapEd = lastTg('editMessageText');
+  const tapHtml = tapEd?.p.rich_message?.html || '';
+  check('تپ سطح، پیام را با rich_message ویرایش می‌کند', !!tapEd && !!tapEd.p.rich_message);
+  check('بعد از تپ هم جدول و تیتر باقی می‌مانند', /<table bordered striped compact>/.test(tapHtml) && /<h3>/.test(tapHtml), tapHtml.slice(0, 80));
+  check('اموجی پرمیوم بعد از تپ هم می‌ماند', /<tg-emoji emoji-id="999">/.test(tapHtml));
+  check('دکمهٔ سطح فعال با نشانهٔ ته‌خط مشخص می‌شود', JSON.stringify(tapEd?.p.reply_markup || {}).includes('خلاصه') || JSON.stringify(tapEd?.p.reply_markup || {}).includes('•'), JSON.stringify(tapEd?.p.reply_markup || {}).slice(0, 120));
+  await apiCall('interactive/remove', { id: richId, kind: 'levels' });
+
   /* ۵) اسلایدشو */
   tg = [];
   const r = await apiCall('interactive/slideshow', { target: 'me', caption: 'سه قاب', media: [{ fileId: 'F1' }, { fileId: 'F2' }, { fileId: 'F3' }] });
