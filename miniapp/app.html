@@ -1212,6 +1212,7 @@ function intTargetValue(){var s=document.getElementById('intTarget');return s&&s
 function intPaintTargets(){
   var s=document.getElementById('intTarget');if(!s)return;
   var ch=(typeof S!=='undefined'&&S.channels)?S.channels:[];
+  if(!ch.length&&token&&typeof conSync==='function'&&!s.dataset.synced){s.dataset.synced='1';conSync().then(function(){delete s.dataset.synced;intPaintTargets()})}
   var keep=s.value;
   s.innerHTML='<option value="me">پیوی خودم (آزمایش)</option>'+ch.map(function(c){
     var v=(c.username?'@'+c.username:String(c.chat));
