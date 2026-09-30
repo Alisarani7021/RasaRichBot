@@ -170,6 +170,10 @@ const check = (name, cond, extra) => { results.push([name, !!cond]); console.log
   check('درج دوباره، همان جدول را به‌روزرسانی می‌کند (تکراری نمی‌شود)', (fld.value.match(/<table/g) || []).length === 1 && /متن کوتاه/.test(fld.value));
   fld.dispatchEvent(new window.Event('input')); await wait(300);
   check('پیش‌نمایش، جدول ساخته‌شده را جدول نشان می‌دهد', /<table class="ipv-t">/.test($('#intLvPv').innerHTML) && /متن کوتاه/.test($('#intLvPv').innerHTML));
+  check('بعد از درج، سازندهٔ جدول جمع می‌شود (صفحه بزرگ نمی‌ماند)', $('#intTbBox').style.display === 'none');
+  doc.querySelector('[data-ib="table"]').click(); await wait(80);
+  check('با «+ جدول» دوباره باز می‌شود و همان خانه‌ها سرجایشان‌اند', $('#intTbBox').style.display === 'block' && (() => { const c = doc.querySelector('#intTbGrid [data-tc="1:1"]'); return c && c.value === 'متن کوتاه'; })());
+  doc.querySelector('[data-ib="table"]').click(); await wait(60);
   fld.value = '';
 
   /* مقصد کانال: پیام خطای فارسی و روشن */

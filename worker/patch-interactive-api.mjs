@@ -31,24 +31,21 @@ const BLOCK = `
     const sendAny = async (chatId, html, markup) => {
       let i = 0;
       const media = [];
-      // same premium-emoji pass the edit path uses: every emoji the bot knows
-      // about becomes a custom emoji in the very first message too
-      const earlyMap = await getJson(env, "map", {});
-      const cooked = applyEmojiSubs(ensureRichHtmlStructure(String(html)), {}, earlyMap);
-      const mapped = String(cooked).replace(/<img[^>]+src=["']tg:\\/\\/photo\\?id=([^"']+)["'][^>]*\\/?>/gi, (full, fid) => {
+      const mapped = String(ensureRichHtmlStructure(String(html))).replace(/<img[^>]+src=["']tg:\\/\\/photo\\?id=([^"']+)["'][^>]*\\/?>/gi, (full, fid) => {
         const mid = "m" + i++;
         media.push({ id: mid, media: { type: "photo", media: fid } });
         return full.replace(fid, mid);
       });
       const rich = { html: mapped, ...media.length ? { media } : {} };
-      const emojiMap = await getJson(env, \"map\", {});
-      const decorated = markup ? decorateReplyMarkup(markup, emojiMap) : null;
+      // هیچ جانشینی خودکار اموجی اینجا نیست: اموجی‌هایی که کاربر تایپ کرده
+      // شکل خودشان را نگه می‌دارند و فقط تگ‌هایی که خودش از پیکر انتخاب کرده
+      // پرمیوم می‌مانند.
       try {
-        return await tg.sendRich(chatId, rich, decorated ? { reply_markup: decorated } : {});
+        return await tg.sendRich(chatId, rich, markup ? { reply_markup: markup } : {});
       } catch (e) {
         const why = String(e?.description || e?.message || e);
-        if (!decorated || !/icon|emoji|custom/i.test(why)) throw e;
-        return await tg.sendRich(chatId, rich, { reply_markup: stripMediaIcons(decorated) });
+        if (!markup || !/icon|emoji|custom/i.test(why)) throw e;
+        return await tg.sendRich(chatId, rich, { reply_markup: stripMediaIcons(markup) });
       }
     };
     const box = async () => await store2.get(\`intx:\${uid}\`, { items: [] });

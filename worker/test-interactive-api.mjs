@@ -145,7 +145,8 @@ kvData.set('map', JSON.stringify({ '🚀': '999', '⚡': '888', '✅': '777', '�
   const st = deepState(levelsId);
   check('وضعیت سه‌سطحی ذخیره شد و نسخهٔ متوسط از خلاصه پر شد', !!st && st.levels.mid.html.length > 0);
   check('HTML سطح کامل تبدیل شده', /<b>کامل<\/b>/.test(st.levels.full.html));
-  check('دکمه‌های سطح، اموجی را به آیکن پرمیوم تبدیل می‌کنند', JSON.stringify(sent?.p.reply_markup || {}).includes('"icon_custom_emoji_id":"888"'), JSON.stringify(sent?.p.reply_markup || {}).slice(0, 130));
+  check('دکمه‌های سطح، اموجی کاربر را دست‌نخورده نگه می‌دارند', !JSON.stringify(sent?.p.reply_markup || {}).includes('icon_custom_emoji_id'), JSON.stringify(sent?.p.reply_markup || {}).slice(0, 130));
+  check('اموجی متن جانشین نمی‌شود', !/tg-emoji/.test(sent?.p.rich_message?.html || ''));
   const miss = await apiCall('interactive/levels', { target: 'me', levels: { short: 'فقط خلاصه' } });
   check('بدون نسخهٔ کامل خطا می‌دهد', miss.json.ok === false);
   /* کلیک واقعی روی دکمهٔ سطح */
@@ -168,8 +169,8 @@ kvData.set('map', JSON.stringify({ '🚀': '999', '⚡': '888', '✅': '777', '�
   const tagHtml = tagSent?.p.rich_message?.html || '';
   const tagButtons = JSON.stringify(tagSent?.p.reply_markup || {});
   check('متن تگ‌دار کاربر عیناً به پیام نمی‌رود (هیچ متن فرارشده‌ای نیست)', !/&lt;tg-emoji/.test(tagHtml), tagHtml.slice(0, 95));
-  check('هر اموجیِ فرم دقیقاً یک تگ پرمیوم تمیز می‌شود (سه‌تا: عنوان، زیرنویس، گزینه)', (tagHtml.match(/<tg-emoji emoji-id="555">🗳<\/tg-emoji>/g) || []).length === 3, 'count=' + (tagHtml.match(/<tg-emoji emoji-id="555">🗳<\/tg-emoji>/g) || []).length);
-  check('دکمه آیکن پرمیوم می‌گیرد و متنش تمیز است', !/tg-emoji/.test(tagButtons) && /"icon_custom_emoji_id":"555"/.test(tagButtons) && !/"text":"[<]/.test(tagButtons) && /"text":"[^"]*گزینه/.test(tagButtons), tagButtons.slice(0, 150));
+  check('اموجیِ فرم دست‌نخورده می‌ماند — هیچ تگ/آرت جانشینی نمی‌آید', (tagHtml.match(/🗳/g) || []).length === 3 && !/<tg-emoji/.test(tagHtml), 'count=' + (tagHtml.match(/🗳/g) || []).length);
+  check('دکمه‌ها همان اموجی کاربر را نشان می‌دهند (بدون آیکن جانشین)', !/icon_custom_emoji_id/.test(tagButtons) && /"text":"[^"]*گزینه/.test(tagButtons), tagButtons.slice(0, 150));
   check('عنوان بدون تگ اضافه رندر می‌شود', /<h2>نظرسنجی 🗳 تگ‌دار<\/h2>/.test(tagHtml.replace(/<tg-emoji[^>]*>/g, '').replace(/<\/tg-emoji>/g, '')), tagHtml.slice(0, 60));
   const tagId = tagPoll.json?.id;
   /* و همان پست، بعد از یک رأی هم تمیز می‌ماند */
@@ -177,7 +178,7 @@ kvData.set('map', JSON.stringify({ '🚀': '999', '⚡': '888', '✅': '777', '�
   await worker.fetch(new Request(`${ORIGIN}/telegram/webhook`, { method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 's3cret', 'content-type': 'application/json' }, body: JSON.stringify({ update_id: 7011, callback_query: { id: 'cb11', from: { id: 555777, first_name: 'رأی‌دهنده' }, message: { message_id: tagPoll.json.message_id, date: 0, chat: { id: -1001234567890, type: 'channel' } }, data: `vote:${tagId}:o1` } }) }), env, { waitUntil: () => {} });
   await new Promise((r) => setTimeout(r, 120));
   const tagEdit = (lastTg('editMessageText') || {}).p?.rich_message?.html || '';
-  check('بعد از رأی هم متن فرارشده برنمی‌گردد و جدول سر جایش است', !/&lt;tg-emoji/.test(tagEdit) && /<table/.test(tagEdit) && (tagEdit.match(/<tg-emoji emoji-id="555">🗳<\/tg-emoji>/g) || []).length === 3, tagEdit.slice(0, 70));
+  check('بعد از رأی هم متن فرارشده برنمی‌گردد و جدول سر جایش است', !/&lt;tg-emoji/.test(tagEdit) && /<table/.test(tagEdit) && (tagEdit.match(/🗳/g) || []).length === 3 && !/<tg-emoji/.test(tagEdit), tagEdit.slice(0, 70));
   await apiCall('interactive/remove', { id: tagId, kind: 'poll' });
 
   /* ۴ب) جدول و اموجی پرمیوم در پست چندحالته */
@@ -186,7 +187,7 @@ kvData.set('map', JSON.stringify({ '🚀': '999', '⚡': '888', '✅': '777', '�
   const sentRich = lastTg('sendRichMessage');
   const richHtml = sentRich?.p.rich_message?.html || '';
   check('پیام اول همان خلاصه را نشان می‌دهد (بدون جدول)', /<h2>/.test(richHtml) && !/<table/.test(richHtml), richHtml.slice(0, 70));
-  check('اموجی پرمیوم از همان پیام اول تبدیل می‌شود', /<tg-emoji emoji-id="999">🚀<\/tg-emoji>/.test(richHtml), richHtml.slice(0, 90));
+  check('اموجی متنی که کاربر تایپ کرده شکل خودش را نگه می‌دارد', /🚀/.test(richHtml) && !/<tg-emoji[^>]*>🚀/.test(richHtml), richHtml.slice(0, 90));
   check('تگ اموجی داخل متن فرار داده نمی‌شود (خام به API نمی‌رود)', !/&lt;tg-emoji/.test(richHtml));
   const richId = rich.json.id;
   tg = [];
@@ -196,9 +197,21 @@ kvData.set('map', JSON.stringify({ '🚀': '999', '⚡': '888', '✅': '777', '�
   const tapHtml = tapEd?.p.rich_message?.html || '';
   check('تپ سطح، پیام را با rich_message ویرایش می‌کند', !!tapEd && !!tapEd.p.rich_message);
   check('بعد از تپ هم جدول و تیتر باقی می‌مانند', /<table bordered striped compact>/.test(tapHtml) && /<h3>/.test(tapHtml), tapHtml.slice(0, 80));
-  check('اموجی پرمیوم بعد از تپ هم می‌ماند', /<tg-emoji emoji-id="999">/.test(tapHtml));
+  check('بعد از تپ هم اموجی کاربر عوض نمی‌شود', !/<tg-emoji/.test(tapHtml) && /🚀/.test(tapHtml));
   check('دکمهٔ سطح فعال با نشانهٔ ته‌خط مشخص می‌شود', JSON.stringify(tapEd?.p.reply_markup || {}).includes('خلاصه') || JSON.stringify(tapEd?.p.reply_markup || {}).includes('•'), JSON.stringify(tapEd?.p.reply_markup || {}).slice(0, 120));
   await apiCall('interactive/remove', { id: richId, kind: 'levels' });
+
+  /* ۴ج) تگی که کاربر خودش از پیکر انتخاب کرده، پرمیوم می‌ماند */
+  tg = [];
+  const picked = await apiCall('interactive/levels', { target: 'me', levels: { short: 'خلاصه', full: 'یک <tg-emoji emoji-id="4242">✨</tg-emoji> انتخاب‌شده' } });
+  const pickedState = deepState(picked.json.id);
+  check('تگ انتخاب‌شدهٔ خود کاربر در متن ذخیره می‌شود', /<tg-emoji emoji-id="4242">✨<\/tg-emoji>/.test(pickedState?.levels?.full?.html || ''), (pickedState?.levels?.full?.html || '').slice(-70));
+  tg = [];
+  await worker.fetch(new Request(`${ORIGIN}/telegram/webhook`, { method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 's3cret', 'content-type': 'application/json' }, body: JSON.stringify({ update_id: 7013, callback_query: { id: 'cb13', from: { id: UID, first_name: 'Test' }, message: { message_id: picked.json.message_id, date: 0, chat: { id: UID, type: 'private' } }, data: `deep:${picked.json.id}:full` } }) }), env, { waitUntil: () => {} });
+  await new Promise((r) => setTimeout(r, 120));
+  const pickedEdit = (lastTg('editMessageText') || {}).p?.rich_message?.html || '';
+  check('تگ انتخاب‌شده بعد از تپ سطح هم حفظ می‌شود', /<tg-emoji emoji-id="4242">✨<\/tg-emoji>/.test(pickedEdit), pickedEdit.slice(-80));
+  await apiCall('interactive/remove', { id: picked.json.id, kind: 'levels' });
 
   /* ۵) اسلایدشو */
   tg = [];

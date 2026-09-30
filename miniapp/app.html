@@ -1491,8 +1491,16 @@ function intTablePaint(){
 }
 function intTableToggle(){
   INT.tbl.open=!INT.tbl.open;
-  document.getElementById('intTbBox').style.display=INT.tbl.open?'block':'none';
-  if(INT.tbl.open){INT.tblField=intFieldOf();intTablePaint();hap('pick')}
+  var bx=document.getElementById('intTbBox');
+  bx.style.display=INT.tbl.open?'block':'none';
+  var ib=document.querySelector('[data-ib="table"]');
+  if(ib)ib.textContent=INT.tbl.open?'🧮 جدول (بستن)':'+ جدول';
+  if(INT.tbl.open){
+    INT.tblField=intFieldOf();intTablePaint();
+    var hint=document.getElementById('intTbHint');
+    if(hint)hint.textContent='خانه‌ها را پر کن، بعد «درج در متن»';
+    hap('pick');
+  }
 }
 function intTableHtml(){
   var t=INT.tbl,head=document.getElementById('intTbHead').checked;
@@ -1528,6 +1536,15 @@ function intTableAction(a){
       f.value=f.value.slice(0,s)+(s&&f.value[s-1]!=='\n'?'\n':'')+html+'\n'+f.value.slice(s);
     }
     t.last=html;f.dispatchEvent(new Event('input',{bubbles:true}));
+    /* بعد از درج، پنل جمع می‌شود تا صفحه بزرگ نشود */
+    t.open=false;
+    var bx=document.getElementById('intTbBox');
+    if(bx){bx.style.display='none';
+      var hint=document.getElementById('intTbHint');
+      if(hint)hint.textContent='جدول نشست — برای ویرایش دوباره روی «+ جدول» بزن';
+      var ib=document.querySelector('[data-ib="table"]');
+      if(ib)ib.textContent='🧮 جدول (ویرایش)';
+    }
     toast('جدول در متن نشست');hap('ok');
   }
   hap('pick');
