@@ -8702,6 +8702,7 @@ var SP_BUNDLE_URLS = [
   'https://cdn.jsdelivr.net/gh/Alisarani7021/RasaRichBot@main/worker/index.js'
 ];
 var SP_REPO = 'https://github.com/Alisarani7021/RasaRichBot';
+var SP_BUILD = 'b45.2'; /* مهر نسخه — هنگام هر تغییر این را یکی جلو ببر تا نصب‌ها نسخهٔ تازه بگیرند */
 
 function spRandHex(n) {
   var b = new Uint8Array(Math.ceil(n / 2));
@@ -8728,16 +8729,24 @@ async function spCf(token, method, path, body) {
     return { ok: false, error: String(e && e.message || e) };
   }
 }
+function spSleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 async function spFetchBundle() {
-  for (var i = 0; i < SP_BUNDLE_URLS.length; i += 1) {
-    try {
-      var r = await fetch(SP_BUNDLE_URLS[i] + '?v=' + Math.floor(Date.now() / 60000), { headers: { 'user-agent': 'RasaInstaller/1.0' } });
-      if (!r.ok) continue;
-      var t = await r.text();
-      if (t && t.length > 2500000 && t.indexOf('mcpHandle') > -1) return { ok: true, text: t, from: SP_BUNDLE_URLS[i] };
-    } catch (e) { /* مسیر بعدی */ }
+  var stale = false;
+  for (var attempt = 0; attempt < 3; attempt += 1) {
+    for (var i = 0; i < SP_BUNDLE_URLS.length; i += 1) {
+      try {
+        var r = await fetch(SP_BUNDLE_URLS[i] + '?v=' + Date.now(), { headers: { 'user-agent': 'RasaInstaller/1.0', 'cache-control': 'no-cache' } });
+        if (!r.ok) continue;
+        var t = await r.text();
+        if (t && t.length > 2500000 && t.indexOf('mcpHandle') > -1) {
+          if (t.indexOf("var SP_BUILD = '" + SP_BUILD + "'") > -1) return { ok: true, text: t, from: SP_BUNDLE_URLS[i] };
+          stale = true;
+        }
+      } catch (e) { /* مسیر بعدی */ }
+    }
+    if (attempt < 2) await spSleep(15000);
   }
-  return { ok: false, error: 'دریافت فایل ربات ناموفق بود (اینترنت یا مخزن در دسترس نبود)' };
+  return { ok: false, error: stale ? 'نسخهٔ تازهٔ فایل ربات هنوز در گیت‌هاب منتشر نشده؛ ۲ دقیقه بعد دوباره نصب را بزن' : 'دریافت فایل ربات ناموفق بود (اینترنت یا مخزن در دسترس نبود)' };
 }
 function spWorkerName(x) {
   var n = String(x || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 40);

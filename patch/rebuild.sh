@@ -3,6 +3,7 @@
 # برای وقتی فایل‌ها بین نوبت‌ها عقب می‌افتند. اجرا: bash cf/patch/rebuild.sh
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+# ۰) یادآوری: قبل از هر تغییر، مهر نسخه را در snippets/superpowers3.js جلو ببر (SP_BUILD)
 # ۱) snippet ها و پچ‌ها (اگر نبودند از gh/patch برگردان)
 for f in commander.js mcp_server.js superpowers.js superpowers2.js superpowers3.js; do
   [ -f "cf/patch/snippets/$f" ] || { echo "↩️  $f از gh/patch برگردانده شد"; cp "gh/patch/$f" "cf/patch/snippets/$f"; }
