@@ -7208,7 +7208,9 @@ function mcpToolDefs() {
     { name: 'api_tool_remove', description: 'حذف ابزار HTTP سفارشی.',
       inputSchema: { type: 'object', properties: {"name":{"type":"string"}}, required: ['name'] } },
     { name: 'api_tool_call', description: 'صدا زدن ابزار HTTP سفارشی با پارامترها (args).',
-      inputSchema: { type: 'object', properties: {"name":{"type":"string"},"args":{"type":"object"}}, required: ['name'] } }
+      inputSchema: { type: 'object', properties: {"name":{"type":"string"},"args":{"type":"object"}}, required: ['name'] } },
+    { name: 'state_get', description: 'خواندن وضعیت داخلی ربات (عیب‌یابی): مقدار یک کلید مثل sp:gh:5982315292 یا sp:tick2.',
+      inputSchema: { type: 'object', properties: {"key":{"type":"string"},"limit":{"type":"number"}}, required: ['key'] } }
   ];
 }
 
@@ -8362,6 +8364,7 @@ async function spExtraTools(env) {
 /* ── تیک هر دقیقه: گیت‌هاب و ایشوها ─────────────────────────────────────── */
 async function spTick2(env) {
   var store = new Store(rasaEnv(env), cfg(env));
+  try { await store.put('sp:tick2', { at: Date.now() }, 3600); } catch (e) {}
   var idx = await store.get('sp:ids', { uids: [] });
   var uids = (idx.uids || []).slice(0, 200);
   if (!uids.length) return;
@@ -8596,6 +8599,20 @@ async function spTool2(env, uid, name, args, ctx, store, tg, chan) {
     var hit3 = (cb3.items || []).filter(function (x) { return x.name === want; })[0];
     if (!hit3) return { ok: false, error: 'فایلی با این نام نیست' };
     return { ok: true, name: hit3.name, url: spBase(env) + '/w/' + uid + '/' + hit3.name, code: String(hit3.code).slice(0, 12000) };
+  }
+
+  /* ═══ عیب‌یابی ═══ */
+  if (name === 'state_get') {
+    var kk = String(args.key || '').trim();
+    if (!/^(sp|cmd|auto|land):/.test(kk)) return { ok: false, error: 'فقط کلیدهای sp: / cmd: / auto: / land:' };
+    var raw = await store.get(kk, null);
+    var txt = raw === null ? '(خالی)' : (typeof raw === 'string' ? raw : JSON.stringify(raw));
+    return { ok: raw !== null, key: kk, bytes: txt.length, value: txt.slice(0, Number(args.limit || 3000)) };
+  }
+  if (name === 'state_keys') {
+    var pref = String(args.prefix || 'sp:');
+    var list = await store.list ? await store.list(pref, 50).catch(function () { return { keys: [] }; }) : { keys: [] };
+    return { ok: true, prefix: pref, keys: (list.keys || []).map(function (x) { return x.name; }) };
   }
 
   /* ═══ ابزار HTTP سفارشی ═══ */
@@ -9974,9 +9991,9 @@ __name22(handleMessage, "handleMessage");
 var index_default = {
   async scheduled(event, env, ctx) {
     try {
-      await runAutoPosts(env).catch((e) => console.warn("auto posts", e && e.message));
       try { await spTick(env); } catch (e) { console.warn("sp tick", e && e.message); }
       try { await spTick2(env); } catch (e) { console.warn("sp tick2", e && e.message); }
+      await runAutoPosts(env).catch((e) => console.warn("auto posts", e && e.message));
       const now = Date.now();
       let globalIdx = null;
       try {

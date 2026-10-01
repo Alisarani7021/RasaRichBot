@@ -9,6 +9,9 @@
 # رِسا — Rasa Studio
 
 ### استودیوی ساخت، طراحی و انتشار پست‌های ژورنالی تلگرام
+**+ عامل همه‌کاره (۵۹ ابزار MCP): رصد گیت‌هاب، میزبانی HTML، اپ هوشمند، کدنویسی، ابزارهای سفارشی**
+
+> تازه‌ها: [قدرت‌های نامحدود](docs/agent-unlimited.md) · [برگهٔ راهنمای فارسی](docs/b44-cheat-sheet.md) · [اتصال به جمنای و کلاد](docs/mcp-connect.md)
 **Telegram Rich Post Studio · Premium Emoji Engine · Mini App · on Cloudflare Workers**
 
 <a href="https://t.me/RasaRichBot">
