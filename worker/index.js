@@ -7468,7 +7468,9 @@ async function spTool(env, uid, name, args, ctx) {
     var st = String(args.style || '').toLowerCase().trim();
     var prompt = String(args.prompt || '').slice(0, 500);
     if (st && SP_STYLES[st]) prompt += ', ' + SP_STYLES[st];
-    var b64 = await cmdAiImage(env, prompt);
+    var b64 = '';
+    try { b64 = await cmdAiImage(env, prompt); }
+    catch (e) { return { ok: false, error: (typeof spQuotaErr === 'function' && spQuotaErr(e)) || ('عکس ساخته نشد: ' + String(e && e.message || e).slice(0, 120)) }; }
     var fid2 = '';
     try { var up = await cmdSendPhoto(env, ctx.chatId || uid, b64, '🖼 پیش‌نمایش عکس' + (st && SP_STYLES[st] ? ' (استایل: ' + st + ')' : '') + ' — اگر خوبه بگو بذارم تو کانال'); fid2 = up.file_id || ''; } catch (e) {}
     if (fid2) await store.put('cmd:img:' + uid, { file_id: fid2, at: Date.now(), prompt: prompt.slice(0, 200) });
@@ -7574,7 +7576,7 @@ async function spTool(env, uid, name, args, ctx) {
     if (!txt) return { ok: false, error: 'متن خالی است' };
     var to = ({ fa: 'fa', farsi: 'fa', فارسی: 'fa', en: 'en', english: 'en', انگلیسی: 'en', ar: 'ar', عربی: 'ar', tr: 'tr', ru: 'ru', de: 'de', fr: 'fr' })[String(args.to || 'fa').toLowerCase()] || 'fa';
     var src = ({ fa: 'fa', en: 'en' })[String(args.from || '').toLowerCase()] || 'en';
-    var tr = null;
+    var tr = null; var trErr = '';
     try {
       if (env.AI && typeof env.AI.run === 'function') tr = await env.AI.run('@cf/meta/m2m100-1.2b', { text: txt, source_lang: src, target_lang: to });
       else if (cmdConfig(env).brain) {
@@ -7582,12 +7584,13 @@ async function spTool(env, uid, name, args, ctx) {
           method: 'POST', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ model: '@cf/meta/m2m100-1.2b', payload: { text: txt, source_lang: src, target_lang: to } })
         });
-        var gj = await g.json();
-        if (gj.ok) { try { tr = JSON.parse(gj.text); } catch (e2) { tr = { translated_text: String(gj.text) }; } }
+        var gj = null; try { gj = await g.json(); } catch (e3) { trErr = 'HTTP ' + g.status; }
+        if (gj && gj.ok) { try { tr = JSON.parse(gj.text); } catch (e2) { tr = { translated_text: String(gj.text) }; } }
+        else if (gj) trErr = String(gj.text || gj.error || 'خطای دروازه');
       }
-    } catch (e) { tr = null; }
+    } catch (e) { tr = null; trErr = String(e && e.message || e); }
     var outTxt = tr && (tr.translated_text || tr.response || (typeof tr === 'string' ? tr : '')) || '';
-    if (!outTxt) return { ok: false, error: 'ترجمه در دسترس نبود' };
+    if (!outTxt) return { ok: false, error: (typeof spQuotaErr === 'function' && spQuotaErr({ message: trErr })) || ('ترجمه در دسترس نبود' + (trErr ? ': ' + trErr.slice(0, 100) : '')) };
     return { ok: true, to: to, from: src, text: String(outTxt).slice(0, 4000) };
   }
 
@@ -7638,18 +7641,20 @@ async function spTool(env, uid, name, args, ctx) {
   if (name === 'make_voice') {
     var vt = String(args.text || '').slice(0, 600);
     if (!vt) return { ok: false, error: 'متن خالی است' };
-    var audioB64 = '';
+    var audioB64 = ''; var vErr = '';
     try {
       var vr = null;
       if (env.AI && typeof env.AI.run === 'function') vr = await env.AI.run('@cf/myshell-ai/melotts', { prompt: vt, lang: 'en' });
       else if (cmdConfig(env).brain) {
         var vg = await fetch(cmdConfig(env).brain + '/run?k=' + encodeURIComponent(cmdConfig(env).brainKey), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: '@cf/myshell-ai/melotts', payload: { prompt: vt, lang: 'en' } }) });
-        var vj = await vg.json();
-        if (vj.ok) { try { vr = JSON.parse(vj.text); } catch (e3) { vr = { audio: vj.text }; } }
+        var vj = null; try { vj = await vg.json(); } catch (e4) { vErr = 'HTTP ' + vg.status; }
+        if (vj && vj.ok) { try { vr = JSON.parse(vj.text); } catch (e3) { vr = { audio: vj.text }; } }
+        else if (vj) vErr = String(vj.error || vj.text || 'خطای دروازه');
       }
       audioB64 = vr && (vr.audio || '') || '';
-    } catch (e) { audioB64 = ''; }
-    if (!audioB64) return { ok: false, error: 'ساخت صدا در دسترس نبود' };
+      if (!audioB64 && vr && typeof vr === 'string') audioB64 = vr;
+    } catch (e) { audioB64 = ''; vErr = String(e && e.message || e); }
+    if (!audioB64) return { ok: false, error: (typeof spQuotaErr === 'function' && spQuotaErr({ message: vErr })) || ('ساخت صدا در دسترس نبود' + (vErr ? ': ' + vErr.slice(0, 90) : '')) };
     var bytes = Uint8Array.from(atob(audioB64), function (c) { return c.charCodeAt(0); });
     var fd2 = new FormData();
     fd2.append('chat_id', String(ctx.chatId || uid));
@@ -8129,6 +8134,7 @@ async function spGhPollOne(env, store, uid, f, chan) {
   if (!repo || repo.indexOf('/') < 0) { f.lastErr = 'نام ریپو نامعتبر (مثل owner/repo)'; return; }
   if (Date.now() - (f.lastRun || 0) < (f.every || 30) * 60000) return;
   f.lastRun = Date.now();
+  f.lastChecked = f.lastRun;
   var res = await spGhFetch(repo, f.kind || 'commits', f.branch);
   if (!res.ok) {
     f.lastErr = res.note || 'خطا';
@@ -8138,7 +8144,7 @@ async function spGhPollOne(env, store, uid, f, chan) {
   }
   f.errN = 0; f.lastErr = '';
   var ids = res.items.map(function (x) { return x.id; });
-  if (!(f.seen || []).length) { f.seen = ids.slice(0, 20); f.seeded = true; return; }
+  if (!(f.seen || []).length) { f.seen = ids.slice(0, 20); f.seeded = true; f.lastFound = 0; return; }
   var fresh = res.items.filter(function (x) { return (f.seen || []).indexOf(x.id) < 0; }).slice(0, f.max || 3);
   for (var i = 0; i < fresh.length; i += 1) {
     var it = fresh[i];
@@ -8218,6 +8224,15 @@ async function spIssuePollOne(env, store, uid, w, chan) {
 }
 
 /* ── تولید با هوش مصنوعی ─────────────────────────────────────────────────── */
+function spQuotaErr(e) {
+  var m = String(e && e.message || e || '');
+  if (/neuron|daily free|allocation|quota|rate limit|capacity|429|4006/i.test(m)) return 'سهمیهٔ امروزِ هوش مصنوعی تمام شد — از فردا (یا با ارتقای Workers Paid) دوباره فعال است. باقی قابلیت‌ها (گیت‌هاب، صفحه‌های آماده، بازار، انتشار) کار می‌کنند.';
+  return '';
+}
+async function spGenSafe(env, kind, args, extra) {
+  try { return { ok: true, text: await spGen(env, kind, args) }; }
+  catch (e) { return { ok: false, error: spQuotaErr(e) || ('مغز جواب نداد: ' + String(e && e.message || e).slice(0, 140)) }; }
+}
 async function spGen(env, kind, args) {
   var sys = '';
   if (kind === 'page') {
@@ -8488,7 +8503,9 @@ async function spTool2(env, uid, name, args, ctx, store, tg, chan) {
       return { ok: true, mode: 'agent', url: urlA, slug: slugA, note: 'صفحهٔ پرسش‌وپاسخ زنده ساخته شد' };
     }
     if (!(await spAiOk(env))) return { ok: false, error: 'مغز هوش مصنوعی در دسترس نیست' };
-    var html = spCleanHtml(await spGen(env, 'page', args));
+    var g1 = await spGenSafe(env, 'page', args);
+    if (!g1.ok) return { ok: false, error: g1.error };
+    var html = spCleanHtml(g1.text);
     var slug = spSlugOf(args.slug || args.title, 'page');
     var pb = await spPageBox(store, uid);
     (pb.pages || {})[slug] = { title: String(args.title || args.prompt || slug).slice(0, 120), html: html, at: Date.now() };
@@ -8501,7 +8518,9 @@ async function spTool2(env, uid, name, args, ctx, store, tg, chan) {
     if (!(await spAiOk(env))) return { ok: false, error: 'مغز هوش مصنوعی در دسترس نیست' };
     var goal = String(args.goal || args.prompt || '').slice(0, 800);
     if (!goal) return { ok: false, error: 'هدف اپ را بگو (goal)' };
-    var html2 = spCleanHtml(await spGen(env, 'app', { prompt: goal, name: args.name }));
+    var g2 = await spGenSafe(env, 'app', { prompt: goal, name: args.name });
+    if (!g2.ok) return { ok: false, error: g2.error };
+    var html2 = spCleanHtml(g2.text);
     if (html2.toLowerCase().indexOf('./api') < 0) { /* اگر مدل صدا نزد، خودمان تزریق می‌کنیم */
       html2 = html2.replace(/<\/body>/i, '<script>window.__rasaAsk=function(q){return fetch("./api",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({q:String(q)})}).then(function(r){return r.json()})};</script></body>');
     }
@@ -8572,7 +8591,9 @@ async function spTool2(env, uid, name, args, ctx, store, tg, chan) {
   if (name === 'make_code') {
     if (!(await spAiOk(env))) return { ok: false, error: 'مغز هوش مصنوعی در دسترس نیست' };
     var nm = String(args.name || 'code.js').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 60) || 'code.js';
-    var code = String(await spGen(env, 'code', { prompt: args.prompt || args.goal || '', name: nm })).slice(0, 120000);
+    var g3 = await spGenSafe(env, 'code', { prompt: args.prompt || args.goal || '', name: nm });
+    if (!g3.ok) return { ok: false, error: g3.error };
+    var code = String(g3.text).slice(0, 120000);
     var fenceC = code.match(/```([a-zA-Z0-9+]*)\s*([\s\S]*?)```/);
     if (fenceC) code = fenceC[2];
     var cb = await store.get('sp:code:' + uid, { items: [] });

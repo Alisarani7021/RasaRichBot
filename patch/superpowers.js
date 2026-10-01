@@ -151,7 +151,9 @@ async function spTool(env, uid, name, args, ctx) {
     var st = String(args.style || '').toLowerCase().trim();
     var prompt = String(args.prompt || '').slice(0, 500);
     if (st && SP_STYLES[st]) prompt += ', ' + SP_STYLES[st];
-    var b64 = await cmdAiImage(env, prompt);
+    var b64 = '';
+    try { b64 = await cmdAiImage(env, prompt); }
+    catch (e) { return { ok: false, error: (typeof spQuotaErr === 'function' && spQuotaErr(e)) || ('عکس ساخته نشد: ' + String(e && e.message || e).slice(0, 120)) }; }
     var fid2 = '';
     try { var up = await cmdSendPhoto(env, ctx.chatId || uid, b64, '🖼 پیش‌نمایش عکس' + (st && SP_STYLES[st] ? ' (استایل: ' + st + ')' : '') + ' — اگر خوبه بگو بذارم تو کانال'); fid2 = up.file_id || ''; } catch (e) {}
     if (fid2) await store.put('cmd:img:' + uid, { file_id: fid2, at: Date.now(), prompt: prompt.slice(0, 200) });
@@ -257,7 +259,7 @@ async function spTool(env, uid, name, args, ctx) {
     if (!txt) return { ok: false, error: 'متن خالی است' };
     var to = ({ fa: 'fa', farsi: 'fa', فارسی: 'fa', en: 'en', english: 'en', انگلیسی: 'en', ar: 'ar', عربی: 'ar', tr: 'tr', ru: 'ru', de: 'de', fr: 'fr' })[String(args.to || 'fa').toLowerCase()] || 'fa';
     var src = ({ fa: 'fa', en: 'en' })[String(args.from || '').toLowerCase()] || 'en';
-    var tr = null;
+    var tr = null; var trErr = '';
     try {
       if (env.AI && typeof env.AI.run === 'function') tr = await env.AI.run('@cf/meta/m2m100-1.2b', { text: txt, source_lang: src, target_lang: to });
       else if (cmdConfig(env).brain) {
@@ -265,12 +267,13 @@ async function spTool(env, uid, name, args, ctx) {
           method: 'POST', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ model: '@cf/meta/m2m100-1.2b', payload: { text: txt, source_lang: src, target_lang: to } })
         });
-        var gj = await g.json();
-        if (gj.ok) { try { tr = JSON.parse(gj.text); } catch (e2) { tr = { translated_text: String(gj.text) }; } }
+        var gj = null; try { gj = await g.json(); } catch (e3) { trErr = 'HTTP ' + g.status; }
+        if (gj && gj.ok) { try { tr = JSON.parse(gj.text); } catch (e2) { tr = { translated_text: String(gj.text) }; } }
+        else if (gj) trErr = String(gj.text || gj.error || 'خطای دروازه');
       }
-    } catch (e) { tr = null; }
+    } catch (e) { tr = null; trErr = String(e && e.message || e); }
     var outTxt = tr && (tr.translated_text || tr.response || (typeof tr === 'string' ? tr : '')) || '';
-    if (!outTxt) return { ok: false, error: 'ترجمه در دسترس نبود' };
+    if (!outTxt) return { ok: false, error: (typeof spQuotaErr === 'function' && spQuotaErr({ message: trErr })) || ('ترجمه در دسترس نبود' + (trErr ? ': ' + trErr.slice(0, 100) : '')) };
     return { ok: true, to: to, from: src, text: String(outTxt).slice(0, 4000) };
   }
 
@@ -321,18 +324,20 @@ async function spTool(env, uid, name, args, ctx) {
   if (name === 'make_voice') {
     var vt = String(args.text || '').slice(0, 600);
     if (!vt) return { ok: false, error: 'متن خالی است' };
-    var audioB64 = '';
+    var audioB64 = ''; var vErr = '';
     try {
       var vr = null;
       if (env.AI && typeof env.AI.run === 'function') vr = await env.AI.run('@cf/myshell-ai/melotts', { prompt: vt, lang: 'en' });
       else if (cmdConfig(env).brain) {
         var vg = await fetch(cmdConfig(env).brain + '/run?k=' + encodeURIComponent(cmdConfig(env).brainKey), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: '@cf/myshell-ai/melotts', payload: { prompt: vt, lang: 'en' } }) });
-        var vj = await vg.json();
-        if (vj.ok) { try { vr = JSON.parse(vj.text); } catch (e3) { vr = { audio: vj.text }; } }
+        var vj = null; try { vj = await vg.json(); } catch (e4) { vErr = 'HTTP ' + vg.status; }
+        if (vj && vj.ok) { try { vr = JSON.parse(vj.text); } catch (e3) { vr = { audio: vj.text }; } }
+        else if (vj) vErr = String(vj.error || vj.text || 'خطای دروازه');
       }
       audioB64 = vr && (vr.audio || '') || '';
-    } catch (e) { audioB64 = ''; }
-    if (!audioB64) return { ok: false, error: 'ساخت صدا در دسترس نبود' };
+      if (!audioB64 && vr && typeof vr === 'string') audioB64 = vr;
+    } catch (e) { audioB64 = ''; vErr = String(e && e.message || e); }
+    if (!audioB64) return { ok: false, error: (typeof spQuotaErr === 'function' && spQuotaErr({ message: vErr })) || ('ساخت صدا در دسترس نبود' + (vErr ? ': ' + vErr.slice(0, 90) : '')) };
     var bytes = Uint8Array.from(atob(audioB64), function (c) { return c.charCodeAt(0); });
     var fd2 = new FormData();
     fd2.append('chat_id', String(ctx.chatId || uid));

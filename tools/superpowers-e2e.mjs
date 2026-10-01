@@ -102,7 +102,11 @@ check('ban_user → banChatMember', ba.ok === true && ba.banned === 123456);
 
 /* ۶) ترجمه */
 let tr = await callTool('translate', { text: 'hello world', to: 'fa' });
-check('translate → ترجمهٔ فارسی', tr.ok === true && /سلام|جهان/.test(tr.text || ''), (tr.text || tr.error || '').slice(0, 40));
+if (!tr.ok && /سهمیه|neuron|allocation|daily free/i.test(String(tr.error || ''))) {
+  console.log('  ⚠️  translate — نادیده گرفته شد: سهمیهٔ روزانهٔ هوش مصنوعی تمام است (نه باگ)');
+} else {
+  check('translate → ترجمهٔ فارسی', tr.ok === true && /سلام|جهان/.test(tr.text || ''), (tr.text || tr.error || '').slice(0, 40));
+}
 
 /* ۷) قیمت بازار */
 let mk = await callTool('market', { asset: 'دلار' });
@@ -112,9 +116,11 @@ check('market طلا → قیمت واقعی', mk2.ok === true && /\d/.test(mk2.
 
 /* ۸) عکس با استایل + صدا */
 let im = await callTool('make_image', { prompt: 'sunset over Tehran skyline', style: 'neon' });
-check('make_image با استایل neon', im.ok === true && im.style === 'neon' && (im.file_id || '').length > 0, 'file_id=' + (im.file_id || '').slice(0, 8));
+if (!im.ok && /سهمیه|neuron|allocation|daily free/i.test(String(im.error || ''))) console.log('  ⚠️  make_image — نادیده گرفته شد: سهمیهٔ روزانهٔ هوش مصنوعی تمام است (نه باگ)');
+else check('make_image با استایل neon', im.ok === true && im.style === 'neon' && (im.file_id || '').length > 0, 'file_id=' + (im.file_id || '').slice(0, 8));
 let vo = await callTool('make_voice', { text: 'Hello from Rasa, your channel assistant.' });
-check('make_voice → sendVoice', vo.ok === true && sent.some((x) => x.method === 'sendVoice'));
+if (!vo.ok && /سهمیه|neuron|allocation|daily free/i.test(String(vo.error || ''))) console.log('  ⚠️  make_voice — نادیده گرفته شد: سهمیهٔ روزانهٔ هوش مصنوعی تمام است (نه باگ)');
+else check('make_voice → sendVoice', vo.ok === true && sent.some((x) => x.method === 'sendVoice'));
 
 /* ۹) صف تأیید */
 sent.splice(0);

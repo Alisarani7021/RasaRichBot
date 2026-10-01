@@ -118,6 +118,7 @@ async function spGhPollOne(env, store, uid, f, chan) {
   if (!repo || repo.indexOf('/') < 0) { f.lastErr = 'نام ریپو نامعتبر (مثل owner/repo)'; return; }
   if (Date.now() - (f.lastRun || 0) < (f.every || 30) * 60000) return;
   f.lastRun = Date.now();
+  f.lastChecked = f.lastRun;
   var res = await spGhFetch(repo, f.kind || 'commits', f.branch);
   if (!res.ok) {
     f.lastErr = res.note || 'خطا';
@@ -127,7 +128,7 @@ async function spGhPollOne(env, store, uid, f, chan) {
   }
   f.errN = 0; f.lastErr = '';
   var ids = res.items.map(function (x) { return x.id; });
-  if (!(f.seen || []).length) { f.seen = ids.slice(0, 20); f.seeded = true; return; }
+  if (!(f.seen || []).length) { f.seen = ids.slice(0, 20); f.seeded = true; f.lastFound = 0; return; }
   var fresh = res.items.filter(function (x) { return (f.seen || []).indexOf(x.id) < 0; }).slice(0, f.max || 3);
   for (var i = 0; i < fresh.length; i += 1) {
     var it = fresh[i];
@@ -207,6 +208,15 @@ async function spIssuePollOne(env, store, uid, w, chan) {
 }
 
 /* ── تولید با هوش مصنوعی ─────────────────────────────────────────────────── */
+function spQuotaErr(e) {
+  var m = String(e && e.message || e || '');
+  if (/neuron|daily free|allocation|quota|rate limit|capacity|429|4006/i.test(m)) return 'سهمیهٔ امروزِ هوش مصنوعی تمام شد — از فردا (یا با ارتقای Workers Paid) دوباره فعال است. باقی قابلیت‌ها (گیت‌هاب، صفحه‌های آماده، بازار، انتشار) کار می‌کنند.';
+  return '';
+}
+async function spGenSafe(env, kind, args, extra) {
+  try { return { ok: true, text: await spGen(env, kind, args) }; }
+  catch (e) { return { ok: false, error: spQuotaErr(e) || ('مغز جواب نداد: ' + String(e && e.message || e).slice(0, 140)) }; }
+}
 async function spGen(env, kind, args) {
   var sys = '';
   if (kind === 'page') {
@@ -477,7 +487,9 @@ async function spTool2(env, uid, name, args, ctx, store, tg, chan) {
       return { ok: true, mode: 'agent', url: urlA, slug: slugA, note: 'صفحهٔ پرسش‌وپاسخ زنده ساخته شد' };
     }
     if (!(await spAiOk(env))) return { ok: false, error: 'مغز هوش مصنوعی در دسترس نیست' };
-    var html = spCleanHtml(await spGen(env, 'page', args));
+    var g1 = await spGenSafe(env, 'page', args);
+    if (!g1.ok) return { ok: false, error: g1.error };
+    var html = spCleanHtml(g1.text);
     var slug = spSlugOf(args.slug || args.title, 'page');
     var pb = await spPageBox(store, uid);
     (pb.pages || {})[slug] = { title: String(args.title || args.prompt || slug).slice(0, 120), html: html, at: Date.now() };
@@ -490,7 +502,9 @@ async function spTool2(env, uid, name, args, ctx, store, tg, chan) {
     if (!(await spAiOk(env))) return { ok: false, error: 'مغز هوش مصنوعی در دسترس نیست' };
     var goal = String(args.goal || args.prompt || '').slice(0, 800);
     if (!goal) return { ok: false, error: 'هدف اپ را بگو (goal)' };
-    var html2 = spCleanHtml(await spGen(env, 'app', { prompt: goal, name: args.name }));
+    var g2 = await spGenSafe(env, 'app', { prompt: goal, name: args.name });
+    if (!g2.ok) return { ok: false, error: g2.error };
+    var html2 = spCleanHtml(g2.text);
     if (html2.toLowerCase().indexOf('./api') < 0) { /* اگر مدل صدا نزد، خودمان تزریق می‌کنیم */
       html2 = html2.replace(/<\/body>/i, '<script>window.__rasaAsk=function(q){return fetch("./api",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({q:String(q)})}).then(function(r){return r.json()})};</script></body>');
     }
@@ -561,7 +575,9 @@ async function spTool2(env, uid, name, args, ctx, store, tg, chan) {
   if (name === 'make_code') {
     if (!(await spAiOk(env))) return { ok: false, error: 'مغز هوش مصنوعی در دسترس نیست' };
     var nm = String(args.name || 'code.js').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 60) || 'code.js';
-    var code = String(await spGen(env, 'code', { prompt: args.prompt || args.goal || '', name: nm })).slice(0, 120000);
+    var g3 = await spGenSafe(env, 'code', { prompt: args.prompt || args.goal || '', name: nm });
+    if (!g3.ok) return { ok: false, error: g3.error };
+    var code = String(g3.text).slice(0, 120000);
     var fenceC = code.match(/```([a-zA-Z0-9+]*)\s*([\s\S]*?)```/);
     if (fenceC) code = fenceC[2];
     var cb = await store.get('sp:code:' + uid, { items: [] });

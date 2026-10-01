@@ -35,16 +35,28 @@ export default {
 
     if (url.pathname === '/brain' && request.method === 'POST') {
       const body = await request.json();
-      const r = await env.AI.run(body.model || '@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
-        messages: body.messages, max_tokens: body.max_tokens || 700, temperature: body.temperature ?? 0.6
-      });
-      return Response.json({ ok: true, text: textOf(r), raw_keys: Object.keys(r || {}) });
+      const models = body.model ? [body.model].concat(TEXT_CANDIDATES) : TEXT_CANDIDATES;
+      const errs = [];
+      for (const m of models) {
+        try {
+          const r = await env.AI.run(m, { messages: body.messages, max_tokens: body.max_tokens || 700, temperature: body.temperature ?? 0.6 });
+          return Response.json({ ok: true, text: textOf(r), model: m, raw_keys: Object.keys(r || {}) });
+        } catch (e) { errs.push(m + ': ' + String(e && e.message || e).slice(0, 90)); }
+      }
+      return Response.json({ ok: false, text: 'همهٔ مدل‌ها خطا دادند: ' + errs.slice(0, 4).join(' | ') });
     }
     if (url.pathname === '/run' && request.method === 'POST') {
       const body = await request.json();
-      const r = await env.AI.run(body.model, body.payload || {});
-      if (body.as === 'image') { try { return Response.json({ ok: true, b64: await toImageBase64(r) }); } catch (e) { return Response.json({ ok: false, error: String(e.message) }); } }
-      return Response.json({ ok: true, text: textOf(r), raw: JSON.stringify(r).slice(0, 500) });
+      try {
+        const r = await env.AI.run(body.model, body.payload || {});
+        if (body.as === 'image') {
+          try { return Response.json({ ok: true, b64: await toImageBase64(r) }); }
+          catch (e) { return Response.json({ ok: false, error: String(e && e.message || e).slice(0, 200) }); }
+        }
+        return Response.json({ ok: true, text: textOf(r), raw: JSON.stringify(r).slice(0, 500) });
+      } catch (e) {
+        return Response.json({ ok: false, error: String(e && e.message || e).slice(0, 300), text: String(e && e.message || e).slice(0, 300) });
+      }
     }
     if (url.pathname === '/stt' && request.method === 'POST') {
       const body = await request.json();
@@ -60,9 +72,13 @@ export default {
     }
     if (url.pathname === '/imgone') {
       const m = url.searchParams.get('m') || IMG_CANDIDATES[0];
-      const r = await env.AI.run(m, { prompt: url.searchParams.get('p') || 'golden sunset over Tehran skyline', steps: 4 });
-      const data = await toImageBase64(r);
-      return new Response(Uint8Array.from(atob(data), (c) => c.charCodeAt(0)), { headers: { 'content-type': 'image/jpeg' } });
+      try {
+        const r = await env.AI.run(m, { prompt: url.searchParams.get('p') || 'golden sunset over Tehran skyline', steps: 4 });
+        const data = await toImageBase64(r);
+        return new Response(Uint8Array.from(atob(data), (c) => c.charCodeAt(0)), { headers: { 'content-type': 'image/jpeg' } });
+      } catch (e) {
+        return Response.json({ ok: false, error: String(e && e.message || e).slice(0, 300) });
+      }
     }
     if (url.pathname === '/one') {
       const m = url.searchParams.get('m');
