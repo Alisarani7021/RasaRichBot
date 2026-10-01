@@ -7054,10 +7054,18 @@ async function maybeCommander(env, message, user, origin) {
   if (env.CMDR_DEBUG) console.log('[cmdr] enter uid=' + uid + ' voice=' + !!(message.voice || message.audio) + ' text=' + String(message.text || '').slice(0, 40));
   { const spTen = await spTenantHook(env, message); if (spTen && spTen.stop) return true; }
   if ((await cmdOwners(env)).indexOf(uid) < 0) return false;
-  if (!message.voice && !message.audio && String(message.text || '').trim()) {
-    const spFast = await spCmdFast(env, message, user, message.text);
-    if (spFast) return true;
+  /* b47 — استودیو صاحب متن/عکس/ویس است؛ AI فقط با /ai */
+  try { await spCaptureMedia(env, message); } catch (e) { }
+  var spTxt = String(message.text || '').trim();
+  if (!/^\/ai(\s|$)/i.test(spTxt)) return false;
+  var spBody = spTxt.replace(/^\/ai\s*/i, '').trim();
+  if (!spBody) {
+    await cmdSay(env, uid, 'بعد از /ai خواسته‌ات را بنویس. مثلاً:\n/ai قیمت دلار\n\n(طراحی پست مثل قبل است — فقط متن را معمولی بفرست.)');
+    return true;
   }
+  const spFast = await spCmdFast(env, message, user, spBody);
+  if (spFast) return true;
+  message = Object.assign({}, message, { text: spBody });
   var isVoice = !!(message.voice || message.audio);
   var text = String(message.text || message.caption || '').trim();
   var captured = null;
@@ -8706,7 +8714,7 @@ var SP_BUNDLE_URLS = [
   'https://cdn.jsdelivr.net/gh/Alisarani7021/RasaRichBot@main/worker/index.js'
 ];
 var SP_REPO = 'https://github.com/Alisarani7021/RasaRichBot';
-var SP_BUILD = 'b46'; /* مهر نسخه — هنگام هر تغییر این را یکی جلو ببر تا نصب‌ها نسخهٔ تازه بگیرند */
+var SP_BUILD = 'b47'; /* مهر نسخه — هنگام هر تغییر این را یکی جلو ببر تا نصب‌ها نسخهٔ تازه بگیرند */
 
 function spRandHex(n) {
   var b = new Uint8Array(Math.ceil(n / 2));
@@ -9149,9 +9157,10 @@ for(var i=0;i<btns.length;i++){(function(b){b.onclick=function(){for(var j=0;j<b
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   b46 — «ربات حتی بدون هوش مصنوعی هم کار می‌کند»
-   • پاسخ‌های آماده (سلام/قیمت/آمار/مناسبت/انتشار دستی با /post)
-   • خطای فارسی انسانی + منوی دکمه‌ها وقتی مغز از سهمیه افتاد
+   b47 — «مثل قبل»: استودیو صاحب پیام‌های معمولی است؛ AI فقط با /ai
+   • هیچ متن/عکس/ویسی خودکار به هوش مصنوعی نمی‌رود
+   • میان‌بُرهای آماده فقط پشت /ai (مثلاً «/ai قیمت دلار») — بدون مصرف سهمیه
+   • خطای مغز همیشه فارسی و انسانی می‌شود
    ═══════════════════════════════════════════════════════════════════════════ */
 
 function spIsQuotaErr(e) {
@@ -9159,7 +9168,7 @@ function spIsQuotaErr(e) {
   return /neuron|daily free|allocation|quota|rate limit|capacity|4006|1101|1102|429/i.test(m);
 }
 function spQuotaHuman() {
-  return '🧠 سهمیهٔ امروزِ هوش مصنوعی این حساب (کلادفلر) تمام شده — خودش **نیمه‌شب UTC یعنی ۳:۳۰ بامداد تهران** ریست می‌شود.\n\nولی این‌ها همین الان بدون هوش مصنوعی کار می‌کنند:\n• «قیمت دلار» / «قیمت طلا» / «قیمت بیت‌کوین» — قیمت زندهٔ بازار\n• «آمار» — آمار کانال · «مناسبت» — مناسبت امروز\n• «/post متن دلخواه» — انتشار مستقیم متن خودت در کانال\n• دکمه‌های زیر (استودیو، طراحی دستی، پخش زنده)\n\nبرای هوش مصنوعیِ نامحدود هم پلن ۵ دلاری Workers Paid روی حساب خودت قفلش را باز می‌کند.';
+  return '🧠 سهمیهٔ امروزِ هوش مصنوعی این حساب (کلادفلر) تمام شده — خودش **نیمه‌شب UTC یعنی ۳:۳۰ بامداد تهران** ریست می‌شود.\n\nطراحی پست و همهٔ کارهای معمولی ربات مثل قبل کار می‌کنند و به هوش مصنوعی کاری ندارند.\nبرای هوش مصنوعیِ نامحدود: پلن ۵ دلاری Workers Paid روی حساب خودت.';
 }
 async function spSendMenu(env, uid, intro) {
   try {
@@ -9172,33 +9181,19 @@ async function spCmdFallback(env, message, e) {
   var quota = spIsQuotaErr(e);
   var head = quota ? spQuotaHuman() : ('⚠️ یک خطای موقت پیش آمد:\n`' + String((e && e.message) || e).slice(0, 160).replace(/`/g, '') + '`\n\nدوباره امتحان کن؛ اگر تکرار شد بگو «خطا».');
   try { await cmdSay(env, uid, head); } catch (e2) { }
-  if (quota) { await spSendMenu(env, uid, '👇 همهٔ کارهای زیر همین الان بدون هوش مصنوعی کار می‌کنند:'); }
+  if (quota) { await spSendMenu(env, uid, '👇 همهٔ کارهای معمولی ربات همین الان کار می‌کنند:'); }
 }
 
-/* ── پاسخ‌های آماده (بدون هوش مصنوعی) ────────────────────────────────────── */
+/* ── میان‌بُرهای آماده — فقط پشت /ai (هیچ‌وقت خودکار) ─────────────────────── */
 async function spCmdFast(env, message, user, text) {
   var uid = Number((user && user.id) || 0);
   var raw = String(text || '').trim();
-  if (uid && raw) {
-    /* /post متن دلخواه → انتشار مستقیم، بدون AI */
-    var pm = raw.match(/^\/post\s+([\s\S]+)/);
-    if (pm) {
-      var body = pm[1].trim();
-      if (body.length < 2) { await cmdSay(env, uid, 'بعد از /post متن پست را بنویس. مثال:\n/post سلام به همهٔ اعضای کانال 🌟'); return true; }
-      var chan = await spChannel(env, uid);
-      if (!chan) { await cmdSay(env, uid, 'اول کانال را ثبت کن: /channel @نام‌کانال'); return true; }
-      var jr = await spPublish(env, uid, chan, body);
-      await cmdSay(env, uid, jr && jr.ok ? ('✅ منتشر شد' + (jr.link ? ': ' + jr.link : '')) : ('⚠️ منتشر نشد: ' + ((jr && jr.error) || 'نامشخص')));
-      return true;
-    }
-  }
   if (!raw || raw.charAt(0) === '/' || raw.length > 90) return false;
   var norm = raw.replace(/[\u200c\u200f\u200e]/g, ' ').replace(/[؟?!.،]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
 
   /* سلام و احوال‌پرسی */
   if (/^(سلام علیکم|سلام|درود|هی|های|خوبی|چطوری|چه خبر|صبح بخیر|ظهر بخیر|عصر بخیر|شب بخیر|ممنون|مرسی|دستت درد نکنه|thanks|thank you|hi|hello|hey)(?:\s|$)/.test(norm)) {
-    await cmdSay(env, uid, 'سلام! 👋 در خدمتم.\n\nهمین حالا میتوانی:\n• «قیمت دلار» یا «قیمت طلا» یا «قیمت بیت‌کوین»\n• «آمار» — وضعیت کانال\n• «مناسبت» — مناسبت امروز\n• «/post متن دلخواه» — مستقیم در کانال منتشر می‌کنم\n• یا از دکمه‌های زیر استفاده کنی');
-    await spSendMenu(env, uid, '👇 دسترسی سریع:');
+    await cmdSay(env, uid, 'سلام! 👋 در خدمتم.\n\nبرای اینکه سهمیهٔ هوش مصنوعی مصرف نشود، این‌ها آمادهٔ آماده‌اند:\n• «/ai قیمت دلار» یا «/ai قیمت طلا» یا «/ai قیمت بیت‌کوین»\n• «/ai آمار» — وضعیت کانال · «/ai مناسبت» — مناسبت امروز\n\nطراحی پست هم مثل قبل: کافی است متن یا عکس را معمولی بفرستی.');
     return true;
   }
 

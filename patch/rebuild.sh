@@ -30,5 +30,5 @@ node cf/sim/manner_test.mjs cf/sim/bundle_v28.mjs | tail -1
 cp cf/sim/bundle_v28.mjs gh/worker/index.js
 cp cf/sim/bundle_v28.mjs cf/rich-post-bot/index.js
 printf 'حجم: %s بایت\n' "$(wc -c < cf/sim/bundle_v28.mjs)"
-for s in "api/mcp" maybeCommander mcpHandle spTool spTick spCallback spChatMember spCaptureMedia spTool2 spWebServe spTick2 spSelfInstall spTenantHook spCmdFast spCmdFallback; do printf '%s=%s ' "$s" "$(grep -c "$s" cf/sim/bundle_v28.mjs)"; done; echo
+for s in "api/mcp" maybeCommander mcpHandle spTool spTick spCallback spChatMember spCaptureMedia spTool2 spWebServe spTick2 spSelfInstall spTenantHook spCmdFast spCmdFallback spBody "\\/ai" ; do printf '%s=%s ' "$s" "$(grep -c "$s" cf/sim/bundle_v28.mjs)"; done; echo
 echo "✅ b43 بازسازی شد: cf/sim/bundle_v28.mjs"

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* b46 — ربات حتی بدون هوش مصنوعی کار می‌کند: پاسخ آماده + خطای فارسی انسانی
+/* b47 — «مثل قبل»: استودیو صاحب پیام‌های معمولی است؛ AI فقط با /ai
    زنجیره: v25 → commander → mcp → superpowers → refinements → installer → manner
    Usage: node patch_manner.mjs <bundle.mjs>                                        */
 import fs from 'node:fs';
@@ -13,6 +13,7 @@ const must = (c, m) => { if (!c) { console.error('✖ ' + m); process.exit(1); }
 
 must(count('spCmdFast') === 0, 'already patched');
 must(count('spSelfInstall') >= 2, 'installer اول لازم است');
+must(count('getStartKeyboard') >= 1, 'study anchors');
 
 /* ۱) موتور */
 const ENG = '\nasync function applyLiveTick(env, job) {';
@@ -28,13 +29,21 @@ src = src.replace(ERR, `  } catch (e) {
     try { await spCmdFallback(env, message, e); } catch (e2) {}
   }`);
 
-/* ۳) پاسخ‌های آمادهٔ بدون AI — قبل از فرستادن به مغز */
+/* ۳) دروازهٔ ورودی: هر پیام معمولی → استودیو (مثل قبل). فقط «/ai …» → هوش مصنوعی */
 const ANCHOR = '  var isVoice = !!(message.voice || message.audio);';
 must(count(ANCHOR) === 1, 'commander entry anchor');
-src = src.replace(ANCHOR, `  if (!message.voice && !message.audio && String(message.text || '').trim()) {
-    const spFast = await spCmdFast(env, message, user, message.text);
-    if (spFast) return true;
+src = src.replace(ANCHOR, `  /* b47 — استودیو صاحب متن/عکس/ویس است؛ AI فقط با /ai */
+  try { await spCaptureMedia(env, message); } catch (e) { }
+  var spTxt = String(message.text || '').trim();
+  if (!/^\\/ai(\\s|$)/i.test(spTxt)) return false;
+  var spBody = spTxt.replace(/^\\/ai\\s*/i, '').trim();
+  if (!spBody) {
+    await cmdSay(env, uid, 'بعد از /ai خواسته‌ات را بنویس. مثلاً:\\n/ai قیمت دلار\\n\\n(طراحی پست مثل قبل است — فقط متن را معمولی بفرست.)');
+    return true;
   }
+  const spFast = await spCmdFast(env, message, user, spBody);
+  if (spFast) return true;
+  message = Object.assign({}, message, { text: spBody });
 ` + ANCHOR);
 
 fs.writeFileSync(target, src);

@@ -74,7 +74,7 @@ console.log('\n🦾 تست قدرت‌های نسل بعد\n');
 
 /* ۱) گرفتن رسانه از پیوی */
 let a = await ownerMsg({ photo: [{ file_id: 'S1' }, { file_id: 'BIG1', width: 1080, height: 1080 }], caption: '' });
-check('رسانهٔ پیوی ذخیره شد + تأیید', a.some((x) => x.method === 'sendMessage' && /دریافت شد/.test(x.text || '')), (kvGet('sp:media:5982315292') || {}).items?.length + ' در صف');
+check('عکس در پیوی → پیش‌نویس استودیو (مثل قبل) + ذخیره برای MCP', a.some((x) => x.method === 'sendPhoto' && x.markup) && ((kvGet('sp:media:5982315292') || {}).items?.length || 0) > 0, (kvGet('sp:media:5982315292') || {}).items?.length + ' در صف');
 
 /* ۲) انتشار رسانه */
 let pm = await callTool('publish_media', { caption: '**کپشن تست**\nخط دوم' });
