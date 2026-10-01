@@ -1,0 +1,81 @@
+name: 🐞 گزارش باگ
+description: چیزی درست کار نمی‌کند؟ دقیق بگو تا سریع پیدا شود.
+title: "[باگ] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        سپاس که وقت می‌گذاری 🙏 لطفاً **توکن، `chat_id` و اطلاعات کاربران را در متن یا اسکرین‌شات قرار نده** — پاکشان کن یا بپوشان.
+        برای مسائل امنیتی از [گزارش خصوصی](https://github.com/Alisarani7021/RasaRichBot/security/advisories/new) استفاده کن، نه این فرم.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: چه اتفاقی افتاد؟
+      description: رفتار واقعی، دقیقاً همان‌طور که دیدی.
+      placeholder: مثلاً «دکمهٔ به‌روزرسانی را زدم، پیام تازه فرستاد و قبلی پاک شد.»
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: انتظار داشتی چه شود؟
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: مراحل بازتولید
+      value: |
+        ۱. در مینی‌اپ بخش … را باز کردم
+        ۲. قالب … را ساختم
+        ۳. روی … زدم
+        ۴. نتیجه: …
+    validations:
+      required: true
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: کجا دیدی؟
+      multiple: true
+      options:
+        - مینی‌اپ (استودیو)
+        - پیوی ربات
+        - کانال
+        - گروه / سوپرگروه
+        - صفحهٔ فرود /p/<id>
+        - جای دیگر
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: نسخهٔ وورکر
+      description: اگر می‌دانی، شمارهٔ نسخهٔ دیپلوی (Worker → Deployments) را بنویس.
+      placeholder: مثلاً 158
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: پلتفرم
+      options:
+        - Telegram Android
+        - Telegram iOS
+        - Telegram Desktop
+        - Telegram Web
+        - نامشخص
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: اطلاعات بیشتر
+      description: اسکرین‌شات (بدون دادهٔ حساس)، متن خطا، یا هر سرنخی که فکر می‌کنی کمک می‌کند.
+    validations:
+      required: false

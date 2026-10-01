@@ -879,6 +879,20 @@ async function libraryMap(store2) {
   return map;
 }
 __name(libraryMap, "libraryMap");
+/* انتخاب‌های پرمیوم استودیو: { کاراکتر: شناسه } — دقیقاً همان چیزی که
+   کاربر از نوار اموجی زده. هیچ جانشینی خودکاری اینجا نیست. */
+function cleanStudioPicks(x) {
+  const out = {};
+  if (x && typeof x === "object") {
+    Object.keys(x).slice(0, 80).forEach((k) => {
+      const ch = String(k || "").replace(/\uFE0F/g, "").slice(0, 8);
+      const id = String(x[k] || "").replace(/\D/g, "").slice(0, 25);
+      if (ch && id) out[ch] = id;
+    });
+  }
+  return out;
+}
+__name(cleanStudioPicks, "cleanStudioPicks");
 function premiumize(html, map) {
   const src = String(html);
   if (!map || map.size === 0) return src;
@@ -893,6 +907,8 @@ function premiumize(html, map) {
   const keys = [...map.keys()].sort((a, b) => b.length - a.length);
   const pattern = keys.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
   const out = zoned.replace(new RegExp(pattern, "gu"), (match, offset) => {
+    const head = zoned.slice(0, offset);
+    if (head.split("<tg-emoji").length > head.split("</tg-emoji>").length) return match;
     const before = zoned.slice(Math.max(0, offset - 64), offset);
     if (/emoji-id="[^"]*$/.test(before)) return match;
     const id = map.get(match);
@@ -1082,11 +1098,14 @@ async function renderPayload(env, store2, uid, body) {
   }
   // Both namespaces, both layers: the preview must know every premium emoji the
   // bot knows, not just the ones the library half happened to hold.
+  const picks = cleanStudioPicks(body?.picks);
+  let htmlPicked = html;
+  if (Object.keys(picks).length) htmlPicked = applyEmojiSubs(html, picks, {});
   const map = new Map(Object.entries(await emojiReadMerged(env, store2, 0)));
-  let final = html;
+  let final = htmlPicked;
   if (map.size) {
-    const premium = premiumize(html, map);
-    if (premium !== html) final = premium;
+    const premium = premiumize(htmlPicked, map);
+    if (premium !== htmlPicked) final = premium;
   }
   return json({ ok: true, html: final, plain: plain(final).slice(0, 120), premium: final !== html });
 }
@@ -1125,6 +1144,7 @@ async function channelCheck(tg, uid, targetRaw) {
     ok: botAdmin && userAdmin,
     title: chat?.title || String(chatId),
     username: chat?.username || "",
+    type: chat?.type || "",
     bot: { admin: botAdmin },
     user: { admin: userAdmin, status: them?.status || "unknown" }
   });
@@ -1187,12 +1207,15 @@ function replyMarkupFromRich(html) {
   return rows.length ? { inline_keyboard: rows } : null;
 }
 __name(replyMarkupFromRich, "replyMarkupFromRich");
-async function publishNow(tg, targetRaw, rich, uid) {
+async function publishNow(tg, targetRaw, rich, uid, picks, storeLike, unsigned) {
+  const store = storeLike || null;
+  const wantUnsigned = unsigned === true;
   const target = parseTarget(targetRaw);
   if (!target) return bad("target");
   let clean = String(rich?.html || rich?.markdown || "").trim();
   if (!clean) return bad("empty");
   clean = HTML_TAG_RE.test(clean) ? mixedToHtml(clean) : mdToHtml(clean);
+  if (picks && Object.keys(picks).length) clean = applyEmojiSubs(clean, picks, {});
   const notices = [];
   const extractMedia = /* @__PURE__ */ __name((html) => {
     const imgs = [...String(html || "").matchAll(/<img[^>]+src=["']tg:\/\/photo\?id=([^"']+)["'][^>]*\/?>/gi)].map((m) => ({ kind: "photo", fileId: m[1] }));
@@ -1227,15 +1250,19 @@ async function publishNow(tg, targetRaw, rich, uid) {
   const hasRasaButton = /RasaRichBot|t\.me\/RasaRichBot/i.test(mappedHtml);
   let finalHtml = mappedHtml;
   let useSignature = true;
+  let creditBalance = 0;
   try {
-    if (uid) {
+    if (uid && store) {
       const inviteData = await store.get(`invites:${uid}`, { invited: [], credits: 0 });
-      const credits = inviteData.credits || 0;
-      if (credits > 0 && !hasRasaButton) {
-        useSignature = false;
-      }
+      creditBalance = inviteData.credits || 0;
     }
   } catch {
+  }
+  /* حذف امضا فقط وقتی کاربر خودش خواسته باشد و اعتبار داشته باشد. */
+  const dropSig = wantUnsigned && creditBalance > 0 && !hasRasaButton;
+  if (dropSig) useSignature = false;
+  if (wantUnsigned && creditBalance <= 0 && !hasRasaButton) {
+    notices.push("\u0628\u0631\u0627\u06cc \u067E\u0633\u062A \u0628\u062F\u0648\u0646 \u0627\u0645\u0636\u0627 \u0627\u0639\u062A\u0628\u0627\u0631 \u0646\u062F\u0627\u0631\u06CC \u2014 \u0627\u06CC\u0646 \u067E\u0633\u062A \u0628\u0627 \u0627\u0645\u0636\u0627\u06CC \u0631\u0650\u0633\u0627 \u0631\u0641\u062A. \u0628\u0627 \u062F\u0639\u0648\u062A \u062F\u0648\u0633\u062A\u0627\u0646 \u06CC\u0627 \u06F5 \u067E\u0633\u062A \u0628\u0627 \u0627\u0645\u0636\u0627\u060C \u06CC\u06A9 \u0627\u0639\u062A\u0628\u0627\u0631 \u0628\u06AF\u06CC\u0631.");
   }
   if (useSignature && !hasRasaButton) {
     const sigRow = `<tg-button-row><tg-button type="url" style="primary" url="https://t.me/RasaRichBot">\u0631\u0650\u0633\u0627 \u2728</tg-button></tg-button-row>`;
@@ -1271,10 +1298,10 @@ async function publishNow(tg, targetRaw, rich, uid) {
         }
       } catch {
       }
-      return json({ ok: true, link: linkFor(post.message_id), message_id: post.message_id, via, notices });
+      return json({ ok: true, link: linkFor(post.message_id), message_id: post.message_id, via, notices, signed: !!(useSignature && !hasRasaButton), charged: !!dropSig, credits: creditBalance });
     } catch (route) {
       notices.push("\u0645\u0633\u06CC\u0631 \u067E\u0631\u0645\u06CC\u0648\u0645 \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u0628\u0648\u062F\u061B \u0646\u0633\u062E\u0647\u0654 \u0633\u0627\u062F\u0647 \u0645\u0646\u062A\u0634\u0631 \u0634\u062F");
-      payload.html = stripPremium(sane.html);
+      payload.html = stripPremium(finalHtml);
     }
   }
   try {
@@ -1292,9 +1319,9 @@ async function publishNow(tg, targetRaw, rich, uid) {
       } else throw first;
     }
     try {
-      if (uid) {
+      if (uid && store) {
         const inviteData = await store.get(`invites:${uid}`, { invited: [], credits: 0, total: 0, used: 0, forwards: [], sigKept: 0 });
-        if (!useSignature) {
+        if (dropSig) {
           if ((inviteData.credits || 0) > 0) {
             inviteData.credits = (inviteData.credits || 0) - 1;
             inviteData.used = (inviteData.used || 0) + 1;
@@ -1310,10 +1337,11 @@ async function publishNow(tg, targetRaw, rich, uid) {
           }
           await store.put(`invites:${uid}`, inviteData);
         }
+        creditBalance = inviteData.credits || 0;
       }
     } catch {
     }
-    const body = { ok: true, link: linkFor(sent?.message_id || ""), message_id: sent?.message_id || null };
+    const body = { ok: true, link: linkFor(sent?.message_id || ""), message_id: sent?.message_id || null, signed: !!(useSignature && !hasRasaButton), charged: !!dropSig, credits: creditBalance };
     if (notices.length) body.notices = notices;
     try {
       if (rich?.deleteMedia) {
@@ -1666,26 +1694,66 @@ async function handleMiniAppApi(request, env, url) {
         return rest;
       })) };
     };
-    const sendAny = async (chatId, html, markup) => {
+    const sendAny = async (chatId, html, markup, picks, uid, embedBtns) => {
       let i = 0;
       const media = [];
-      const mapped = String(markerTags(ensureRichHtmlStructure(String(html)))).replace(/<img[^>]+src=["']tg:\/\/photo\?id=([^"']+)["'][^>]*\/?>/gi, (full, fid) => {
+      const chosen = picks && typeof picks === "object" ? picks : {};
+      const reg = await emojiRegistryCached(env);
+      const mapped = String(premiumizeSafe(ensureRichHtmlStructure(String(html)), chosen, reg.map)).replace(/<img[^>]+src=["']tg:\/\/photo\?id=([^"']+)["'][^>]*\/?>/gi, (full, fid) => {
         const mid = "m" + i++;
         media.push({ id: mid, media: { type: "photo", media: fid } });
         return full.replace(fid, mid);
       });
       const rich = { html: mapped, ...media.length ? { media } : {} };
-      // هیچ جانشینی خودکار اموجی اینجا نیست: اموجی‌هایی که کاربر تایپ کرده
-      // شکل خودشان را نگه می‌دارند و فقط تگ‌هایی که خودش از پیکر انتخاب کرده
-      // پرمیوم می‌مانند.
-      const buttons = markup ? markerButtons(markup) : null;
+      // اموجی‌ای که کاربر خودش از پیکر انتخاب کرده دقیقاً همان آرت می‌شود؛
+      // بقیهٔ اموجی‌های متن آرت پرمیوم خود ربات را می‌گیرند — همان قاعدهٔ استودیو.
+      const buttons = markup ? premiumButtons(markup, chosen, reg.map) : null;
+      const artN = (mapped.match(/<tg-emoji/g) || []).length;
+      const iconN = buttons ? (JSON.stringify(buttons).match(/icon_custom_emoji_id/g) || []).length : 0;
+      const withArt = artN > 0 || iconN > 0;
+      const trace = [];
+      const meta = `map:${Object.keys(reg.map || {}).length} art:${artN} icons:${iconN} dst:${String(chatId).slice(0, 24)}`;
+      /* کانال اجازهٔ اموجی پرمیوم از طرف ربات را نمی‌دهد؛ مسیر امن کپی از پیوی است. */
+      if (withArt && uid && String(chatId) !== String(uid)) {
+        /* مسیر بومی: پیام «در پاسخ» + ادیت؛ مزیتش این است که بعداً هم می‌شود
+           همین پیام را با آرت به‌روز کرد (بدون پیام تازه). دکمه‌های نظرسنجی
+           کانال داخل خود پیام می‌نشینند تا آیکن پرمیومشان حذف نشود. */
+        const embed = !!embedBtns && !!buttons;
+        const native = await sendPremiumReply(env, chatId, embed ? richButtonRows(mapped, markup, chosen, reg.map) : mapped, media, embed ? null : markup, chosen, reg);
+        if (native && native.message_id && native.rep) return { message_id: native.message_id, via: "channel-native", premium: true };
+        if (native && native.message_id) await tgCall(env, "deleteMessage", { chat_id: chatId, message_id: native.message_id }).catch(() => {});
+        const moved = await copyIntoChannel(env, uid, chatId, rich, buttons, chosen, reg);
+        if (moved && moved.message_id) return { message_id: moved.message_id, via: moved.via || "premium-dm-copy", premium: true };
+        trace.push({ s: "sendany", ok: false, e: "native+copy missed " + meta });
+      } else {
+        trace.push({ s: "sendany", ok: true, e: "direct " + meta });
+      }
       try {
-        return await tg.sendRich(chatId, rich, buttons ? { reply_markup: buttons } : {});
+        const sent = await tg.sendRich(chatId, rich, buttons ? { reply_markup: buttons } : {});
+        if (trace.length) await dbgChan(env, trace.concat([{ s: "direct", ok: true, e: "" }]));
+        return { ...(sent && typeof sent === "object" ? sent : {}), premium: withArt, via: "direct" };
       } catch (e) {
         const why = String(e?.description || e?.message || e);
+        await dbgChan(env, trace.concat([{ s: "direct", ok: false, e: why.slice(0, 160) }]));
         if (!buttons || !/icon|emoji|custom/i.test(why)) throw e;
-        return await tg.sendRich(chatId, rich, { reply_markup: stripMediaIcons(buttons) });
+        /* تلگرام آیکن یا تگ پرمیوم را قبول نکرد: همان نوشته با اموجی ساده می‌رود تا
+           پیام از دست نرود و چیزی از متن دکمه کم نشود. */
+        const plainButtons = markerButtons(markup);
+        return await tg.sendRich(chatId, { ...rich, html: stripPremium(rich.html) }, plainButtons ? { reply_markup: plainButtons } : {});
       }
+    };
+    /* انتخاب‌های پرمیومِ کاربر: { کاراکتر: شناسه }. هیچ اموجی‌ای خودکار
+       جانشین نمی‌شود؛ فقط چیزی که خودش انتخاب کرده پرمیوم می‌شود. */
+    const cleanPicks = (x) => {
+      const out = {};
+      if (x && typeof x === "object") {
+        Object.keys(x).slice(0, 60).forEach((k) => {
+          const ch = String(k || "").slice(0, 8);
+          const id = String(x[k] || "").replace(/\D/g, "").slice(0, 25);
+          if (ch && id) out[ch] = id;
+        });
+      }
+      return out;
     };
     const box = async () => await store2.get(`intx:${uid}`, { items: [] });
     const listAdd = async (entry) => {
@@ -1717,9 +1785,11 @@ async function handleMiniAppApi(request, env, url) {
     const rawTarget = String(body?.target || "").trim();
     const toMe = !rawTarget || rawTarget === "me" || rawTarget === "self";
     let chatId = uid;
+    let isChan = false;
     if (!toMe) {
       const verdict = await (await channelCheck(tg, uid, rawTarget)).json();
       if (!verdict.ok) return json({ ok: false, error: "permissions", verdict });
+      isChan = verdict.type === "channel";
       const parsed = parseTarget(rawTarget);
       if (!parsed) return bad("target");
       chatId = parsed.chat;
@@ -1737,14 +1807,20 @@ async function handleMiniAppApi(request, env, url) {
         .map((x) => plainEmojis(String(x || "").trim()).slice(0, 60)).filter(Boolean).slice(0, 6);
       if (labels.length < 2) return bad("\u062D\u062F\u0627\u0642\u0644 \u062F\u0648 \u06AF\u0632\u06CC\u0646\u0647 \u0644\u0627\u0632\u0645 \u0627\u0633\u062A");
       const minutes = Math.max(0, Math.min(10080, Number(body?.minutes) || 0));
+      const picks = cleanPicks(body?.picks);
       const id = newId("p");
       const state = {
-        id, title, subtitle,
+        id, title, subtitle, picks,
         options: labels.map((l, k) => ({ key: "o" + (k + 1), label: l })),
         votes: {}, createdAt: Date.now(), updatedAt: Date.now(),
         ...minutes ? { endsAt: Date.now() + minutes * 60000 } : {}
       };
-      const sent = await sendAny(chatId, renderLivePost(state), liveKeyboard(state));
+      const sent = await sendAny(chatId, renderLivePost(state), liveKeyboard(state), picks, uid, isChan);
+      state.owner = uid;
+      state.chan = isChan;
+      state.richBtns = !!isChan;
+      state.premium = !!sent.premium;
+      state.via = sent.via || "";
       await setJson(env, `live:${id}`, state, 30 * 86400);
       const entry = { kind: "poll", id, title: plainEmojisText(title), at: Date.now(), chat: String(chatId), msg: sent.message_id, link: linkOf(sent.message_id), minutes };
       await listAdd(entry);
@@ -1759,19 +1835,22 @@ async function handleMiniAppApi(request, env, url) {
       const full = convT(lv.full);
       if (!short || !full) return bad("\u062E\u0644\u0627\u0635\u0647 \u0648 \u0646\u0633\u062E\u0647\u0654 \u06A9\u0627\u0645\u0644 \u0644\u0627\u0632\u0645 \u0627\u0633\u062A");
       const id = newId("d");
+      const picks = cleanPicks(body?.picks);
       const levels = {
         short: { label: "\u26A1 \u062E\u0644\u0627\u0635\u0647\u0654 \u06F3\u06F0 \u062B\u0627\u0646\u06CC\u0647", html: short },
         mid: { label: "\u{1F4DA} \u0646\u0633\u062E\u0647\u0654 \u0645\u062A\u0648\u0633\u0637", html: mid },
         full: { label: "\u2705 \u0646\u0633\u062E\u0647\u0654 \u06A9\u0627\u0645\u0644", html: full }
       };
       const head = title ? `<h2>${escT(title)}</h2>\n` : "";
-      const rows = Object.keys(levels).map((k) => ([{
-        text: levels[k].label + (k === "short" ? " \u2022" : ""),
-        callback_data: `deep:${id}:${k}`
-      }]));
-      const sent = await sendAny(chatId, head + levels.short.html, { inline_keyboard: rows });
+      const icons = await levelIcons(env, picks, Object.keys(levels).map((k) => levels[k].label));
+      const rows = pickedButtons({ inline_keyboard: Object.keys(levels).map((k) => ([{
+        text: levels[k].label + (k === "short" ? " •" : ""),
+        callback_data: "deep:" + id + ":" + k
+      }])) }, icons).inline_keyboard;
+      const sent = await sendAny(chatId, head + levels.short.html, { inline_keyboard: rows }, picks, uid, isChan);
       await setJson(env, `deep:${id}`, {
-        id, chatId, msgId: sent.message_id, level: "short", levels,
+        id, chatId, msgId: sent.message_id, level: "short", levels, picks, icons,
+        owner: uid, chan: isChan, premium: !!sent.premium, via: sent.via || "",
         title: title || "", createdAt: Date.now(), updatedAt: Date.now()
       }, 30 * 86400);
       const entry = { kind: "levels", id, title: plainEmojisText(title) || "\u{1F4DA} \u067E\u0633\u062A \u0686\u0646\u062F\u062D\u0627\u0644\u062A\u0647", at: Date.now(), chat: String(chatId), msg: sent.message_id, link: linkOf(sent.message_id) };
@@ -1790,7 +1869,8 @@ async function handleMiniAppApi(request, env, url) {
         "<tg-slideshow>" +
         media.map((m) => `<img src="tg://photo?id=${m.fileId}"/>`).join("") +
         "</tg-slideshow>";
-      const sent = await sendAny(chatId, html);
+      const picks = cleanPicks(body?.picks);
+      const sent = await sendAny(chatId, html, null, picks, uid);
       const entry = { kind: "slideshow", id: newId("s"), title: caption.slice(0, 60) || "\u0627\u0633\u0644\u0627\u06CC\u062F\u0634\u0648", at: Date.now(), chat: String(chatId), msg: sent.message_id, link: linkOf(sent.message_id), count: media.length };
       await listAdd(entry);
       return json({ ok: true, ...entry, message_id: sent.message_id });
@@ -1805,7 +1885,17 @@ async function handleMiniAppApi(request, env, url) {
       await setJson(env, `live:${id}`, st, 30 * 86400);
       const it = await findItem(id);
       if (it?.chat && it?.msg) {
-        await editPostMessage(env, Number(it.chat) || it.chat, it.msg, { html: renderLivePost(st), replyMarkup: liveKeyboard(st) }).catch(() => null);
+        if (!st.owner && isChanDest(it.chat)) { st.owner = String(uid); st.chan = true; await setJson(env, `live:${id}`, st, 30 * 86400); }
+        const liveChat = Number(it.chat) || it.chat;
+        let movedEnd = null;
+        if (st.owner && st.chan) movedEnd = await republishPremium(env, st.owner, liveChat, it.msg, renderLivePost(plainEmojisDeep(st)), liveKeyboard(plainEmojisDeep(st)), st.picks || {}, true);
+        if (movedEnd && movedEnd.message_id) {
+          it.msg = movedEnd.message_id;
+          await dropItem(id);
+          await listAdd(it);
+        } else {
+          await editPostMessage(env, liveChat, it.msg, { html: renderLivePost(st), replyMarkup: liveKeyboard(st), rich: true, emojiSubs: st.picks || {} }).catch(() => null);
+        }
       }
       return json({ ok: true, id });
     }
@@ -1879,7 +1969,7 @@ async function handleMiniAppApi(request, env, url) {
     const check = await channelCheck(tg, uid, body?.target);
     const verdict = await check.json();
     if (!verdict.ok) return json({ ok: false, error: "permissions", verdict });
-    return publishNow(tg, body?.target, body?.rich || { html: body?.html }, uid);
+    return publishNow(tg, body?.target, body?.rich || { html: body?.html }, uid, cleanStudioPicks(body?.picks), store2, body?.unsigned === true);
   }
   if (path === "/api/invite/status" && request.method === "POST") {
     const data = await store2.get(`invites:${uid}`, { invited: [], credits: 0, total: 0, used: 0, forwards: [], sigKept: 0 });
@@ -2006,7 +2096,7 @@ async function handleMiniAppApi(request, env, url) {
     for (const j of data.jobs || []) {
       if (j.status === "pending" && j.scheduledAt && j.scheduledAt <= now) {
         try {
-          await publishNow(tg, j.target, { html: j.html }, uid);
+          await publishNow(tg, j.target, { html: j.html }, uid, null, store2);
           j.status = "done";
           j.doneAt = now;
           done.push(j);
@@ -2020,6 +2110,60 @@ async function handleMiniAppApi(request, env, url) {
       await store2.put(`sched:${uid}`, data);
     }
     return json({ ok: true, jobs: data.jobs || [] });
+  }
+  if (path === "/api/daily/morning" && request.method === "POST") {
+    return json(await buildMorning(env, String(body?.target || "").trim(), String(body?.city || "تهران").trim(), createTelegram(env, cfg(env))));
+  }
+  if (path === "/api/daily/digest" && request.method === "POST") {
+    return json(await buildDigest(env, String(body?.target || "").trim(), createTelegram(env, cfg(env))));
+  }
+  if (path === "/api/daily/send" && request.method === "POST") {
+    const kind = body?.kind === "morning" ? "morning" : "digest";
+    const tgt = String(body?.target || "").trim();
+    if (!tgt) return bad("target");
+    const built = kind === "morning"
+      ? await buildMorning(env, tgt, String(body?.city || "تهران").trim(), tg)
+      : await buildDigest(env, tgt, tg);
+    const resp2 = await publishNow(tg, tgt, { html: built.html }, uid, null, store2, false);
+    const jr = await resp2.json().catch(() => ({}));
+    return json({ ...jr, kind, html: built.html, data: built.data });
+  }
+  if (path === "/api/daily/auto" && request.method === "POST") {
+    const box = await store2.get("auto:" + uid, { items: [] });
+    box.items = Array.isArray(box.items) ? box.items : [];
+    const id = String(body?.id || "").trim() || ("a" + Date.now().toString(36));
+    const found = box.items.find((x) => x.id === id);
+    const kind = body?.kind === "morning" ? "morning" : (body?.kind === "digest" ? "digest" : (found?.kind || ""));
+    if (!kind) return bad("kind");
+    const item = found || { id, kind, createdAt: Date.now() };
+    item.kind = kind;
+    if (body?.target) item.target = String(body.target).trim();
+    if (body?.at) item.at = /^\d{1,2}:\d{2}$/.test(String(body.at)) ? String(body.at) : item.at || "07:00";
+    if (body?.city) item.city = String(body.city).trim();
+    if (body?.on !== void 0) item.on = body.on !== false;
+    if (item.on === void 0) item.on = true;
+    if (!item.at) item.at = kind === "morning" ? "07:00" : "23:00";
+    if (!item.target) return bad("target");
+    if (!found) box.items.push(item);
+    box.items = box.items.slice(-12);
+    await store2.put("auto:" + uid, box, 400 * 86400);
+    const idx = await store2.get("auto:ids", { uids: [] });
+    idx.uids = Array.isArray(idx.uids) ? idx.uids : [];
+    if (!idx.uids.map(String).includes(String(uid))) {
+      idx.uids = [...idx.uids, uid].slice(-500);
+      await store2.put("auto:ids", idx, 400 * 86400);
+    }
+    return json({ ok: true, items: box.items });
+  }
+  if (path === "/api/daily/auto/list" && request.method === "POST") {
+    const box = await store2.get("auto:" + uid, { items: [] });
+    return json({ ok: true, items: box.items || [] });
+  }
+  if (path === "/api/daily/auto/remove" && request.method === "POST") {
+    const box = await store2.get("auto:" + uid, { items: [] });
+    box.items = (box.items || []).filter((x) => String(x.id) !== String(body?.id || ""));
+    await store2.put("auto:" + uid, box, 400 * 86400);
+    return json({ ok: true, items: box.items });
   }
   if (path === "/api/schedule/create" && request.method === "POST") {
     const target = String(body?.target || "").trim();
@@ -2234,7 +2378,8 @@ var RASA_API = [
   /^\/api\/import\//,
   /^\/api\/ai\//,
   /^\/api\/landing\//,
-  /^\/api\/interactive\//
+  /^\/api\/interactive\//,
+  /^\/api\/daily\//
 ];
 var RASA_CORS = {
   "access-control-allow-origin": "*",
@@ -2934,6 +3079,52 @@ function markerButtons(markup) {
   })) };
 }
 __name(markerButtons, "markerButtons");
+/* اموجی‌ای که کاربر از پیکر انتخاب کرده، هرجای متن دکمه که باشد آیکن پرمیوم
+   همان آرت می‌شود؛ خود کاراکتر از متن دکمه برداشته می‌شود تا متن تمیز بماند. */
+function pickedButtons(markup, picks) {
+  if (!markup || !markup.inline_keyboard) return markup;
+  const wanted = Object.keys(picks && typeof picks === "object" ? picks : {})
+    .map((k) => [String(k).split(String.fromCharCode(0xFE0F)).join(""), String(picks[k] || "").split(String.fromCharCode(0xFE0F)).join("")])
+    .map((pair) => [pair[0], pair[1].split("").filter((c) => c >= "0" && c <= "9").join("")])
+    .filter((pair) => pair[0] && pair[1]);
+  if (!wanted.length) return markup;
+  const run = /\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*/gu;
+  return { ...markup, inline_keyboard: markup.inline_keyboard.map((row) => row.map((button) => {
+    if (!button || typeof button.text !== "string" || button.icon_custom_emoji_id) return button;
+    let hit = null;
+    let m;
+    run.lastIndex = 0;
+    while ((m = run.exec(button.text))) {
+      const key = m[0].split(String.fromCharCode(0xFE0F)).join("");
+      const found = wanted.find((pair) => pair[0] === key);
+      if (found) { hit = { at: m.index, len: m[0].length, id: found[1], raw: m[0] }; break; }
+    }
+    if (!hit) return button;
+    const rest = (button.text.slice(0, hit.at) + " " + button.text.slice(hit.at + hit.len)).replace(/\s{2,}/g, " ").trim();
+    return { ...button, text: rest || hit.raw, icon_custom_emoji_id: hit.id };
+  })) };
+}
+__name(pickedButtons, "pickedButtons");
+async function levelIcons(env, picks, labels) {
+  const out = {};
+  const base = picks && typeof picks === "object" ? picks : {};
+  for (const k of Object.keys(base)) out[String(k).split(String.fromCharCode(0xFE0F)).join("")] = String(base[k]);
+  const need = [];
+  for (const label of labels) {
+    const m = /\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*/u.exec(String(label || ""));
+    if (!m) continue;
+    const ch = m[0].split(String.fromCharCode(0xFE0F)).join("");
+    if (ch && !out[ch]) need.push(ch);
+  }
+  if (!need.length) return out;
+  let reg = {};
+  try { reg = await emojiReadMerged(env, null, 0); } catch { reg = {}; }
+  const norm = {};
+  for (const k of Object.keys(reg || {})) norm[String(k).split(String.fromCharCode(0xFE0F)).join("")] = reg[k];
+  for (const ch of need) if (norm[ch]) out[ch] = String(norm[ch]);
+  return out;
+}
+__name(levelIcons, "levelIcons");
 function plainEmojisDeep(state) {
   if (!state || typeof state !== "object") return state;
   const s = JSON.parse(JSON.stringify(state));
@@ -2946,10 +3137,10 @@ function plainEmojisDeep(state) {
   return s;
 }
 __name(plainEmojisDeep, "plainEmojisDeep");
-async function editPostMessage(env, chatId, messageId, { text, html, media, replyMarkup, rich, plain }) {
-  const emojiMap = plain ? {} : await getJson(env, "map", {});
+async function editPostMessage(env, chatId, messageId, { text, html, media, replyMarkup, rich, emojiSubs }) {
+  const emojiMap = emojiSubs !== undefined ? emojiSubs : await getJson(env, "map", {});
   const content = markerTags(applyEmojiSubs(ensureRichHtmlStructure((html || escapeHtml(text || "")).trim()), {}, emojiMap));
-  const effectiveReplyMarkup = markerButtons(plain ? replyMarkup : decorateReplyMarkup(replyMarkup, emojiMap));
+  const effectiveReplyMarkup = markerButtons(decorateReplyMarkup(pickedButtons(replyMarkup, emojiMap), emojiMap));
   const stripIconIds = /* @__PURE__ */ __name((mk) => {
     if (!mk?.inline_keyboard) return mk;
     return { ...mk, inline_keyboard: mk.inline_keyboard.map((row) => row.map((b) => {
@@ -4651,6 +4842,7 @@ var backButton = /* @__PURE__ */ __name22((origin) => ({
   inline_keyboard: [[{ text: "\u2190 \u0628\u0627\u0632\u06AF\u0634\u062A \u0628\u0647 \u0645\u0646\u0648", callback_data: "nav:home" }]]
 }), "backButton");
 async function handleCallback(cb, env, origin) {
+  { const spDone = await spCallback(env, cb); if (spDone) return; }
   // live-post votes come from channel subscribers, not from the operator
   if (typeof cb.data === "string" && cb.data.indexOf("vote:") === 0) {
     return handleLiveVote(cb, env, origin);
@@ -5419,6 +5611,9 @@ ${request}
       return answerCallback(env, qId, "\u{1F441}\u200D\u{1F5E8} \u0627\u0633\u067E\u0648\u06CC\u0644\u0631 \u0627\u0639\u0645\u0627\u0644 \u0634\u062F!", false);
     }
   }
+  if (typeof data === "string" && data.indexOf("demo:") === 0) {
+    return answerCallback(env, qId, "\u2728 \u0627\u06CC\u0646 \u062F\u0645\u0648\u06CC \u0646\u0645\u0627\u06CC\u0634\u06CC \u0627\u0633\u062A \u2014 \u062F\u0631 \u0647\u0645\u06CC\u0646 \u0686\u062A \u0628\u0646\u0648\u06CC\u0633 \u00AB\u0635\u0628\u062D \u06A9\u0627\u0646\u0627\u0644\u00BB \u06CC\u0627 \u00AB\u062A\u0627\u06CC\u0645\u200C\u06A9\u067E\u0633\u0648\u0644\u00BB \u062A\u0627 \u0648\u0627\u0642\u0639\u06CC\u200C\u0627\u0634 \u0631\u0627 \u0628\u0631\u0627\u06CC \u06A9\u0627\u0646\u0627\u0644\u062A \u0628\u0633\u0627\u0632\u0645", true);
+  }
   return answerCallback(env, qId);
 }
 __name(handleCallback, "handleCallback");
@@ -6015,6 +6210,1757 @@ async function handleCarouselTap(cb, env, origin) {
 }
 
 /* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 live ticks: coverage, carousel advance, live flow \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+/* ═══════════════ v10.4 · موتور پست‌های روزانه (صبح کانال + خلاصهٔ روز) ═══════════════
+   تاریخ شمسی دقیق، مناسبت رسمی هر روز (holidayapi.ir با کش KV)، آب‌وهوای زنده
+   (open-meteo)، و آمار واقعی کانال (صفحهٔ عمومی t.me/s + getChatMemberCount). */
+
+var FA_MONTHS = ["فروردین","اردیبهشت","خرداد","تیر","مرداد","شهریور","مهر","آبان","آذر","دی","بهمن","اسفند"];
+var FA_DAYS = ["یکشنبه","دوشنبه","سه‌شنبه","چهارشنبه","پنجشنبه","جمعه","شنبه"];
+var CITIES = {
+  "تهران": [35.6892, 51.389], "مشهد": [36.297, 59.606], "اصفهان": [32.6546, 51.668], "شیراز": [29.5918, 52.5837],
+  "تبریز": [38.0962, 46.2738], "کرج": [35.8355, 50.9915], "اهواز": [31.3183, 48.6706], "رشت": [37.2808, 49.5832],
+  "قم": [34.6416, 50.8746], "یزد": [31.8974, 54.3569], "کرمان": [30.2839, 57.0834], "بندرعباس": [27.1865, 56.2808],
+  "اردبیل": [38.2498, 48.2933], "زاهدان": [29.4963, 60.8629], "همدان": [34.7983, 48.5148], "گرگان": [36.8456, 54.4393]
+};
+var WMO_FA = { 0:"آفتابی", 1:"تقریباً آفتابی", 2:"نیمه‌ابری", 3:"ابری", 45:"مه", 48:"مهٔ یخ‌زده", 51:"نم‌نم باران",
+  53:"نم‌نم باران", 55:"نم‌نم باران", 56:"باران یخ‌زده", 57:"باران یخ‌زده", 61:"باران سبک", 63:"باران", 65:"باران شدید",
+  66:"باران یخ‌زده", 67:"باران یخ‌زده", 71:"برف سبک", 73:"برف", 75:"برف شدید", 77:"دانه‌های برف", 80:"رگبار",
+  81:"رگبار", 82:"رگبار شدید", 85:"رگبار برف", 86:"رگبار برف", 95:"رعد و برق", 96:"تگرگ", 99:"تگرگ شدید" };
+
+function faNum(x) {
+  var n = Number(x);
+  if (!isFinite(n)) return faDigits(x);
+  return faDigits(String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, "\u066C"));
+}
+function faDigits(x) { return String(x == null ? "" : x).replace(/[0-9]/g, (d) => "\u06F0\u06F1\u06F2\u06F3\u06F4\u06F5\u06F6\u06F7\u06F8\u06F9"[Number(d)]); }
+function pad2(n) { return (n < 10 ? "0" : "") + n; }
+function tehranDate(ts) { return new Date((Number(ts) || Date.now()) + 126e5); } /* ایران: UTC+3:30 */
+var GREG_MONTHS = ["\u0698\u0627\u0646\u0648\u06CC\u0647","\u0641\u0648\u0631\u06CC\u0647","\u0645\u0627\u0631\u0633","\u0622\u0648\u0631\u06CC\u0644","\u0645\u0647","\u0698\u0648\u0626\u0646","\u0698\u0648\u0626\u06CC\u0647","\u0627\u0648\u062A","\u0633\u067E\u062A\u0627\u0645\u0628\u0631","\u0627\u06A9\u062A\u0628\u0631","\u0646\u0648\u0627\u0645\u0628\u0631","\u062F\u0633\u0627\u0645\u0628\u0631"];
+/* تاریخ میلادی به فارسی: «پنجشنبه ۱ اکتبر ۲۰۲۶» */
+function faGregorian(dateObj) {
+  return FA_DAYS[dateObj.getUTCDay()] + " " + faDigits(dateObj.getUTCDate()) + " " + GREG_MONTHS[dateObj.getUTCMonth()] + " " + faDigits(dateObj.getUTCFullYear());
+}
+function faTime(d) { return faDigits(pad2(d.getUTCHours()) + ":" + pad2(d.getUTCMinutes())); }
+function dayKeyOf(d) { return d.getUTCFullYear() + "-" + pad2(d.getUTCMonth() + 1) + "-" + pad2(d.getUTCDate()); }
+
+/* ── تبدیل تاریخ: الگوریتم jalaali-js (دقیق تا سال ۳۱۷۷) ─────────────────── */
+function jDiv(a, b) { return ~~(a / b); }
+function jMod(a, b) { return a - ~~(a / b) * b; }
+var J_BREAKS = [-61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178];
+function jalCal(jy, withoutLeap) {
+  var bl = J_BREAKS.length, gy = jy + 621, leapJ = -14, jp = J_BREAKS[0], jm, jump, leap, leapG, march, n, i;
+  if (jy < jp || jy >= J_BREAKS[bl - 1]) throw new Error("Invalid Jalaali year " + jy);
+  for (i = 1; i < bl; i += 1) {
+    jm = J_BREAKS[i]; jump = jm - jp;
+    if (jy < jm) break;
+    leapJ = leapJ + jDiv(jump, 33) * 8 + jDiv(jMod(jump, 33), 4);
+    jp = jm;
+  }
+  n = i - 1;
+  leapJ = leapJ + jDiv(jy - jp, 33) * 8 + jDiv(jMod(jy - jp, 33) + 3, 4);
+  if (jMod(jump, 33) === 4 && jump - n === 4) leapJ += 1;
+  leapG = jDiv(gy, 4) - jDiv((jDiv(gy, 100) + 1) * 3, 4) - 150;
+  march = 20 + leapJ - leapG;
+  if (!withoutLeap) {
+    if (jump - n < 6) n = n - jump + jDiv(jump + 4, 33) * 33;
+    leap = jMod(jMod(n + 1, 33) - 1, 4);
+    if (leap === -1) leap = 4;
+  }
+  return { leap: leap, gy: gy, march: march };
+}
+function g2d(gy, gm, gd) {
+  var d = jDiv((gy + jDiv(gm - 8, 6) + 100100) * 1461, 4) + jDiv(153 * jMod(gm + 9, 12) + 2, 5) + gd - 34840408;
+  d = d - jDiv(jDiv(gy + 100100 - jDiv(gm - 8, 6), 100) * 3, 4) + 752;
+  return d;
+}
+function d2g(jdn) {
+  var j = 4 * jdn + 139361631;
+  j = j + jDiv(jDiv(4 * jdn + 183187720, 146097) * 3, 4) * 4 - 3908;
+  var i = jDiv(jMod(j, 1461), 4) * 5 + 308;
+  var gd = jDiv(jMod(i, 153), 5) + 1;
+  var gm = jMod(jDiv(i, 153), 12) + 1;
+  var gy = jDiv(j, 1461) - 100100 + jDiv(8 - gm, 6);
+  return { gy: gy, gm: gm, gd: gd };
+}
+function j2d(jy, jm, jd) {
+  var r = jalCal(jy, true);
+  return g2d(r.gy, 3, r.march) + (jm - 1) * 31 - jDiv(jm, 7) * (jm - 7) + jd - 1;
+}
+function d2j(jdn) {
+  var gy = d2g(jdn).gy, jy = gy - 621, r = jalCal(jy, false), jdn1f = g2d(gy, 3, r.march), jd, jm, k;
+  k = jdn - jdn1f;
+  if (k >= 0) {
+    if (k <= 185) { jm = 1 + jDiv(k, 31); jd = jMod(k, 31) + 1; return { jy: jy, jm: jm, jd: jd }; }
+    k -= 186;
+  } else {
+    jy -= 1;
+    k += 179;
+    if (r.leap === 1) k += 1;
+  }
+  jm = 7 + jDiv(k, 30);
+  jd = jMod(k, 30) + 1;
+  return { jy: jy, jm: jm, jd: jd };
+}
+function jalaliOf(dateObj) { return d2j(g2d(dateObj.getUTCFullYear(), dateObj.getUTCMonth() + 1, dateObj.getUTCDate())); }
+function faDate(dateObj) {
+  var j = jalaliOf(dateObj);
+  return FA_DAYS[dateObj.getUTCDay()] + " " + faDigits(j.jd) + " " + FA_MONTHS[j.jm - 1] + " " + faDigits(j.jy);
+}
+function faDateShort(dateObj) {
+  var j = jalaliOf(dateObj);
+  return faDigits(j.jd) + " " + FA_MONTHS[j.jm - 1];
+}
+
+/* ── مناسبت‌های روز (holidayapi.ir، کش ۱۲۰ روزه) ──────────────────────────── */
+async function occasionsFor(env, j) {
+  var key = "ev:" + j.jy + "/" + j.jm + "/" + j.jd;
+  var hit = await getJson(env, key, null);
+  if (hit && hit.events) return hit;
+  var out = null;
+  try {
+    var ctl = new AbortController();
+    var timer = setTimeout(() => ctl.abort(), 7000);
+    var res = await fetch("https://holidayapi.ir/jalali/" + j.jy + "/" + pad2(j.jm) + "/" + pad2(j.jd), {
+      signal: ctl.signal, headers: { "user-agent": "RasaBot/1.0 (+t.me/RasaRichBot)" }
+    });
+    clearTimeout(timer);
+    if (res.ok) {
+      var raw = await res.json();
+      var evs = (raw.events || []).map((e) => ({ d: String(e.description || "").trim(), h: !!e.is_holiday, r: !!e.is_religious }))
+        .filter((e) => e.d && !/^(جمعه|پنجشنبه|چهارشنبه|سه‌شنبه|دوشنبه|یکشنبه|شنبه)$/.test(e.d)).slice(0, 12);
+      out = { jy: j.jy, jm: j.jm, jd: j.jd, holiday: !!raw.is_holiday, events: evs, at: Date.now(), src: "holidayapi.ir" };
+    }
+  } catch (e) {
+    console.warn("occasions failed", j.jy + "/" + j.jm + "/" + j.jd, e && e.message);
+  }
+  if (out) await setJson(env, key, out, 120 * 86400);
+  return out;
+}
+var OCC_RELIG = /(عید|شهادت|ولادت|رحلت|مبعث|بعثت|میلاد|تاسوعا|عاشورا|اربعین|غدیر|رمضان|محرم|صفر|قربان|فطر|امام|پیامبر|حضرت)/;
+var OCC_NAT = /(ایران|ملی|انقلاب|دفاع مقدس|نوروز|جمهوری اسلامی|بزرگداشت|روز ارتش|روز پزشک|قهرمانی|خرمشهر|آزادسازی)/;
+var OCC_DAY = /^(روز|جشن|بزرگداشت|سالگرد|هفته)/;
+var OCC_INT = /(روز جهانی|روز بین‌المللی)/;
+var OCC_HIST = /(درگذشت|زادروز|پیروزی|نبرد|تأسیس|تاسیس|اعدام|اعلام|امضای|انتخاب|کشف|افتتاح|اشغال|انقراض|جمهوری خلق)/;
+/* مناسبت روز = عید/مذهبی و مناسبت‌های رسمی و «روز جهانی…»؛ رویدادهای تاریخی کنار می‌روند. */
+function occScore(e) {
+  var d = String(e.d || "").trim(), sc = 0;
+  if (e.r || OCC_RELIG.test(d)) sc += 6;
+  if (e.h) sc += 3;
+  if (/جشن|بزرگداشت|سالگرد|هفتهٔ|هفته |یادروز|مهرگان|نوروز|مراسم/.test(d)) sc += 4;
+  if (/(^|[\s،(])روز([\s،)(-]|های|ها)/.test(d) || OCC_INT.test(d)) sc += 4;
+  if (OCC_NAT.test(d)) sc += 4;
+  if (OCC_HIST.test(d)) sc -= 4;
+  if (/^(جمعه|پنجشنبه|چهارشنبه|سه‌شنبه|دوشنبه|یکشنبه|شنبه)$/.test(d) || /^تعطیل$/.test(d)) sc -= 6;
+  return sc;
+}
+function occRank(occ, limit) {
+  if (!occ || !occ.events || !occ.events.length) return [];
+  return occ.events
+    .map((e, i) => ({ e: e, s: occScore(e), i: i }))
+    .filter((x) => x.s >= 3)
+    .sort((a, b) => (b.s - a.s) || (a.i - b.i))
+    .map((x) => x.e)
+    .slice(0, limit || 3);
+}
+function occLine(occ, limit) {
+  var ranked = occRank(occ, limit || 3);
+  return ranked.length ? ranked.map((e) => e.d).join(" | ") : "";
+}
+
+/* ── آب‌وهوای زنده (open-meteo، کش ۴۰ دقیقه) ─────────────────────────────── */
+async function weatherFor(env, city) {
+  var name = CITIES[city] ? city : "تهران";
+  var key = "wx:" + name;
+  var hit = await getJson(env, key, null);
+  if (hit && Date.now() - (hit.at || 0) < 40 * 60000) return hit;
+  try {
+    var co = CITIES[name];
+    var ctl = new AbortController();
+    var timer = setTimeout(() => ctl.abort(), 7000);
+    var url = "https://api.open-meteo.com/v1/forecast?latitude=" + co[0] + "&longitude=" + co[1] +
+      "&current=temperature_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&timezone=Asia%2FTehran&forecast_days=1";
+    var res = await fetch(url, { signal: ctl.signal });
+    clearTimeout(timer);
+    var raw = await res.json();
+    var code = Number(raw.current && raw.current.weather_code);
+    var out = {
+      city: name, now: Math.round(Number(raw.current && raw.current.temperature_2m)),
+      min: Math.round(Number(raw.daily && raw.daily.temperature_2m_min && raw.daily.temperature_2m_min[0])),
+      max: Math.round(Number(raw.daily && raw.daily.temperature_2m_max && raw.daily.temperature_2m_max[0])),
+      wind: Math.round(Number(raw.current && raw.current.wind_speed_10m)),
+      code: code, text: WMO_FA[code] || "نامعلوم", at: Date.now()
+    };
+    await setJson(env, key, out, 3 * 3600);
+    return out;
+  } catch (e) {
+    console.warn("weather failed", e && e.message);
+    return hit || null;
+  }
+}
+function wxLine(wx) {
+  if (!wx) return "";
+  var icon = wx.code === 0 ? "\u2600\uFE0F" : (wx.code <= 2 ? "\u26C5" : (wx.code <= 48 ? "\u{1F32B}" : (wx.code <= 67 ? "\u{1F327}" : (wx.code <= 86 ? "\u{1F328}" : "\u26A1"))));
+  return icon + " " + wx.text + " \u00B7 " + faDigits(wx.min) + "\u00B0 \u062A\u0627 " + faDigits(wx.max) + "\u00B0 \u00B7 \u0647\u0645\u06CC\u0646 \u062D\u0627\u0644\u0627 " + faDigits(wx.now) + "\u00B0";
+}
+
+/* ── آمار واقعی کانال: صفحهٔ عمومی + تعداد اعضا ──────────────────────────── */
+function parseViews(txt) {
+  var s = String(txt || "").trim().replace(/\u200f|\u200e/g, "");
+  var m = /^([\d.,]+)\s*([KMkm])?$/.exec(s);
+  if (!m) return 0;
+  var n = Number(m[1].replace(/,/g, ""));
+  if (!isFinite(n)) return 0;
+  if (m[2]) n *= (m[2].toLowerCase() === "k" ? 1e3 : 1e6);
+  return Math.round(n);
+}
+async function tgPublicPosts(username, pages) {
+  var out = [], before = null, n = 0;
+  for (var p = 0; p < (pages || 2); p += 1) {
+    var url = "https://t.me/s/" + username + (before ? "?before=" + before : "");
+    var res = null;
+    try {
+      res = await fetch(url, { headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" } });
+    } catch (e) { break; }
+    if (!res || !res.ok) break;
+    var html = await res.text();
+    var blocks = html.split('<div class="tgme_widget_message ').slice(1);
+    if (!blocks.length) break;
+    for (var i = 0; i < blocks.length; i += 1) {
+      var b = blocks[i];
+      var mid = /data-post="[^"/]+\/(\d+)"/.exec(b);
+      var time = /datetime="([^"]+)"/.exec(b);
+      var views = /tgme_widget_message_views">([^<]+)</.exec(b);
+      if (!mid || !time) continue;
+      var iTxt = b.indexOf("tgme_widget_message_text");
+      var snip = "";
+      if (iTxt > -1) {
+        var end = b.indexOf("tgme_widget_message_footer", iTxt);
+        var chunk = b.slice(iTxt, end > iTxt ? end : iTxt + 1200);
+        snip = chunk.replace(/<[^>]+>/g, " ").replace(/js-message_text[^>]*>?/g, " ").replace(/\s+/g, " ").trim();
+        snip = snip.replace(/^tgme_widget_message_text[^>]*\s*/, "");
+      }
+      out.push({ id: Number(mid[1]), at: Date.parse(time[1]) || 0, views: views ? parseViews(views[1]) : 0, snippet: snip });
+      n += 1;
+    }
+    var b4 = /data-post="[^"/]+\/(\d+)"/.exec(blocks[0]);
+    before = b4 ? b4[1] : null;
+    if (n >= 40 || !before) break;
+  }
+  var seen = {}, uniq = [];
+  for (var k = 0; k < out.length; k += 1) { if (!seen[out[k].id]) { seen[out[k].id] = 1; uniq.push(out[k]); } }
+  return uniq;
+}
+async function postTitle(username, id) {
+  try {
+    var res = await fetch("https://t.me/" + username + "/" + id, { headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" } });
+    if (!res.ok) return "";
+    var html = await res.text();
+    var m = /og:description" content="([^"]*)"/.exec(html);
+    if (!m) return "";
+    return m[1].replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
+  } catch (e) { return ""; }
+}
+function snippetOf(txt, max) {
+  var s = String(txt || "").replace(/\s+/g, " ").trim();
+  if (!s) return "";
+  s = s.split("\n")[0];
+  if (s.length > (max || 64)) s = s.slice(0, max || 64).trim() + "\u2026";
+  return s;
+}
+
+/* آمار کانال: پست‌های دیروز/پریروز، سه پست پربازدید، اعضای فعلی و دلتاها */
+async function channelDayStats(env, tg, target, username) {
+  var now = tehranDate();
+  var today = dayKeyOf(now);
+  var y = tehranDate(Date.now() - 864e5), yy = tehranDate(Date.now() - 2 * 864e5);
+  var yKey = dayKeyOf(y), yyKey = dayKeyOf(yy);
+  var posts = username ? await tgPublicPosts(username, 3) : [];
+  var bucket = { [yKey]: [], [yyKey]: [] };
+  for (var i = 0; i < posts.length; i += 1) {
+    var k = dayKeyOf(tehranDate(posts[i].at));
+    if (bucket[k]) bucket[k].push(posts[i]);
+  }
+  var yPosts = bucket[yKey].sort((a, b) => b.views - a.views);
+  var yyPosts = bucket[yyKey];
+  var sum = (arr) => arr.reduce((n, p) => n + (p.views || 0), 0);
+  var viewsY = sum(yPosts), viewsYY = sum(yyPosts);
+  var top3 = yPosts.slice(0, 3);
+  for (var t = 0; t < top3.length; t += 1) {
+    if (!top3[t].snippet && username) top3[t].snippet = await postTitle(username, top3[t].id);
+  }
+  var members = null;
+  try {
+    var mc = await tg.call("getChatMemberCount", { chat_id: target });
+    if (typeof mc === "number") members = mc;
+    else if (mc && typeof mc.result === "number") members = mc.result;
+    else if (mc && typeof mc.count === "number") members = mc.count;
+  } catch (e) { members = null; }
+  var snapKey = "snap:" + String(target);
+  var prev = await getJson(env, snapKey, null);
+  var memberGain = prev && typeof prev.members === "number" && members != null ? members - prev.members : null;
+  await setJson(env, snapKey, { day: today, members: members, at: Date.now() }, 400 * 86400);
+  return {
+    username: username || "", today: today, yKey: yKey,
+    postsY: yPosts.length, viewsY: viewsY, postsYY: yyPosts.length, viewsYY: viewsYY,
+    top3: top3, members: members, memberGain: memberGain, scanned: posts.length
+  };
+}
+
+/* ── نوشتن متن‌های مثبت روز ──────────────────────────────────────────────── */
+function growthLine(st) {
+  var out = [];
+  if (st.postsY > 0) {
+    var head = "\u062F\u06CC\u0631\u0648\u0632 " + faDigits(st.postsY) + " \u067E\u0633\u062A \u0645\u0646\u062A\u0634\u0631 \u06A9\u0631\u062F\u06CC \u0648 " + faDigits(st.viewsY) + " \u0628\u0627\u0632\u062F\u06CC\u062F \u06AF\u0631\u0641\u062A\u06CC";
+    if (st.viewsYY > 0) {
+      var pct = Math.round(((st.viewsY - st.viewsYY) / st.viewsYY) * 100);
+      head += pct > 0 ? " \u2014 \u06F1\u06F0\u06F0\u066A".replace("\u06F1\u06F0\u06F0\u066A", faDigits(pct) + "\u066A") + " \u0628\u06CC\u0634\u062A\u0631 \u0627\u0632 \u0631\u0648\u0632 \u0642\u0628\u0644 \u{1F4C8}" : (pct < 0 ? " \u2014 \u06A9\u0645\u06CC \u06A9\u0645\u062A\u0631 \u0627\u0632 \u0631\u0648\u0632 \u0642\u0628\u0644\u060C \u0648\u0644\u06CC \u0647\u0631 \u067E\u0633\u062A\u06CC \u06A9\u0647 \u0645\u06CC\u200C\u06AF\u0630\u0627\u0631\u06CC \u0639\u0645\u0631 \u0645\u06CC\u200C\u06A9\u0646\u062F \u{1F331}" : " \u2014 \u062F\u0642\u06CC\u0642\u0627\u064B \u0647\u0645\u200C\u0642\u062F \u0631\u0648\u0632 \u0642\u0628\u0644 \u{1F44C}");
+    }
+    out.push(head + ".");
+  } else {
+    out.push("\u062F\u06CC\u0631\u0648\u0632 \u067E\u0633\u062A\u06CC \u0646\u06AF\u0630\u0627\u0634\u062A\u06CC\u061B \u0627\u0645\u0631\u0648\u0632 \u0628\u0627 \u06CC\u06A9 \u067E\u0633\u062A \u06A9\u0648\u062A\u0627\u0647 \u0628\u0631\u06AF\u0631\u062F \u2014 \u06A9\u0627\u0646\u0627\u0644\u062A \u0645\u0646\u062A\u0638\u0631 \u062A\u0648\u0633\u062A \u{1F331}");
+  }
+  if (st.memberGain != null && st.memberGain > 0) out.push("\u{1F389} " + faDigits(st.memberGain) + " \u0639\u0636\u0648 \u062C\u062F\u06CC\u062F \u0647\u0645 \u0627\u0636\u0627\u0641\u0647 \u0634\u062F\u061B \u0627\u06CC\u0646 \u0631\u0648\u0646\u062F \u0631\u0627 \u062D\u0641\u0638 \u06A9\u0646.");
+  else if (st.memberGain != null && st.memberGain === 0 && st.members != null) out.push("\u{1F4CA} \u062A\u0639\u062F\u0627\u062F \u0627\u0639\u0636\u0627 \u062B\u0627\u0628\u062A \u0645\u0627\u0646\u062F (" + faNum(st.members) + " \u0646\u0641\u0631) \u2014 \u06CC\u06A9 \u067E\u0633\u062A \u062F\u0639\u0648\u062A\u200C\u06CC \u0645\u06CC\u200C\u062A\u0648\u0627\u0646\u062F \u062A\u06A9\u0627\u0646\u0634 \u0628\u062F\u0647\u062F.");
+  else if (st.memberGain == null && st.members != null) out.push("\u{1F4CA} \u0627\u0639\u0636\u0627\u06CC \u06A9\u0627\u0646\u0627\u0644: " + faNum(st.members) + " \u0646\u0641\u0631 \u2014 \u0627\u0632 \u0641\u0631\u062F\u0627 \u062A\u063A\u06CC\u06CC\u0631 \u0631\u0648\u0632\u0627\u0646\u0647\u200C\u0627\u0634 \u0631\u0627 \u0647\u0645 \u0645\u06CC\u200C\u06AF\u0648\u06CC\u0645.");
+  if (st.top3.length) {
+    var best = st.top3[0];
+    out.push("\u{1F947} \u067E\u0631\u0628\u0627\u0632\u062F\u06CC\u062F\u062A\u0631\u06CC\u0646 \u067E\u0633\u062A \u2014 " + (best.snippet ? "\u00AB" + snippetOf(best.snippet, 48) + "\u00BB " : "\u067E\u0633\u062A \u0634\u0645\u0627\u0631\u0647\u0654 " + faDigits(best.id) + " ") + "\u0628\u0627 " + faDigits(best.views) + " \u0628\u0627\u0632\u062F\u06CC\u062F \u2014 \u0647\u0645\u06CC\u0646 \u0645\u0633\u06CC\u0631 \u0631\u0627 \u0627\u062F\u0627\u0645\u0647 \u0628\u062F\u0647.");
+  }
+  out.push("\u0641\u0631\u062F\u0627 \u0647\u0645 \u067E\u06CC\u0634\u062A \u0647\u0633\u062A\u0645 \u2728");
+  return out;
+}
+
+/* ── پیام موفقیت: هر روز یک پیام + یک «کار امروز» ────────────────────────── */
+var SUCCESS_MSGS = [
+  { m: "\u0635\u0628\u062d\u062a \u0628\u062e\u06cc\u0631! \u0644\u0627\u0632\u0645 \u0646\u06cc\u0633\u062a \u0627\u0645\u0631\u0648\u0632 \u0647\u0645\u0647\u200c\u0686\u06cc\u0632 \u062f\u0631\u0633\u062a \u0628\u0627\u0634\u0647\u061b \u06cc\u0647 \u0642\u062f\u0645 \u06a9\u0648\u0686\u06cc\u06a9 \u06a9\u0627\u0641\u06cc\u0647.", a: "\u0628\u0647 \u06cc\u0647 \u0646\u0641\u0631 \u06a9\u0647 \u062f\u0648\u0633\u062a\u0634 \u062f\u0627\u0631\u06cc \u06cc\u0647 \u067e\u06cc\u0627\u0645 \u06a9\u0648\u062a\u0627\u0647 \u0628\u062f\u0647." },
+  { m: "\u0647\u0631 \u0631\u0648\u0632 \u06cc\u0647 \u0634\u0631\u0648\u0639 \u062a\u0627\u0632\u0647\u200c\u0633\u062a\u061b \u062f\u06cc\u0631\u0648\u0632 \u062a\u0645\u0648\u0645 \u0634\u062f\u060c \u0627\u0645\u0631\u0648\u0632 \u0645\u0627\u0644 \u062a\u0648\u0626\u0647.", a: "\u06cc\u0647 \u06a9\u0627\u0631 \u06a9\u0648\u0686\u06cc\u06a9 \u06a9\u0647 \u0645\u062f\u062a\u200c\u0647\u0627 \u0639\u0642\u0628 \u0627\u0646\u062f\u0627\u062e\u062a\u06cc\u060c \u0627\u0645\u0631\u0648\u0632 \u062a\u0645\u0648\u0645\u0634 \u06a9\u0646." },
+  { m: "\u062d\u062a\u06cc \u0631\u0648\u0632\u0647\u0627\u06cc \u0645\u0639\u0645\u0648\u0644\u06cc \u0647\u0645 \u0645\u06cc\u200c\u062a\u0648\u0646\u0646 \u0642\u0634\u0646\u06af \u0628\u0627\u0634\u0646\u061b \u0641\u0642\u0637 \u06a9\u0627\u0641\u06cc\u0647 \u0628\u0627 \u062f\u0642\u062a\u200c\u062a\u0631 \u0646\u06af\u0627\u0647 \u06a9\u0646\u06cc.", a: "\u0627\u0645\u0631\u0648\u0632 \u0633\u0647 \u0686\u06cc\u0632 \u06a9\u0648\u0686\u06cc\u06a9 \u06a9\u0647 \u062f\u0627\u0631\u06cc \u0648 \u06cc\u0627\u062f\u062a \u0631\u0641\u062a\u0647 \u0631\u0648 \u06cc\u0627\u062f\u062f\u0627\u0634\u062a \u06a9\u0646." },
+  { m: "\u062e\u0633\u062a\u06af\u06cc \u0627\u0645\u0631\u0648\u0632\u062a \u0637\u0628\u06cc\u0639\u06cc\u0647\u061b \u0648\u0644\u06cc \u062a\u0648 \u06cc\u0647\u200c\u06a9\u0645 \u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u0627\u0648\u0646\u200c\u0686\u06cc\u0632\u06cc \u06a9\u0647 \u0641\u06a9\u0631 \u0645\u06cc\u200c\u06a9\u0646\u06cc \u062a\u0648\u0627\u0646 \u062f\u0627\u0631\u06cc.", a: "\u062f\u0647 \u062f\u0642\u06cc\u0642\u0647 \u0628\u0631\u0627\u06cc \u062e\u0648\u062f\u062a \u0648\u0642\u062a \u0628\u0630\u0627\u0631\u060c \u0628\u062f\u0648\u0646 \u06af\u0648\u0634\u06cc." },
+  { m: "\u062a\u0648 \u0628\u06cc\u0634\u062a\u0631 \u0627\u0632 \u0627\u0648\u0646\u200c\u0686\u06cc\u0632\u06cc \u06a9\u0647 \u062f\u06cc\u0631\u0648\u0632 \u0641\u06a9\u0631 \u0645\u06cc\u200c\u06a9\u0631\u062f\u06cc \u062c\u0644\u0648 \u0631\u0641\u062a\u06cc\u061b \u0628\u0647 \u062e\u0648\u062f\u062a \u0622\u0641\u0631\u06cc\u0646 \u0628\u06af\u0648.", a: "\u0628\u0647 \u06cc\u0647 \u0645\u0648\u0641\u0642\u06cc\u062a \u06a9\u0648\u0686\u06cc\u06a9 \u0647\u0645\u06cc\u0646 \u0647\u0641\u062a\u0647\u200c\u0627\u062a \u0641\u06a9\u0631 \u06a9\u0646." },
+  { m: "\u0635\u0628\u062d \u0628\u062e\u06cc\u0631! \u0627\u0645\u0631\u0648\u0632 \u0642\u0631\u0627\u0631 \u0646\u06cc\u0633\u062a \u06a9\u0627\u0645\u0644 \u0628\u0627\u0634\u06cc\u060c \u0642\u0631\u0627\u0631\u0647 \u0648\u0627\u0642\u0639\u06cc \u0628\u0627\u0634\u06cc.", a: "\u0647\u0631\u062c\u0627 \u062d\u0627\u0644\u062a \u062e\u0648\u0628 \u0646\u0628\u0648\u062f\u060c \u0628\u0647 \u062e\u0648\u062f\u062a \u0633\u062e\u062a \u0646\u06af\u06cc\u0631." },
+  { m: "\u0622\u062f\u0645\u200c\u0647\u0627\u06cc \u062e\u0648\u0628 \u0647\u0645 \u0631\u0648\u0632 \u0633\u062e\u062a \u062f\u0627\u0631\u0646\u061b \u0641\u0631\u0642\u0634\u0648\u0646 \u0627\u06cc\u0646\u0647 \u06a9\u0647 \u0628\u0647 \u0641\u0631\u062f\u0627 \u0627\u0645\u06cc\u062f \u062f\u0627\u0631\u0646.", a: "\u06cc\u0647 \u0646\u0641\u0633 \u0639\u0645\u06cc\u0642 \u0628\u06a9\u0634 \u0648 \u06cc\u0647 \u06a9\u0627\u0631 \u06a9\u0648\u0686\u06cc\u06a9 \u0631\u0648 \u0634\u0631\u0648\u0639 \u06a9\u0646." },
+  { m: "\u0632\u0646\u062f\u06af\u06cc \u0627\u0632 \u0644\u062d\u0638\u0647\u200c\u0647\u0627\u06cc \u06a9\u0648\u0686\u06cc\u06a9 \u0633\u0627\u062e\u062a\u0647 \u0634\u062f\u0647\u061b \u0627\u0645\u0631\u0648\u0632\u062a \u0631\u0648 \u0628\u0627 \u06cc\u0647 \u0644\u062d\u0638\u0647\u0654 \u062e\u0648\u0628 \u0634\u0631\u0648\u0639 \u06a9\u0646.", a: "\u0635\u0628\u062d\u062a \u0631\u0648 \u0628\u0627 \u06cc\u0647 \u0686\u06cc\u0632 \u06a9\u0647 \u062f\u0648\u0633\u062a \u062f\u0627\u0631\u06cc \u0634\u0631\u0648\u0639 \u06a9\u0646." },
+  { m: "\u0647\u0631\u0686\u06cc \u062a\u0648 \u062f\u0644\u062a \u0645\u0648\u0646\u062f\u0647\u060c \u0627\u0645\u0631\u0648\u0632 \u06cc\u06a9\u06cc \u0627\u0632 \u0627\u0648\u0646\u200c\u0647\u0627 \u0631\u0648 \u0627\u0646\u062c\u0627\u0645 \u0628\u062f\u0647.", a: "\u0647\u0645\u0648\u0646 \u06a9\u0627\u0631\u06cc \u06a9\u0647 \u062f\u0644\u062a \u0645\u06cc\u200c\u062e\u0648\u0627\u062f\u060c \u0627\u0645\u0631\u0648\u0632 \u0627\u0646\u062c\u0627\u0645\u0634 \u0628\u062f\u0647." },
+  { m: "\u062a\u0648 \u062a\u0646\u0647\u0627 \u0646\u06cc\u0633\u062a\u06cc\u061b \u062e\u06cc\u0644\u06cc\u200c\u0647\u0627 \u0647\u0645\u06cc\u0646 \u062d\u0627\u0644\u0627 \u0628\u0627 \u0633\u062e\u062a\u06cc\u200c\u0647\u0627\u06cc \u0634\u0628\u06cc\u0647 \u062a\u0648 \u0645\u06cc\u200c\u062c\u0646\u06af\u0646 \u0648 \u0627\u062f\u0627\u0645\u0647 \u0645\u06cc\u200c\u062f\u0646.", a: "\u0628\u0647 \u06cc\u06a9\u06cc \u0627\u0632 \u062f\u0648\u0633\u062a\u200c\u0647\u0627\u062a \u062d\u0627\u0644 \u0648 \u0627\u062d\u0648\u0627\u0644 \u0628\u067e\u0631\u0633." },
+  { m: "\u0627\u0634\u062a\u0628\u0627\u0647\u200c\u0647\u0627\u06cc \u062f\u06cc\u0631\u0648\u0632\u060c \u062f\u0631\u0633 \u0627\u0645\u0631\u0648\u0632\u0646\u061b \u062e\u0648\u062f\u062a \u0631\u0648 \u0628\u0627\u0628\u062a\u0634\u0648\u0646 \u0633\u0631\u0632\u0646\u0634 \u0646\u06a9\u0646.", a: "\u0627\u0632 \u06cc\u0647 \u0627\u0634\u062a\u0628\u0627\u0647 \u0647\u0645\u06cc\u0646 \u0647\u0641\u062a\u0647\u200c\u0627\u062a \u06cc\u0647 \u062f\u0631\u0633 \u0628\u0631\u062f\u0627\u0631." },
+  { m: "\u0647\u0631 \u0631\u0648\u0632 \u062a\u0627\u0632\u0647\u060c \u06cc\u0647 \u0634\u0627\u0646\u0633 \u062a\u0627\u0632\u0647\u200c\u0633\u062a\u061b \u062d\u062a\u06cc \u0627\u06af\u0647 \u062f\u06cc\u0631\u0648\u0632 \u062e\u0648\u0628 \u0646\u0628\u0648\u062f.", a: "\u0627\u0645\u0631\u0648\u0632 \u06cc\u0647 \u06a9\u0627\u0631 \u0645\u062a\u0641\u0627\u0648\u062a \u0627\u0632 \u062f\u06cc\u0631\u0648\u0632 \u0627\u0646\u062c\u0627\u0645 \u0628\u062f\u0647." },
+  { m: "\u0635\u0628\u062d \u0628\u062e\u06cc\u0631! \u06cc\u0647 \u0646\u0641\u0631 \u0647\u0633\u062a \u06a9\u0647 \u0627\u0645\u0631\u0648\u0632 \u0628\u0647 \u062e\u0627\u0637\u0631 \u062a\u0648 \u0644\u0628\u062e\u0646\u062f \u0645\u06cc\u200c\u0632\u0646\u0647.", a: "\u0628\u0647 \u0627\u0648\u0644\u06cc\u0646 \u0646\u0641\u0631\u06cc \u06a9\u0647 \u0645\u06cc\u200c\u0628\u06cc\u0646\u06cc\u060c \u06cc\u0647 \u0644\u0628\u062e\u0646\u062f \u0647\u062f\u06cc\u0647 \u0628\u062f\u0647." },
+  { m: "\u062e\u0648\u0628\u06cc\u200c\u0647\u0627\u06cc \u06a9\u0648\u0686\u06cc\u06a9 \u0631\u0648 \u0628\u0628\u06cc\u0646\u061b \u06cc\u0647 \u0631\u0648\u0632 \u062e\u0648\u0628 \u0627\u0632 \u0647\u0645\u06cc\u0646 \u0644\u062d\u0638\u0647\u200c\u0647\u0627\u06cc \u06a9\u0648\u0686\u06cc\u06a9 \u0633\u0627\u062e\u062a\u0647 \u0645\u06cc\u200c\u0634\u0647.", a: "\u0627\u0645\u0631\u0648\u0632 \u0633\u0647 \u0686\u06cc\u0632 \u062e\u0648\u0628 \u06a9\u0647 \u0645\u06cc\u200c\u0628\u06cc\u0646\u06cc \u0631\u0648 \u0628\u0634\u0645\u0627\u0631." },
+  { m: "\u0628\u0647 \u062e\u0648\u062f\u062a \u0627\u06cc\u0645\u0627\u0646 \u062f\u0627\u0634\u062a\u0647 \u0628\u0627\u0634\u061b \u062a\u0648 \u0627\u0632 \u062e\u06cc\u0644\u06cc \u0686\u06cc\u0632\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u0641\u06a9\u0631 \u0645\u06cc\u200c\u06a9\u0646\u06cc \u0642\u0648\u06cc\u200c\u062a\u0631\u06cc.", a: "\u06cc\u0647 \u06a9\u0627\u0631\u06cc \u06a9\u0647 \u0627\u0632\u0634 \u0645\u06cc\u200c\u062a\u0631\u0633\u06cc\u060c \u0627\u0645\u0631\u0648\u0632 \u06cc\u0647\u200c\u06a9\u0645 \u0634\u0631\u0648\u0639\u0634 \u06a9\u0646." },
+  { m: "\u062d\u062a\u06cc \u0627\u06af\u0647 \u0628\u0631\u0646\u0627\u0645\u0647\u200c\u0647\u0627\u062a \u0628\u0647\u200c\u0647\u0645 \u0628\u062e\u0648\u0631\u0647\u060c \u062a\u0648 \u0645\u06cc\u200c\u062a\u0648\u0646\u06cc \u0627\u0632 \u0647\u0645\u06cc\u0646 \u0631\u0648\u0632 \u06cc\u0647 \u0631\u0648\u0632 \u062e\u0648\u0628 \u0628\u0633\u0627\u0632\u06cc.", a: "\u0628\u0631\u0646\u0627\u0645\u0647\u200c\u062a \u0631\u0648 \u0633\u0627\u062f\u0647 \u06a9\u0646\u061b \u0641\u0642\u0637 \u0633\u0647 \u06a9\u0627\u0631 \u0645\u0647\u0645 \u0628\u0631\u0627\u06cc \u0627\u0645\u0631\u0648\u0632." },
+  { m: "\u0627\u062d\u0633\u0627\u0633 \u062e\u0648\u0628 \u0627\u0632 \u0686\u06cc\u0632\u0647\u0627\u06cc \u0633\u0627\u062f\u0647 \u0634\u0631\u0648\u0639 \u0645\u06cc\u200c\u0634\u0647: \u06cc\u0647 \u0633\u0644\u0627\u0645\u060c \u06cc\u0647 \u0644\u0628\u062e\u0646\u062f\u060c \u06cc\u0647 \u0646\u0641\u0633 \u0639\u0645\u06cc\u0642.", a: "\u0628\u0647 \u0627\u0648\u0644\u06cc\u0646 \u0646\u0641\u0631\u06cc \u06a9\u0647 \u0627\u0645\u0631\u0648\u0632 \u0645\u06cc\u200c\u0628\u06cc\u0646\u06cc \u0633\u0644\u0627\u0645 \u06a9\u0646." },
+  { m: "\u062a\u0648 \u062f\u0627\u0631\u06cc \u0628\u0647\u062a\u0631 \u0627\u0632 \u062f\u06cc\u0631\u0648\u0632\u062a \u0645\u06cc\u200c\u0634\u06cc\u061b \u062d\u062a\u06cc \u0627\u06af\u0647 \u062e\u0648\u062f\u062a \u062d\u0633\u0634 \u0646\u06a9\u0646\u06cc.", a: "\u06cc\u0647 \u0639\u0627\u062f\u062a \u06a9\u0648\u0686\u06cc\u06a9 \u0645\u062b\u0628\u062a \u0628\u0647 \u0627\u0645\u0631\u0648\u0632\u062a \u0627\u0636\u0627\u0641\u0647 \u06a9\u0646." },
+  { m: "\u0635\u0628\u062d \u0628\u062e\u06cc\u0631! \u0627\u0645\u0631\u0648\u0632 \u06cc\u0647 \u0635\u0641\u062d\u0647\u0654 \u0633\u0641\u06cc\u062f\u0647\u061b \u062a\u0648 \u0627\u0646\u062a\u062e\u0627\u0628 \u0645\u06cc\u200c\u06a9\u0646\u06cc \u0686\u06cc \u062a\u0648\u0634 \u0628\u0646\u0648\u06cc\u0633\u06cc.", a: "\u06cc\u0647 \u062c\u0645\u0644\u0647\u0654 \u062e\u0648\u0628 \u0628\u0631\u0627\u06cc \u062e\u0648\u062f\u062a \u0628\u0646\u0648\u06cc\u0633." },
+  { m: "\u0647\u06cc\u0686\u200c\u0686\u06cc\u0632 \u0628\u0647 \u0627\u0646\u062f\u0627\u0632\u0647\u0654 \u062a\u0644\u0627\u0634 \u0622\u0631\u0627\u0645 \u0648 \u067e\u06cc\u0648\u0633\u062a\u0647\u0654 \u062a\u0648 \u0642\u0648\u06cc \u0646\u06cc\u0633\u062a.", a: "\u0627\u0645\u0631\u0648\u0632 \u0641\u0642\u0637 \u0631\u0648\u06cc \u06cc\u0647 \u06a9\u0627\u0631 \u062a\u0645\u0631\u06a9\u0632 \u06a9\u0646 \u0648 \u062a\u0645\u0648\u0645\u0634 \u06a9\u0646." },
+  { m: "\u0648\u0642\u062a\u06cc \u062e\u0648\u062f\u062a \u0628\u0627 \u062e\u0648\u062f\u062a \u0645\u0647\u0631\u0628\u0648\u0646 \u0628\u0627\u0634\u06cc\u060c \u062f\u0646\u06cc\u0627 \u0647\u0645 \u0645\u0647\u0631\u0628\u0648\u0646\u200c\u062a\u0631 \u0645\u06cc\u200c\u0634\u0647.", a: "\u06cc\u0647 \u0647\u062f\u06cc\u0647\u0654 \u06a9\u0648\u0686\u06cc\u06a9 \u0628\u0647 \u062e\u0648\u062f\u062a \u0628\u062f\u0647\u060c \u062d\u062a\u06cc \u0633\u0627\u062f\u0647." },
+  { m: "\u0622\u062f\u0645\u200c\u0647\u0627\u06cc \u0645\u0648\u0641\u0642 \u062e\u0627\u0635 \u0646\u0628\u0648\u062f\u0646\u061b \u0641\u0642\u0637 \u0627\u062f\u0627\u0645\u0647 \u062f\u0627\u062f\u0646.", a: "\u0646\u0635\u0641\u0647\u200c\u06a9\u0627\u0631\u0647\u200c\u062a \u0631\u0648 \u0627\u0645\u0631\u0648\u0632 \u062a\u0645\u0648\u0645 \u06a9\u0646." },
+  { m: "\u0627\u06af\u0647 \u0627\u0645\u0631\u0648\u0632 \u0633\u062e\u062a \u0634\u062f\u060c \u06cc\u0627\u062f\u062a \u0628\u0627\u0634\u0647 \u0641\u0631\u062f\u0627 \u06cc\u0647 \u0631\u0648\u0632 \u062f\u06cc\u06af\u0647\u200c\u0633\u062a.", a: "\u0648\u0642\u062a\u06cc \u0633\u062e\u062a \u0634\u062f\u060c \u067e\u0646\u062c \u062f\u0642\u06cc\u0642\u0647 \u0631\u0627\u0647 \u0628\u0631\u0648 \u0648 \u0628\u0631\u06af\u0631\u062f." },
+  { m: "\u062e\u0628\u0631\u0647\u0627\u06cc \u0628\u06cc\u0631\u0648\u0646 \u062a\u0631\u0633\u0646\u0627\u06a9\u0646\u061b \u0648\u0644\u06cc \u0632\u0646\u062f\u06af\u06cc\u200c\u0627\u06cc \u06a9\u0647 \u062e\u0648\u062f\u062a \u0645\u06cc\u200c\u0633\u0627\u0632\u06cc\u060c \u0642\u0634\u0646\u06af\u200c\u062a\u0631\u0647.", a: "\u0627\u0645\u0631\u0648\u0632 \u0628\u0647\u200c\u062c\u0627\u06cc \u062e\u0628\u0631\u0647\u0627\u060c \u06cc\u0647\u200c\u06a9\u0645 \u0628\u0647 \u062e\u0648\u062f\u062a \u0648 \u062e\u0627\u0646\u0648\u0627\u062f\u0647\u200c\u062a \u0628\u0631\u0633." },
+  { m: "\u0627\u0645\u06cc\u062f\u0648\u0627\u0631\u0645 \u0627\u0645\u0631\u0648\u0632\u062a \u067e\u0631 \u0627\u0632 \u0622\u0631\u0627\u0645\u0634 \u0648 \u0627\u0646\u0631\u0698\u06cc \u0628\u0627\u0634\u0647\u061b \u0628\u0647\u062a\u0631\u06cc\u0646\u200c\u0647\u0627 \u0645\u0646\u062a\u0638\u0631\u062a\u0647.", a: "\u06cc\u0647 \u0644\u06cc\u0648\u0627\u0646 \u0622\u0628 \u0628\u062e\u0648\u0631 \u0648 \u0634\u0631\u0648\u0639 \u06a9\u0646." },
+  { m: "\u0647\u0631 \u062a\u0644\u0627\u0634\u06cc \u06a9\u0647 \u0645\u06cc\u200c\u06a9\u0646\u06cc\u060c \u0634\u0627\u06cc\u062f \u062f\u06cc\u062f\u0647 \u0646\u0634\u0647 \u0648\u0644\u06cc \u062d\u0633\u0627\u0628 \u0645\u06cc\u200c\u0634\u0647.", a: "\u0628\u0647 \u062e\u0648\u062f\u062a \u0622\u0641\u0631\u06cc\u0646 \u0628\u06af\u0648 \u06cc\u0627 \u0628\u0647 \u06cc\u0647 \u062f\u0648\u0633\u062a \u0627\u0632 \u062a\u0644\u0627\u0634\u062a \u0628\u06af\u0648." },
+  { m: "\u0627\u0632 \u062e\u0648\u062f\u062a \u0645\u0631\u0627\u0642\u0628\u062a \u06a9\u0646\u061b \u0645\u0648\u0641\u0642\u06cc\u062a \u0628\u062f\u0648\u0646 \u0633\u0644\u0627\u0645\u062a\u06cc \u0645\u0639\u0646\u06cc \u0646\u062f\u0627\u0631\u0647.", a: "\u0627\u0645\u0631\u0648\u0632 \u062f\u0631\u0633\u062a \u0628\u062e\u0648\u0631 \u0648 \u0622\u0628 \u06a9\u0627\u0641\u06cc \u0628\u062e\u0648\u0631." },
+  { m: "\u0635\u0628\u062d \u0628\u062e\u06cc\u0631! \u0627\u0645\u0631\u0648\u0632 \u062d\u062f\u0627\u0642\u0644 \u06cc\u0647 \u0627\u062a\u0641\u0627\u0642 \u062e\u0648\u0628 \u0645\u06cc\u200c\u0627\u0641\u062a\u0647\u061b \u0641\u0642\u0637 \u062d\u0648\u0627\u0633\u062a \u0628\u0627\u0634\u0647 \u0646\u0628\u06cc\u0646\u06cc\u0634.", a: "\u0627\u0645\u0634\u0628 \u06cc\u0647 \u0627\u062a\u0641\u0627\u0642 \u062e\u0648\u0628 \u0627\u0645\u0631\u0648\u0632 \u0631\u0648 \u06cc\u0627\u062f\u062f\u0627\u0634\u062a \u06a9\u0646." },
+  { m: "\u0627\u0645\u0631\u0648\u0632 \u0631\u0648 \u0628\u0627 \u0627\u0646\u0631\u0698\u06cc \u0634\u0631\u0648\u0639 \u06a9\u0646\u060c \u062d\u062a\u06cc \u0627\u06af\u0647 \u062f\u06cc\u0631\u0648\u0632 \u062e\u0633\u062a\u0647 \u0628\u0648\u062f\u06cc.", a: "\u0627\u0648\u0644 \u0635\u0628\u062d \u06cc\u0647 \u06a9\u0627\u0631 \u06a9\u0647 \u062f\u0648\u0633\u062a \u062f\u0627\u0631\u06cc \u0627\u0646\u062c\u0627\u0645 \u0628\u062f\u0647." },
+  { m: "\u0628\u0647\u062a\u0631\u06cc\u0646 \u0631\u0648\u0632\u0647\u0627\u062a \u0645\u0645\u06a9\u0646\u0647 \u0647\u0645\u06cc\u0646 \u0627\u0645\u0631\u0648\u0632 \u0628\u0627\u0634\u0647\u061b \u0642\u062f\u0631\u0634 \u0631\u0648 \u0628\u062f\u0648\u0646.", a: "\u0627\u0645\u0631\u0648\u0632 \u0631\u0648 \u0628\u0627 \u0622\u062f\u0645\u06cc \u06a9\u0647 \u062f\u0648\u0633\u062a\u0634 \u062f\u0627\u0631\u06cc \u0628\u06af\u0630\u0631\u0648\u0646." },
+];
+var SUCCESS_SPECIAL = [
+  { test: function (j) { return j.jm === 1 && j.jd <= 4; }, m: "\u0633\u0627\u0644 \u0646\u0648 \u0645\u0628\u0627\u0631\u06a9! \u0627\u0645\u06cc\u062f\u0648\u0627\u0631\u0645 \u0627\u0645\u0633\u0627\u0644 \u067e\u0631 \u0627\u0632 \u062e\u0628\u0631\u0647\u0627\u06cc \u062e\u0648\u0628 \u0648 \u0644\u062d\u0638\u0647\u200c\u0647\u0627\u06cc \u062f\u0644\u062e\u0648\u0627\u0647\u062a \u0628\u0627\u0634\u0647.", a: "\u0627\u0645\u0631\u0648\u0632 \u06cc\u0647 \u0622\u0631\u0632\u0648 \u0628\u0631\u0627\u06cc \u0627\u0645\u0633\u0627\u0644\u062a \u0628\u0646\u0648\u06cc\u0633." },
+  { test: function (j) { return j.jm === 7 && j.jd === 10; }, m: "\u0645\u0647\u0631\u06af\u0627\u0646 \u0645\u0628\u0627\u0631\u06a9! \u0631\u0648\u0632 \u0645\u0647\u0631 \u0648 \u062f\u0648\u0633\u062a\u06cc\u061b \u0627\u0645\u06cc\u062f\u0648\u0627\u0631\u0645 \u0647\u0631 \u0631\u0648\u0632\u062a \u067e\u0631 \u0627\u0632 \u0645\u0647\u0631\u0628\u0648\u0646\u06cc \u0628\u0627\u0634\u0647.", a: "\u0627\u0645\u0631\u0648\u0632 \u0628\u0647 \u06cc\u0647 \u062f\u0648\u0633\u062a \u0642\u062f\u06cc\u0645\u06cc \u0633\u0631 \u0628\u0632\u0646." },
+  { test: function (j) { return j.jm === 9 && j.jd === 30; }, m: "\u0634\u0628 \u06cc\u0644\u062f\u0627 \u0645\u0628\u0627\u0631\u06a9! \u0634\u0628 \u0628\u0644\u0646\u062f\u0650 \u0628\u0627 \u0647\u0645 \u0628\u0648\u062f\u0646\u061b \u0627\u0645\u06cc\u062f\u0648\u0627\u0631\u0645 \u062f\u0648\u0631\u062a \u067e\u0631 \u0627\u0632 \u0622\u062f\u0645\u200c\u0647\u0627\u06cc \u062e\u0648\u0628 \u0628\u0627\u0634\u0647.", a: "\u0627\u0645\u0634\u0628 \u06a9\u0646\u0627\u0631 \u0622\u062f\u0645\u200c\u0647\u0627\u06cc \u062f\u0644\u062e\u0648\u0627\u0647\u062a \u06cc\u0647\u200c\u06a9\u0645 \u0628\u06cc\u0634\u062a\u0631 \u0628\u0645\u0648\u0646." }
+];
+/* روزهای مذهبی: یک پیام آرام و مهربان برای اعضای کانال */
+function religiousMsg() { return { m: "\u0627\u0645\u06cc\u062f\u0648\u0627\u0631\u0645 \u0627\u0645\u0631\u0648\u0632 \u0642\u0644\u0628\u062a \u0622\u0631\u0648\u0645 \u0648 \u0631\u0648\u0632\u062a \u067e\u0631 \u0627\u0632 \u0645\u0647\u0631 \u0628\u0627\u0634\u0647.", a: "\u06cc\u0647 \u0627\u062d\u062a\u0631\u0627\u0645 \u06a9\u0648\u0686\u06cc\u06a9 \u0628\u0647 \u062e\u0648\u062f\u062a \u0648 \u0628\u0642\u06cc\u0647 \u0628\u062f\u0647." }; }
+function successMessage(j, occ) {
+  for (var i = 0; i < SUCCESS_SPECIAL.length; i += 1) if (SUCCESS_SPECIAL[i].test(j, occ)) return SUCCESS_SPECIAL[i];
+  if (occ && occRank(occ, 1).length && occRank(occ, 1)[0].r) return religiousMsg();
+  var idx = (((j.jm - 1) * 31 + j.jd) + (j.jy % 7)) % SUCCESS_MSGS.length;
+  return SUCCESS_MSGS[idx];
+}
+
+/* ── ساخت پست صبح ───────────────────────────────────────────────────────── */
+async function buildMorning(env, target, city, tg) {
+  var now = tehranDate();
+  var occ = await occasionsFor(env, jalaliOf(now));
+  var tmr = await occasionsFor(env, jalaliOf(tehranDate(Date.now() + 864e5)));
+  var title = String(target || "").replace(/^@/, "");
+  var tryTitle = "";
+  try { var chat = await tg.call("getChat", { chat_id: target }); tryTitle = chat && (chat.title || chat.username) || ""; } catch (e) {}
+  if (tryTitle) title = tryTitle;
+  var jj = jalaliOf(now);
+  var sMsg = successMessage(jj, occ);
+  var html = "<h2>\u2600\uFE0F \u0635\u0628\u062D \u0628\u062E\u06CC\u0631</h2>\n" +
+    "<p>\u{1F4C5} <b>" + faDate(now) + "</b> \u2014 \u0634\u0645\u0633\u06CC</p>\n" +
+    "<p>\u{1F30D} " + faGregorian(now) + " \u2014 \u0645\u06CC\u0644\u0627\u062F\u06CC</p>\n" +
+    "<h3>\u{1F4C5} \u0645\u0646\u0627\u0633\u0628\u062A \u0627\u0645\u0631\u0648\u0632</h3>\n" +
+    (occ && occRank(occ, 3).length
+      ? occRank(occ, 3).map((e) => "<p>\u2022 " + escapeHtml(e.d) + (e.r ? " \u{1F54C}" : "") + "</p>").join("\n") + (occ.holiday ? "<p>\u{1F389} \u0627\u0645\u0631\u0648\u0632 \u062A\u0639\u0637\u06CC\u0644 \u0631\u0633\u0645\u06CC \u0627\u0633\u062A.</p>" : "")
+      : "<p>\u0628\u0631\u0627\u06CC \u0627\u0645\u0631\u0648\u0632 \u0645\u0646\u0627\u0633\u0628\u062A \u0631\u0633\u0645\u06CC \u062B\u0628\u062A\u200C\u0634\u062F\u0647\u200C\u0627\u06CC \u0646\u06CC\u0633\u062A.</p>") + "\n" +
+    "<h3>\u{1F49A} \u067E\u06CC\u0627\u0645 \u0627\u0645\u0631\u0648\u0632</h3>\n" +
+    "<p>" + escapeHtml(sMsg.m) + "</p>\n" +
+    "<p>\u2705 <b>\u06CC\u0647 \u06A9\u0627\u0631 \u06A9\u0648\u0686\u06CC\u06A9 \u0628\u0631\u0627\u06CC \u0627\u0645\u0631\u0648\u0632\u062A:</b> " + escapeHtml(sMsg.a) + "</p>\n" +
+    "<p>\u{1F331} \u0641\u0631\u062F\u0627 (" + faDateShort(tehranDate(Date.now() + 864e5)) + "): " + (occLine(tmr, 2) ? escapeHtml(occLine(tmr, 2)) + ((tmr && tmr.holiday) ? " \u2014 \u062A\u0639\u0637\u06CC\u0644" : "") : "\u0645\u0646\u0627\u0633\u0628\u062A \u062E\u0627\u0635\u06CC \u062B\u0628\u062A \u0646\u0634\u062F\u0647") + "</p>\n" +
+    "<footer>" + escapeHtml(title) + " \u00B7 \u0631\u0650\u0633\u0627</footer>";
+  return { ok: true, html: html, data: { date: faDate(now), gregorian: faGregorian(now), jalali: jj, occasion: occ, tomorrow: tmr, success: sMsg, title: title } };
+}
+
+/* ── ساخت پست خلاصهٔ روز ─────────────────────────────────────────────────── */
+async function buildDigest(env, target, tg) {
+  var now = tehranDate();
+  var occ = await occasionsFor(env, jalaliOf(now));
+  var uname = String(target || "").replace(/^@/, "");
+  var isPublic = /^[A-Za-z0-9_]{4,}$/.test(uname);
+  var st = await channelDayStats(env, tg, target, isPublic ? uname : "");
+  var title = uname;
+  try { var chat = await tg.call("getChat", { chat_id: target }); title = (chat && (chat.title || chat.username)) || uname; } catch (e) {}
+  var y = tehranDate(Date.now() - 864e5);
+  var d = (a) => (a == null ? "\u2014" : (a > 0 ? "+" : "") + faDigits(a));
+  var pctTxt = st.viewsYY > 0 ? faDigits(Math.round(((st.viewsY - st.viewsYY) / st.viewsYY) * 100)) + "\u066A" : "\u2014";
+  var fmt = (n) => (typeof n === "number" ? faNum(n) : "\u2014");
+  var rows =
+    "<tr><td>\u067E\u0633\u062A \u0645\u0646\u062A\u0634\u0631\u0634\u062F\u0647</td><td>" + faDigits(st.postsY) + "</td><td>" + d(st.postsY - st.postsYY) + "</td></tr>" +
+    "<tr><td>\u0628\u0627\u0632\u062F\u06CC\u062F \u06A9\u0644</td><td>" + fmt(st.viewsY) + "</td><td>" + (st.viewsYY > 0 ? pctTxt : "\u2014") + "</td></tr>" +
+    "<tr><td>\u0639\u0636\u0648 \u06A9\u0627\u0646\u0627\u0644</td><td>" + fmt(st.members) + "</td><td>" + (st.memberGain == null && st.members != null ? "\u0627\u0645\u0631\u0648\u0632" : d(st.memberGain)) + "</td></tr>";
+  var topHtml = st.top3.length
+    ? st.top3.map((p, i) => "<p>" + (i === 0 ? "\u{1F947}" : i === 1 ? "\u{1F948}" : "\u{1F949}") + " \u00AB" + escapeHtml(snippetOf(p.snippet, 56) || ("\u067E\u0633\u062A " + faDigits(p.id))) + "\u00BB \u2014 " + faNum(p.views) + " \u0628\u0627\u0632\u062F\u06CC\u062F</p>").join("\n")
+    : "<p>\u062F\u06CC\u0631\u0648\u0632 \u067E\u0633\u062A\u06CC \u0628\u0631\u0627\u06CC \u0645\u0642\u0627\u06CC\u0633\u0647 \u0646\u0628\u0648\u062F.</p>";
+  var html = "<h2>\u{1F4CA} \u062E\u0644\u0627\u0635\u0647\u0654 \u0631\u0648\u0632</h2>\n" +
+    "<p>\u06CC\u06A9 \u0646\u06AF\u0627\u0647 \u0628\u0647 \u062F\u06CC\u0631\u0648\u0632\u0650 \u00AB" + escapeHtml(title) + "\u00BB \u2014 " + faDate(y) + "</p>\n" +
+    "<table bordered compact striped><tr><th>\u0634\u0627\u062E\u0635</th><th>\u062F\u06CC\u0631\u0648\u0632</th><th>\u062A\u063A\u06CC\u06CC\u0631</th></tr>" + rows + "</table>\n" +
+    "<h3>\u{1F3C6} \u0633\u0647 \u067E\u0633\u062A \u067E\u0631\u0628\u0627\u0632\u062F\u06CC\u062F \u062F\u06CC\u0631\u0648\u0632</h3>\n" + topHtml + "\n" +
+    "<h3>\u{1F49A} \u0645\u0648\u0641\u0642\u06CC\u062A \u0631\u0648\u0632</h3>\n" + growthLine(st).map((l) => "<p>" + escapeHtml(l) + "</p>").join("\n") + "\n" +
+    "<h3>\u{1F4C5} \u0645\u0646\u0627\u0633\u0628\u062A \u0627\u0645\u0631\u0648\u0632</h3>\n" +
+    (occ && occRank(occ, 2).length ? occRank(occ, 2).map((e) => "<p>\u2022 " + escapeHtml(e.d) + "</p>").join("\n") : "<p>\u0627\u0645\u0631\u0648\u0632 \u0645\u0646\u0627\u0633\u0628\u062A \u0631\u0633\u0645\u06CC \u0646\u06CC\u0633\u062A.</p>") + "\n" +
+    "<footer>" + escapeHtml(title) + " \u00B7 \u0631\u0650\u0633\u0627 \u00B7 " + faDate(now) + "</footer>" +
+    (st.scanned >= 40 ? "\n<p><i>\u0622\u0645\u0627\u0631 \u0627\u0632 \u067E\u0633\u062A\u200C\u0647\u0627\u06CC \u0639\u0645\u0648\u0645\u06CC \u06A9\u0627\u0646\u0627\u0644 \u0627\u0633\u062A\u061B \u0627\u06AF\u0631 \u0631\u0648\u0632 \u0634\u0644\u0648\u063A\u200C\u062A\u0631 \u0628\u0627\u0634\u062F \u0634\u0645\u0627\u0631\u0634 \u062A\u0642\u0631\u06CC\u0628\u06CC \u0645\u06CC\u200C\u0634\u0648\u062F.</i></p>" : "");
+  return { ok: true, html: html, data: { date: faDate(y), today: faDate(now), stats: st, occasion: occ, title: title } };
+}
+
+/* ── پست‌های خودکار روزانه (cron هر دقیقه) ───────────────────────────────── */
+async function runAutoPosts(env) {
+  var store = new Store(rasaEnv(env), cfg(env));
+  var idx = await store.get("auto:ids", { uids: [] });
+  if (!idx || !Array.isArray(idx.uids) || !idx.uids.length) return;
+  var now = tehranDate();
+  var hh = now.getUTCHours(), mm = now.getUTCMinutes();
+  var dayKey = dayKeyOf(now);
+  var tg = createTelegram(env, cfg(env));
+  for (var u = 0; u < idx.uids.length; u += 1) {
+    var uid = idx.uids[u];
+    var box = await store.get("auto:" + uid, null);
+    if (!box || !Array.isArray(box.items)) continue;
+    var dirty = false;
+    for (var i = 0; i < box.items.length; i += 1) {
+      var it = box.items[i];
+      if (!it || it.on === false || !it.at) continue;
+      var parts = String(it.at).split(":");
+      var atMin = (Number(parts[0]) || 0) * 60 + (Number(parts[1]) || 0);
+      var nowMin = hh * 60 + mm;
+      if (nowMin < atMin || nowMin > atMin + 8) continue;
+      if (it.lastSent === dayKey) continue;
+      try {
+        var built = it.kind === "morning"
+          ? await buildMorning(env, it.target, it.city, tg)
+          : await buildDigest(env, it.target, tg);
+        var resp = await publishNow(tg, it.target, { html: built.html }, Number(uid), null, store, false);
+        var jr = await resp.json().catch(() => ({}));
+        it.lastSent = dayKey;
+        it.lastResult = { ok: !!jr.ok, message_id: jr.message_id || null, at: Date.now(), error: jr.error || null };
+        dirty = true;
+        await sendPostMessage(env, uid, {
+          html: (jr.ok ? "\u2705 <b>" + (it.kind === "morning" ? "\u0635\u0628\u062D \u06A9\u0627\u0646\u0627\u0644" : "\u062E\u0644\u0627\u0635\u0647\u0654 \u0631\u0648\u0632") + " \u0645\u0646\u062A\u0634\u0631 \u0634\u062F!</b>\n" + (jr.link ? '<a href="' + jr.link + '">\u0645\u0634\u0627\u0647\u062F\u0647 \u062F\u0631 \u06A9\u0627\u0646\u0627\u0644</a>' : "") : "\u26A0\uFE0F \u0627\u0631\u0633\u0627\u0644 \u062e\u0648\u062F\u06A9\u0627\u0631 \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062F: " + escapeHtml(String(jr.error || "\u0646\u0627\u0645\u0639\u0644\u0648\u0645")))
+        }).catch(() => {});
+      } catch (e) {
+        it.lastResult = { ok: false, at: Date.now(), error: String((e && e.message) || e).slice(0, 120) };
+        dirty = true;
+      }
+    }
+    if (dirty) await store.put("auto:" + uid, box, 400 * 86400);
+  }
+}
+/* ═══════════════════════════════════════════════════════════════════════════
+   فرمانده (Commander) — چت با ربات = اجرا در کانال
+   مالک در پیوی ربات تایپ می‌کند یا ویس می‌فرستد؛ مغز (Workers AI یا جمنای)
+   تصمیم می‌گیرد کدام ابزار را صدا بزند: آمار، مناسبت، ساخت عکس، انتشار،
+   حذف، خواندن لینک، ساخت نظرسنجی، زمان‌بندی.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+var CMD_DEFAULT_OWNERS = [5982315292, 8795596928];
+var CMD_BLOCK_TEXT = ['HTML', 'Open', 'Confirm', 'Cancel', 'yes', 'no', 'ok', 'باشه'];
+
+function cmdEnabled(env) {
+  var v = String(env.COMMANDER_ON === undefined ? '0' : env.COMMANDER_ON).toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
+function cmdOwners(env) {
+  try {
+    var raw = String(env.COMMANDER_OWNERS || '').trim();
+    if (raw) return raw.split(/[,\s]+/).map(function (x) { return Number(x); }).filter(Boolean);
+  } catch (e) {}
+  return CMD_DEFAULT_OWNERS;
+}
+function cmdConfig(env) {
+  return {
+    text: env.CMDR_TEXT_MODEL || '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+    fast: env.CMDR_FAST_MODEL || '@cf/qwen/qwen3-30b-a3b-fp8',
+    image: env.CMDR_IMAGE_MODEL || '@cf/black-forest-labs/flux-1-schnell',
+    stt: env.CMDR_STT_MODEL || '@cf/openai/whisper',
+    brain: env.CMDR_BRAIN_URL || '',
+    brainKey: env.CMDR_BRAIN_KEY || '',
+    gemini: env.GEMINI_API_KEY || ''
+  };
+}
+function cmdTextOf(r) {
+  if (!r) return '';
+  if (typeof r === 'string') return r;
+  if (typeof r.response === 'string') return r.response;
+  var c = r.choices && r.choices[0];
+  if (c && c.message && typeof c.message.content === 'string') return c.message.content;
+  return JSON.stringify(r);
+}
+function cmdToB64(r) {
+  if (r instanceof ReadableStream) return new Response(r).arrayBuffer().then(cmdB64);
+  if (r instanceof ArrayBuffer) return Promise.resolve(cmdB64(r));
+  if (ArrayBuffer.isView(r)) return Promise.resolve(cmdB64(r.buffer));
+  if (r && typeof r.image === 'string') return Promise.resolve(r.image);
+  if (r && r.body) return new Response(r.body).arrayBuffer().then(cmdB64);
+  return Promise.reject(new Error('شکل خروجی عکس ناشناخته'));
+}
+function cmdB64(buf) {
+  var bytes = new Uint8Array(buf), s = '', chunk = 32768;
+  for (var i = 0; i < bytes.length; i += chunk) s += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  return btoa(s);
+}
+/* ── مغز: اول Workers AI داخل ورکر، بعد دروازهٔ تستی، بعد جمنای ─────────── */
+async function cmdBrain(env, messages, maxTokens) {
+  var C = cmdConfig(env);
+  if (env.AI && typeof env.AI.run === 'function') {
+    var r = await env.AI.run(C.text, { messages: messages, max_tokens: maxTokens || 700, temperature: 0.6 });
+    return cmdTextOf(r);
+  }
+  if (C.brain) {
+    var res = await fetch(C.brain + '/brain?k=' + encodeURIComponent(C.brainKey), {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messages: messages, max_tokens: maxTokens || 700 })
+    });
+    var j = await res.json();
+    if (!j || !j.ok) throw new Error('brain: ' + ((j && j.text) || 'خطا'));
+    return j.text || '';
+  }
+  if (C.gemini) return cmdGemini(env, messages, C.gemini, maxTokens);
+  throw new Error('مغز در دسترس نیست (نه AI بایندینگ، نه دروازه، نه کلید جمنای)');
+}
+async function cmdGemini(env, messages, key, maxTokens) {
+  var sys = messages.filter(function (m) { return m.role === 'system'; }).map(function (m) { return m.content; }).join('\n');
+  var contents = messages.filter(function (m) { return m.role !== 'system'; }).map(function (m) {
+    return { role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: String(m.content) }] };
+  });
+  var body = { contents: contents, generationConfig: { maxOutputTokens: maxTokens || 700, temperature: 0.6 } };
+  if (sys) body.systemInstruction = { parts: [{ text: sys }] };
+  var res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(body)
+  });
+  var j = await res.json();
+  if (j.error) throw new Error('جمنای: ' + (j.error.message || 'خطا').slice(0, 120));
+  var parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
+  return parts.map(function (p) { return p.text || ''; }).join('');
+}
+async function cmdAiImage(env, prompt) {
+  var C = cmdConfig(env);
+  if (env.AI && typeof env.AI.run === 'function') return cmdToB64(await env.AI.run(C.image, { prompt: prompt, steps: 4 }));
+  if (C.brain) {
+    var res = await fetch(C.brain + '/run?k=' + encodeURIComponent(C.brainKey), {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: C.image, payload: { prompt: prompt, steps: 4 }, as: 'image' })
+    });
+    var j = await res.json();
+    if (!j.ok) throw new Error(j.error || 'ساخت عکس ناموفق');
+    return j.b64;
+  }
+  throw new Error('عکس‌ساز در دسترس نیست');
+}
+async function cmdStt(env, bytes) {
+  var C = cmdConfig(env), arr = [];
+  for (var i = 0; i < bytes.length; i += 1) arr.push(bytes[i]);
+  if (env.AI && typeof env.AI.run === 'function') {
+    var r = await env.AI.run(C.stt, { audio: arr });
+    return (r && (r.text || r.response)) || '';
+  }
+  if (C.brain) {
+    var res = await fetch(C.brain + '/stt?k=' + encodeURIComponent(C.brainKey), {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ b64: cmdB64(bytes.buffer) })
+    });
+    var j = await res.json();
+    var hit = (j.results || []).filter(function (x) { return x.ok && x.text; })[0];
+    return hit ? hit.text : '';
+  }
+  throw new Error('تشخیص گفتار در دسترس نیست');
+}
+/* ── ابزارهای تلگرام ────────────────────────────────────────────────────── */
+async function cmdTg(env, method, payload) {
+  return createTelegram(env, cfg(env)).call(method, payload);
+}
+async function cmdSay(env, chatId, text) {
+  return cmdTg(env, 'sendMessage', { chat_id: chatId, text: String(text).slice(0, 3800), link_preview_options: { is_disabled: true } });
+}
+async function cmdSendPhoto(env, chatId, b64, caption) {
+  var bytes = Uint8Array.from(atob(b64), function (c) { return c.charCodeAt(0); });
+  var fd = new FormData();
+  fd.append('chat_id', String(chatId));
+  if (caption) fd.append('caption', String(caption).slice(0, 1000));
+  fd.append('photo', new Blob([bytes], { type: 'image/jpeg' }), 'rasa.jpg');
+  var res = await fetch('https://api.telegram.org/bot' + env.BOT_TOKEN + '/sendPhoto', { method: 'POST', body: fd });
+  var j = await res.json();
+  if (!j.ok) throw new Error(j.description || 'ارسال عکس ناموفق');
+  var sizes = (j.result && j.result.photo) || [];
+  return { file_id: sizes.length ? sizes[sizes.length - 1].file_id : '', message_id: j.result.message_id };
+}
+/* ── پارس JSON خروجی مغز ───────────────────────────────────────────────── */
+function cmdExtractJson(text) {
+  var s = String(text || '').replace(/```json/gi, '```');
+  for (var i = 0; i < s.length; i += 1) {
+    if (s.charAt(i) !== '{') continue;
+    var depth = 0, inStr = false, esc = false;
+    for (var k = i; k < s.length; k += 1) {
+      var ch = s.charAt(k);
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === '\\') esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') { inStr = true; continue; }
+      if (ch === '{') depth += 1;
+      else if (ch === '}') { depth -= 1; if (depth === 0) { try { return JSON.parse(s.slice(i, k + 1)); } catch (e) { break; } } }
+    }
+  }
+  return null;
+}
+/* ── پرامپت سیستمی ─────────────────────────────────────────────────────── */
+async function cmdSystemPrompt(env, uid, historyHint) {
+  if (env.CMDR_DEBUG) console.log('[cmdr] p1');
+  var store = new Store(rasaEnv(env), cfg(env));
+  if (env.CMDR_DEBUG) console.log('[cmdr] p2');
+  var chan = await store.get('cmd:chan:' + uid, null) || await store.get('cmd:chan:shared', null) || '';
+  if (env.CMDR_DEBUG) console.log('[cmdr] p3 chan=' + chan);
+  var t = faDate(tehranDate());
+  if (env.CMDR_DEBUG) console.log('[cmdr] p5 date=' + t);
+  var lines = [
+    'تو «رِسا» هستی؛ دستیار فارسی و مدیر کانال تلگرامی مالک. مالک با تو حرف می‌زند و تو کارها را واقعاً انجام می‌دهی (نه راهنمایی).',
+    'امروز: ' + t + (chan ? ' | کانال پیش‌فرض: ' + chan : ' | هنوز کانالی تنظیم نشده'),
+    'قواعد: فارسی محاوره‌ای تمیز و کوتاه. بی‌تعارف. تصمیم بگیر و انجام بده؛ فقط اگر واقعاً مبهم بود یک سؤال کوتاه بپرس.',
+    'در هر نوبت فقط و فقط یک JSON بده، بدون هیچ متن اضافه:',
+    '  {"tool":"نام ابزار","args":{...},"say":"جملهٔ کوتاه فارسی برای مالک که چه می‌کنی"}',
+    '  یا  {"reply":"پاسخ نهایی فارسی"}',
+    'وقتی کار تمام شد حتماً با {"reply":"..."} جمع‌بندی کن.',
+    'ابزارها:',
+    '• make_image {prompt} — ساخت عکس. prompt را توصیفی و دقیق بده (انگلیسی بهتر جواب می‌دهد).',
+    '• publish_post {text, with_image} — انتشار در کانال. text فارسی با مارک‌داون ساده (**بولد**). with_image=true فقط اگر همین حالا عکس ساختیم.',
+    '• get_stats {} — آمار دیروز/پریروز، بازدید پست‌ها، پست‌های برتر.',
+    '• get_occasions {} — مناسبت امروز و فردا (شمسی).',
+    '• web_fetch {url} — خواندن متن یک صفحهٔ وب (برای خلاصه‌کردن لینک‌هایی که مالک می‌دهد).',
+    '• poll {question, options} — نظرسنجی در کانال (۲ تا ۱۰ گزینه).',
+    '• schedule_post {text, in_minutes} — انتشار در آینده (۱ تا ۱۰۰۸۰ دقیقه).',
+    '• delete_last {} — حذف آخرین پستی که خودت در کانال گذاشتی.',
+    '• set_channel {channel} — تعیین کانال پیش‌فرض (مثل @mychannel).',
+    '• publish_media {caption} — انتشار عکس/ویدیو/فایلی که مالک در پیوی فرستاده (آخرین رسانه).',
+    '• album {caption} — آلبوم ۲ تا ۱۰ عکسی از رسانه‌های فرستاده‌شده.',
+    '• replace_last {text} — پاک‌کردن آخرین پست و انتشار نسخهٔ تازه (با همان عکس).',
+    '• delete_post {message_id} · pin_post {} · unpin_post {} — حذف/سنجاق.',
+    '• mute_user {user_id, minutes} · ban_user {user_id} — مدیریت مزاحم.',
+    '• translate {text, to} — ترجمه (fa/en/ar/tr/ru/de/fr).',
+    '• market {asset} — قیمت واقعی: دلار/طلا/سکه/یورو/بیت‌کوین/اتریوم/همه — حتماً قبل از نوشتن پست قیمتی این را صدا بزن.',
+    '• make_image {prompt, style} — style از: cinematic/neon/minimal/watercolor/3d/retro/dark.',
+    '• make_voice {text} — صدای گویندهٔ انگلیسی (TTS).',
+    '• draft_post {text, with_image} — پیش‌نویس با دکمهٔ تأیید در پیوی مالک (وقتی مالک گفت «اول ببینم»).',
+    '• weekly_report {} — گزارش هفتگی: بازدید، پست برتر، بهترین ساعت.',
+    '• suggest {topic} — ایدهٔ پست. · search_archive {query} — جست‌وجو در آرشیو کانال.',
+    '• rss_add {url, every_minutes, rewrite} · rss_list · rss_remove {id} — خبرخوان خودکار.',
+    '• recurring_add {at, text, kind:text|ai} · recurring_list · recurring_remove {id} — پست تکرارشونده.',
+    '• watch_add {url, kind:changed|contains, value, note, post} · watch_list · watch_remove {id} — رصد صفحه.',
+    '• welcome_set {text, chat, off} — پیام خوش‌آمد عضو جدید ({name}).',
+    'قواعد نوشتن پست: ۵۰۰ تا ۹۰۰ کاراکتر، حداکثر ۳ ایموجی، خط اول قلاب، پایان جمع‌بندی. آمار/خبر جعلی نساز.',
+    'دقت: هر مناسبت/عدد/خبری که در پست می‌آوری باید دقیقاً از خروجی ابزارها آمده باشد. اسم مناسبت را حرف‌به‌حرف از primary/events بردار؛ اگر مناسبت خاصی نبود، پست تبریک نساز.',
+    'نمونه: کاربر می‌گوید «یه عکس از غروب تهران بساز بذار تو کانال» → اول {"tool":"make_image","args":{"prompt":"cinematic golden sunset over Tehran skyline, photorealistic"},"say":"دارم عکس غروب تهران را می‌سازم"} و در نوبت بعد publish_post با with_image=true.'
+  ];
+  if (historyHint) lines.push('یادآوری: ' + historyHint);
+  return lines.join('\n');
+}
+/* ── ابزارها: اجرا ─────────────────────────────────────────────────────── */
+async function cmdTool(env, uid, name, args, ctx) {
+  { const spRes = await spTool(env, uid, name, args, ctx); if (spRes !== null) return spRes; }
+  var store = new Store(rasaEnv(env), cfg(env));
+  var tg = ctx.tg;
+  var chan = ctx.channel;
+  if (name === 'make_image') {
+    var b64 = await cmdAiImage(env, String(args.prompt || '').slice(0, 600));
+    var fid = '';
+    try {
+      var up = await cmdSendPhoto(env, ctx.chatId, b64, '🖼 پیش‌نمایش عکس — اگر خوبه بگو بذارم تو کانال');
+      fid = up.file_id || '';
+    } catch (e) { /* اگر تلگرام در دسترس نبود، عکس برای انتشار می‌ماند */ }
+    if (fid) await store.put('cmd:img:' + uid, { file_id: fid, at: Date.now(), prompt: String(args.prompt || '').slice(0, 200) });
+    return { ok: true, file_id: fid, b64: b64, prompt: String(args.prompt || '').slice(0, 200), note: 'عکس ساخته شد؛ برای انتشار در پست، publish_post با with_image=true' };
+  }
+  if (name === 'publish_post') {
+    if (!chan) return { ok: false, error: 'کانالی تنظیم نشده؛ اول set_channel' };
+    var text = String(args.text || '').trim();
+    if (!text) return { ok: false, error: 'متن خالی است' };
+    if (text.length > 3900) text = text.slice(0, 3900);
+    var html = HTML_TAG_RE.test(text) ? mixedToHtml(text) : mdToHtml(text);
+    if (args.with_image === true) {
+      var img = await store.get('cmd:img:' + uid, null);
+      if (img && img.file_id) html = '<img src="tg://photo?id=' + img.file_id + '"/>' + html;
+    }
+    var out = await publishNow(tg, chan, { html: html }, uid, null, store, args.unsigned === true);
+    var jr = out && typeof out.json === 'function' ? await out.json() : out;
+    if (!jr || !jr.ok) return { ok: false, error: (jr && jr.error) || 'انتشار ناموفق', verdict: jr && jr.verdict };
+    await store.put('cmd:last:' + uid, { target: chan, message_id: jr.message_id, link: jr.link || '', at: Date.now() });
+    return { ok: true, link: jr.link || '', message_id: jr.message_id, signed: jr.signed };
+  }
+  if (name === 'get_stats') {
+    if (!chan) return { ok: false, error: 'کانالی تنظیم نشده' };
+    var uname = String(chan).replace(/^@/, '').trim();
+    var stats = await channelDayStats(env, tg, chan, uname);
+    return { ok: true, channel: chan, stats: stats };
+  }
+  if (name === 'get_occasions') {
+    var dToday = tehranDate(), dTmr = tehranDate(Date.now() + 864e5);
+    var o1 = await occasionsFor(env, jalaliOf(dToday)), o2 = await occasionsFor(env, jalaliOf(dTmr));
+    var clean = function (o, d) {
+      var evs = occRank(o, 4).map(function (e) { return e.d; });
+      return { date: faDate(d), holiday: !!o.holiday, primary: evs[0] || null, events: evs };
+    };
+    return { ok: true, today: clean(o1, dToday), tomorrow: clean(o2, dTmr), rule: 'در پست‌ها فقط و فقط از «primary/events» همین ابزار استفاده کن؛ هیچ مناسبت یا نامی از خودت نساز.' };
+  }
+  if (name === 'web_fetch') {
+    var url = String(args.url || '').trim();
+    if (!/^https?:\/\//i.test(url)) return { ok: false, error: 'آدرس نامعتبر' };
+    var r = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 (compatible; RasaCommander/1.0)' } });
+    var htmlRaw = (await r.text()).slice(0, 240000);
+    var body = htmlRaw.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim();
+    return { ok: true, url: url, chars: body.length, text: body.slice(0, 3500) };
+  }
+  if (name === 'poll') {
+    if (!chan) return { ok: false, error: 'کانالی تنظیم نشده' };
+    var q = String(args.question || '').slice(0, 250);
+    var opts = (args.options || []).map(function (o) { return String(o).slice(0, 90); }).slice(0, 10);
+    if (!q || opts.length < 2) return { ok: false, error: 'سؤال یا گزینه‌ها ناقص است' };
+    var pr = await cmdTg(env, 'sendPoll', { chat_id: chan, question: q, options: opts, is_anonymous: true });
+    return { ok: true, message_id: pr.message_id };
+  }
+  if (name === 'schedule_post') {
+    if (!chan) return { ok: false, error: 'کانالی تنظیم نشده' };
+    var mins = Number(args.in_minutes || 0);
+    if (!(mins >= 1 && mins <= 10080)) return { ok: false, error: 'زمان نامعتبر (۱ تا ۱۰۰۸۰ دقیقه)' };
+    var when = Date.now() + mins * 60000;
+    var body2 = String(args.text || '').trim();
+    if (!body2) return { ok: false, error: 'متن خالی است' };
+    var shtml = HTML_TAG_RE.test(body2) ? mixedToHtml(body2) : mdToHtml(body2);
+    var data = await store.get('sched:' + uid, { jobs: [] });
+    var job = { id: 'c' + Date.now(), target: chan, html: shtml, scheduledAt: when, deleteAfter: 0, status: 'pending', createdAt: Date.now() };
+    data.jobs = [job].concat(data.jobs || []).slice(0, 50);
+    await store.put('sched:' + uid, data);
+    var g = await store.get('sched_global', { ids: [] });
+    g.ids = [{ id: job.id, uid: uid, at: when }].concat((g.ids || []).filter(function (x) { return x.id !== job.id; })).slice(0, 200);
+    await store.put('sched_global', g);
+    return { ok: true, at: when, in_minutes: mins, note: 'زمان‌بندی شد' };
+  }
+  if (name === 'delete_last') {
+    var last = await store.get('cmd:last:' + uid, null);
+    if (!last || !last.message_id) return { ok: false, error: 'آخرین پست من را پیدا نکردم' };
+    await tg.deleteMessage(last.target || chan, last.message_id);
+    await store.put('cmd:last:' + uid, null);
+    return { ok: true, deleted: last.message_id };
+  }
+  if (name === 'set_channel') {
+    var c = String(args.channel || '').trim();
+    if (!/^@[A-Za-z0-9_]{4,}$/.test(c)) return { ok: false, error: 'کانال را مثل @mychannel بده' };
+    await store.put('cmd:chan:' + uid, c);
+    return { ok: true, channel: c };
+  }
+  return { ok: false, error: 'ابزار ناشناخته: ' + name };
+}
+/* ── حلقهٔ اصلی ────────────────────────────────────────────────────────── */
+async function cmdHandle(env, message, user, text, isVoice, origin) {
+  var uid = user.id, chatId = message.chat.id;
+  if (env.CMDR_DEBUG) console.log('[cmdr] t1 store…');
+  var store = new Store(rasaEnv(env), cfg(env));
+  var tg = createTelegram(env, cfg(env));
+  if (env.CMDR_DEBUG) console.log('[cmdr] t2 kv…');
+  var chan = await store.get('cmd:chan:' + uid, null) || await store.get('cmd:chan:shared', null) || '';
+  var hist = await store.get('cmd:hist:' + uid, { items: [] });
+  if (env.CMDR_DEBUG) console.log('[cmdr] t3 chan=' + chan);
+  if (env.CMDR_DEBUG) console.log('[cmdr] t4 prompt…');
+  var msgs = [{ role: 'system', content: await cmdSystemPrompt(env, uid, '') }].concat((hist.items || []).slice(-8));
+  if (env.CMDR_DEBUG) console.log('[cmdr] t5 brain…');
+  var userLine = text;
+  if (isVoice) userLine = 'پیام صوتی مالک (رونویسی): ' + text;
+  msgs.push({ role: 'user', content: userLine });
+  var ctx = { tg: tg, chatId: chatId, channel: chan };
+  var finalText = '', published = null, steps = 0, lastToolResult = null;
+  for (var step = 0; step < 5; step += 1) {
+    var raw = await cmdBrain(env, msgs, 800);
+    if (env.CMDR_DEBUG) console.log('[cmdr] brain step ' + step + ': ' + String(raw).slice(0, 160));
+    var obj = cmdExtractJson(raw);
+    if (!obj) { finalText = String(raw || '').trim(); break; }
+    if (obj.reply) { finalText = String(obj.reply).trim(); break; }
+    if (obj.tool) {
+      steps += 1;
+      if (obj.say) { try { await cmdSay(env, chatId, '🛠 ' + String(obj.say).slice(0, 300)); } catch (e) {} }
+      var res;
+      try { res = await cmdTool(env, uid, obj.tool, obj.args || {}, ctx); }
+      catch (e) { res = { ok: false, error: String(e && e.message || e).slice(0, 300) }; }
+      if (obj.tool === 'publish_post' && res.ok) published = res;
+      lastToolResult = { tool: obj.tool, result: res };
+      msgs.push({ role: 'assistant', content: raw });
+      msgs.push({ role: 'user', content: 'نتیجهٔ ابزار ' + obj.tool + ': ' + JSON.stringify(res).slice(0, 1200) + '\nادامه بده؛ اگر کار تمام شد با {"reply":"..."} جمع‌بندی کن.' });
+      continue;
+    }
+    finalText = String(obj.say || raw).trim();
+    break;
+  }
+  if (!finalText) {
+    finalText = published ? 'انجام شد.' : (steps ? 'کار را انجام دادم.' : 'متوجه نشدم؛ یک بار دیگر و واضح‌تر بگو.');
+  }
+  if (published) {
+    var hasLink = published.link && finalText.indexOf(published.link) > -1;
+    finalText = hasLink ? finalText : ('✅ منتشر شد' + (published.link ? ': ' + published.link : '') + '\n\n' + finalText);
+  }
+  if (isVoice) finalText = '🗣 شنیدم: «' + text.slice(0, 160) + '»\n\n' + finalText;
+  if (env.CMDR_DEBUG) console.log('[cmdr] t6 say: ' + finalText.slice(0, 80));
+  try { await cmdSay(env, chatId, finalText); } catch (e) { if (env.CMDR_DEBUG) console.log('[cmdr] say error: ' + String(e && e.message || e)); }
+  if (env.CMDR_DEBUG) console.log('[cmdr] t7 sent');
+  hist.items = (hist.items || []).concat([
+    { role: 'user', content: userLine.slice(0, 800) },
+    { role: 'assistant', content: finalText.slice(0, 800) }
+  ]).slice(-10);
+  await store.put('cmd:hist:' + uid, hist);
+  return true;
+}
+async function maybeCommander(env, message, user, origin) {
+  if (!cmdEnabled(env)) return false;
+  var uid = Number(user && user.id || 0);
+  if (env.CMDR_DEBUG) console.log('[cmdr] enter uid=' + uid + ' voice=' + !!(message.voice || message.audio) + ' text=' + String(message.text || '').slice(0, 40));
+  if (cmdOwners(env).indexOf(uid) < 0) return false;
+  var isVoice = !!(message.voice || message.audio);
+  var text = String(message.text || message.caption || '').trim();
+  var captured = null;
+  try { captured = await spCaptureMedia(env, message); } catch (e) { captured = null; }
+  if (captured && !text) {
+    var mbox = await new Store(rasaEnv(env), cfg(env)).get('sp:media:' + uid, { items: [] });
+    await cmdSay(env, uid, '📥 دریافت شد (' + (captured.kind === 'photo' ? 'عکس' : captured.kind === 'video' ? 'ویدیو' : 'فایل') + '). الان ' + ((mbox.items || []).length) + ' رسانه در صف است. بگو: «این رو با کپشن … بذار تو کانال» یا «آلبوم بساز».');
+    return true;
+  }
+  if (captured && text) {
+    try { await cmdSay(env, uid, '📥 رسانه ذخیره شد؛ با همین دستور منتشرش می‌کنم.'); } catch (e) {}
+  }
+  if (!isVoice) {
+    if (!text || text.charAt(0) === '/') return false;
+    if (text.length < 2) return false;
+    if (CMD_BLOCK_TEXT.indexOf(text) > -1) return false;
+  }
+  if (env.CMDR_DEBUG) console.log('[cmdr] accepted, handling…');
+  try {
+    if (isVoice) {
+      var media = message.voice || message.audio;
+      var file = await cmdTg(env, 'getFile', { file_id: media.file_id });
+      var url = 'https://api.telegram.org/file/bot' + env.BOT_TOKEN + '/' + file.file_path;
+      var buf = await (await fetch(url)).arrayBuffer();
+      if (buf.byteLength > 5 * 1024 * 1024) { await cmdSay(env, message.chat.id, 'ویس طولانی است؛ کوتاه‌ترش کن.'); return true; }
+      var heard = await cmdStt(env, new Uint8Array(buf));
+      if (!heard || !heard.trim()) { await cmdSay(env, message.chat.id, 'صدایت را نفهمیدم؛ یک بار دیگر بفرست.'); return true; }
+      await cmdHandle(env, message, user, heard.trim(), true, origin);
+      return true;
+    }
+    await cmdHandle(env, message, user, text, false, origin);
+  } catch (e) {
+    try { await cmdSay(env, message.chat.id, '⚠️ خطا: ' + String(e && e.message || e).slice(0, 300)); } catch (e2) {}
+  }
+  return true;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   دریچهٔ MCP روی ورکر رِسا — برای اتصال مستقیم Gemini / Claude / Cursor
+   Transport: Streamable HTTP (spec 2024-11-05 → 2026-07-28), روی /api/mcp/<secret>
+   بدون OAuth (کلید دسترسی = خودِ آدرس). ابزارها همان ابزارهای «فرمانده» هستند.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+var MCP_OWNER = 5982315292;
+var MCP_SUPPORTED = ['2024-11-05', '2025-03-26', '2025-06-18', '2026-07-28'];
+var MCP_LATEST = '2025-06-18';
+
+function mcpToolDefs() {
+  return [
+    { name: 'make_image', description: 'ساخت عکس با هوش مصنوعی (flux). prompt را دقیق و توصیفی بده (انگلیسی نتیجهٔ بهتری می‌دهد). عکس به تلگرام مالک هم ارسال می‌شود و برای انتشار در همین گفتگو آماده می‌ماند.',
+      inputSchema: { type: 'object', properties: { prompt: { type: 'string', description: 'توصیف تصویر' }, style: { type: 'string', description: 'cinematic | neon | minimal | watercolor | 3d | retro | dark' } }, required: ['prompt'] } },
+    { name: 'publish_post', description: 'انتشار یک پست ریچ در کانال تلگرام مالک. متن را فارسی، ۵۰۰ تا ۹۰۰ کاراکتر، با مارک‌داون ساده (**بولد**، - برای بولت). اگر قبلاً make_image صدا زده شده، with_image=true بگذار.',
+      inputSchema: { type: 'object', properties: { text: { type: 'string', description: 'متن پست' }, with_image: { type: 'boolean', description: 'با عکسِ ساخته‌شدهٔ قبلی منتشر شود؟' } }, required: ['text'] } },
+    { name: 'get_stats', description: 'آمار واقعی کانال: تعداد پست و بازدید دیروز/پریروز، پست‌های برتر، آخرین پست‌ها.',
+      inputSchema: { type: 'object', properties: {} } },
+    { name: 'get_occasions', description: 'مناسبت‌های رسمی امروز و فردا (تقویم هجری شمسی) + تعطیلی. فقط از همین داده استفاده کن؛ مناسبت از خودت نساز.',
+      inputSchema: { type: 'object', properties: {} } },
+    { name: 'web_fetch', description: 'خواندن متن یک صفحهٔ وب برای خلاصه‌کردن (لینک‌هایی که مالک می‌دهد).',
+      inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } },
+    { name: 'poll', description: 'ساخت نظرسنجی در کانال.',
+      inputSchema: { type: 'object', properties: { question: { type: 'string' }, options: { type: 'array', items: { type: 'string' }, description: '۲ تا ۱۰ گزینه' } }, required: ['question', 'options'] } },
+    { name: 'schedule_post', description: 'زمان‌بندی انتشار پست در آینده (۱ تا ۱۰۰۸۰ دقیقه بعد).',
+      inputSchema: { type: 'object', properties: { text: { type: 'string' }, in_minutes: { type: 'number' } }, required: ['text', 'in_minutes'] } },
+    { name: 'delete_last', description: 'حذف آخرین پستی که رِسا در کانال منتشر کرده است.',
+      inputSchema: { type: 'object', properties: {} } },
+    { name: 'set_channel', description: 'تعیین کانال پیش‌فرض (مثل @mychannel).',
+      inputSchema: { type: 'object', properties: { channel: { type: 'string' } }, required: ['channel'] } },
+    { name: 'publish_media', description: 'انتشار عکس/ویدیو/فایلی که مالک در پیوی ربات یا چت به ربات فرستاده است (آخرین رسانه).',
+      inputSchema: { type: 'object', properties: {"caption":{"type":"string"},"index":{"type":"number"}}, required: [] } },
+    { name: 'album', description: 'ساخت و انتشار آلبوم ۲ تا ۱۰ عکسی از رسانه‌های فرستاده‌شده یا چند URL.',
+      inputSchema: { type: 'object', properties: {"caption":{"type":"string"},"count":{"type":"number"},"urls":{"type":"array","items":{"type":"string"}}}, required: [] } },
+    { name: 'delete_post', description: 'حذف یک پیام از کانال با شماره.',
+      inputSchema: { type: 'object', properties: {"message_id":{"type":"number"},"last":{"type":"boolean"}}, required: [] } },
+    { name: 'replace_last', description: 'حذف آخرین پست و انتشار نسخهٔ اصلاح‌شده (عکس قبلی حفظ می‌شود).',
+      inputSchema: { type: 'object', properties: {"text":{"type":"string"}}, required: ['text'] } },
+    { name: 'pin_post', description: 'سنجاق آخرین پست (یا پیام مشخص) در کانال.',
+      inputSchema: { type: 'object', properties: {"message_id":{"type":"number"},"silent":{"type":"boolean"}}, required: [] } },
+    { name: 'unpin_post', description: 'برداشتن سنجاق.',
+      inputSchema: { type: 'object', properties: {}, required: [] } },
+    { name: 'mute_user', description: 'بی‌صدا کردن کاربر مزاحم برای N دقیقه.',
+      inputSchema: { type: 'object', properties: {"user_id":{"type":"number"},"minutes":{"type":"number"}}, required: ['user_id'] } },
+    { name: 'ban_user', description: 'بن کردن کاربر.',
+      inputSchema: { type: 'object', properties: {"user_id":{"type":"number"},"delete_messages":{"type":"boolean"}}, required: ['user_id'] } },
+    { name: 'unban_user', description: 'رفع بن کاربر.',
+      inputSchema: { type: 'object', properties: {"user_id":{"type":"number"}}, required: ['user_id'] } },
+    { name: 'translate', description: 'ترجمهٔ متن بین فارسی/انگلیسی/عربی و چند زبان دیگر.',
+      inputSchema: { type: 'object', properties: {"text":{"type":"string"},"to":{"type":"string"},"from":{"type":"string"}}, required: ['text'] } },
+    { name: 'market', description: 'قیمت واقعی بازار: دلار، یورو، طلا (گرم ۱۸)، سکه، مثقال، بیت‌کوین، اتریوم، تتر — یا asset=همه برای همه.',
+      inputSchema: { type: 'object', properties: {"asset":{"type":"string"}}, required: ['asset'] } },
+    { name: 'make_voice', description: 'ساخت صدای گوینده از متن (فقط انگلیسی) و ارسال به پیوی مالک.',
+      inputSchema: { type: 'object', properties: {"text":{"type":"string"},"caption":{"type":"string"}}, required: ['text'] } },
+    { name: 'draft_post', description: 'به‌جای انتشار، پیش‌نویس را با دکمهٔ تأیید به مالک بفرست.',
+      inputSchema: { type: 'object', properties: {"text":{"type":"string"},"with_image":{"type":"boolean"}}, required: ['text'] } },
+    { name: 'publish_draft', description: 'انتشار یک پیش‌نویس تأییدنشده با شناسهٔ آن.',
+      inputSchema: { type: 'object', properties: {"draft_id":{"type":"string"}}, required: ['draft_id'] } },
+    { name: 'weekly_report', description: 'گزارش هفتگی کانال: تعداد پست، بازدید، پست برتر، بهترین ساعت انتشار.',
+      inputSchema: { type: 'object', properties: {}, required: [] } },
+    { name: 'suggest', description: 'پنج ایدهٔ پست برای کانال (با توجه به مناسبت‌ها).',
+      inputSchema: { type: 'object', properties: {"topic":{"type":"string"}}, required: [] } },
+    { name: 'search_archive', description: 'جست‌وجو در پست‌های کانال.',
+      inputSchema: { type: 'object', properties: {"query":{"type":"string"}}, required: ['query'] } },
+    { name: 'rss_add', description: 'خبرخوان خودکار: از یک فید RSS هر N دقیقه خبر تازه را بازنویسی و منتشر می‌کند.',
+      inputSchema: { type: 'object', properties: {"url":{"type":"string"},"every_minutes":{"type":"number"},"rewrite":{"type":"boolean"},"max_per_run":{"type":"number"},"target":{"type":"string"}}, required: ['url'] } },
+    { name: 'rss_list', description: 'فهرست فیدهای فعال.',
+      inputSchema: { type: 'object', properties: {}, required: [] } },
+    { name: 'rss_remove', description: 'حذف یک فید.',
+      inputSchema: { type: 'object', properties: {"id":{"type":"string"}}, required: ['id'] } },
+    { name: 'recurring_add', description: 'پست تکرارشوندهٔ روزانه: ساعت HH:MM + متن ثابت یا پرامپت هوش مصنوعی (kind=ai).',
+      inputSchema: { type: 'object', properties: {"at":{"type":"string"},"text":{"type":"string"},"kind":{"type":"string"},"target":{"type":"string"}}, required: ['at', 'text'] } },
+    { name: 'recurring_list', description: 'فهرست پست‌های تکرارشونده.',
+      inputSchema: { type: 'object', properties: {}, required: [] } },
+    { name: 'recurring_remove', description: 'حذف یک تکرارشونده.',
+      inputSchema: { type: 'object', properties: {"id":{"type":"string"}}, required: ['id'] } },
+    { name: 'watch_add', description: 'رصد یک صفحه: اگر عوض شد (changed) یا عبارت ظاهر شد (contains) خبر می‌دهد و در صورت post=true منتشر می‌کند.',
+      inputSchema: { type: 'object', properties: {"url":{"type":"string"},"kind":{"type":"string"},"value":{"type":"string"},"note":{"type":"string"},"post":{"type":"boolean"},"target":{"type":"string"}}, required: ['url'] } },
+    { name: 'watch_list', description: 'فهرست رصدها.',
+      inputSchema: { type: 'object', properties: {}, required: [] } },
+    { name: 'watch_remove', description: 'حذف یک رصد.',
+      inputSchema: { type: 'object', properties: {"id":{"type":"string"}}, required: ['id'] } },
+    { name: 'welcome_set', description: 'پیام خوش‌آمد عضو جدید در کانال/گروه ({name} = نام عضو). off=true خاموش می‌کند.',
+      inputSchema: { type: 'object', properties: {"text":{"type":"string"},"chat":{"type":"string"},"off":{"type":"boolean"}}, required: ['text'] } }
+  ];
+}
+
+function mcpJson(body, status, extraHeaders, wantsSse) {
+  // اگر کلاینت فقط text/event-stream قبول کند، پاسخ را در قالب SSE می‌دهیم (StreamableHTTP)
+  if (wantsSse) {
+    var data = 'event: message\ndata: ' + JSON.stringify(body) + '\n\n';
+    return new Response(data, {
+      status: status || 200,
+      headers: Object.assign({ 'content-type': 'text/event-stream', 'cache-control': 'no-store' }, extraHeaders || {})
+    });
+  }
+  return new Response(JSON.stringify(body), {
+    status: status || 200,
+    headers: Object.assign({ 'content-type': 'application/json', 'cache-control': 'no-store' }, extraHeaders || {})
+  });
+}
+function mcpErr(id, code, message) { return { jsonrpc: '2.0', id: id === undefined ? null : id, error: { code: code, message: message } }; }
+function mcpOk(id, result) { return { jsonrpc: '2.0', id: id, result: result }; }
+
+function mcpAuthorized(env, url, request) {
+  var secret = String(env.MCP_SECRET || '').trim();
+  if (!secret) return false;
+  var path = url.pathname.replace(/\/+$/, '');
+  var tail = path.indexOf('/api/mcp') === 0 ? path.slice('/api/mcp'.length).replace(/^\//, '') : '';
+  var provided = tail || String(request.headers.get('x-rasa-mcp-key') || url.searchParams.get('key') || '');
+  return provided === secret;
+}
+
+async function mcpCallTool(env, name, args) {
+  var store = new Store(rasaEnv(env), cfg(env));
+  var chan = await store.get('cmd:chan:' + MCP_OWNER, null) || await store.get('cmd:chan:shared', null) || String(env.CMD_CHANNEL || '').trim();
+  if (!chan) return { ok: false, error: 'کانال پیش‌فرض تنظیم نشده؛ از ابزار set_channel استفاده کن.' };
+  var tg = createTelegram(env, cfg(env));
+  var res = await cmdTool(env, MCP_OWNER, name, args || {}, { tg: tg, chatId: MCP_OWNER, channel: chan });
+  if (name === 'publish_post' && res && res.ok && res.link) {
+    try { await cmdSay(env, MCP_OWNER, '🔌 از طریق MCP (جمنای/کلاد) منتشر شد: ' + res.link); } catch (e) {}
+  }
+  return res;
+}
+
+async function mcpHandle(env, request, url) {
+  // CORS — لازم نیست ولی بی‌ضرر
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization, x-rasa-mcp-key, mcp-protocol-version, mcp-session-id', 'access-control-allow-methods': 'POST, GET, DELETE, OPTIONS' } });
+  if (!env.MCP_SECRET) return mcpJson({ ok: false, error: 'MCP_SECRET روی ورکر تنظیم نشده است.' }, 503);
+  if (!mcpAuthorized(env, url, request)) {
+    return mcpJson({ ok: false, error: 'دسترسی ندارید؛ آدرس کامل MCP (همراه با کلید مسیر) را از رِسا بگیرید.' }, 401, { 'www-authenticate': 'Bearer realm="rasa"' });
+  }
+  if (request.method === 'GET') return mcpJson({ ok: false, error: 'این سرور جریان SSE جدا ندارد؛ از POST استفاده کنید.' }, 405, { allow: 'POST, DELETE, OPTIONS' });
+  if (request.method === 'DELETE') return new Response(null, { status: 204 });
+  if (request.method !== 'POST') return mcpJson({ ok: false, error: 'method not allowed' }, 405);
+
+  var accept = String(request.headers.get('accept') || '');
+  var wantsSse = accept.indexOf('text/event-stream') > -1 && accept.indexOf('application/json') < 0;
+  let payload;
+  try { payload = await request.json(); } catch { return mcpJson(mcpErr(null, -32700, 'Invalid JSON'), 400, null, wantsSse); }
+  var batch = Array.isArray(payload);
+  var items = batch ? payload : [payload];
+  var out = [];
+  for (var i = 0; i < items.length; i += 1) {
+    var req = items[i] || {};
+    var id = req.id;
+    var method = req.method;
+    var params = req.params || {};
+    if (method === 'initialize') {
+      var want = String(params.protocolVersion || '');
+      out.push(mcpOk(id, {
+        protocolVersion: MCP_SUPPORTED.indexOf(want) > -1 ? want : MCP_LATEST,
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: { name: 'rasa', title: 'رِسا — دستیار کانال تلگرام', version: '1.0.0' },
+        instructions: 'تو به «رِسا» وصل شده‌ای، دستیار کانال تلگرامی مالک. برای انتشار پست: اول make_image (اگر عکس لازم است) بعد publish_post با with_image=true. مناسبت‌ها را فقط از get_occasions بگیر و از خودت نساز. متن پست: فارسی، ۵۰۰ تا ۹۰۰ کاراکتر، حداکثر ۳ ایموجی.'
+      }));
+      continue;
+    }
+    if (method === 'notifications/initialized' || method === 'notifications/cancelled' || id === undefined) { continue; }
+    if (method === 'ping') { out.push(mcpOk(id, {})); continue; }
+    if (method === 'tools/list') { out.push(mcpOk(id, { tools: mcpToolDefs() })); continue; }
+    if (method === 'resources/list') { out.push(mcpOk(id, { resources: [] })); continue; }
+    if (method === 'prompts/list') { out.push(mcpOk(id, { prompts: [] })); continue; }
+    if (method === 'logging/setLevel') { out.push(mcpOk(id, {})); continue; }
+    if (method === 'tools/call') {
+      var name = String(params.name || '');
+      var args = params.arguments || params.args || {};
+      var known = mcpToolDefs().map(function (t) { return t.name; });
+      if (known.indexOf(name) < 0) { out.push(mcpErr(id, -32602, 'ابزار ناشناخته: ' + name)); continue; }
+      try {
+        var res = await mcpCallTool(env, name, args);
+        var content = [{ type: 'text', text: JSON.stringify(res) }];
+        if (name === 'make_image' && res && res.b64) content.push({ type: 'image', data: res.b64, mimeType: 'image/jpeg' });
+        var clean = Object.assign({}, res); delete clean.b64;
+        content[0].text = JSON.stringify(clean);
+        out.push(mcpOk(id, { content: content, isError: !res.ok }));
+      } catch (e) {
+        out.push(mcpOk(id, { content: [{ type: 'text', text: 'خطا: ' + String(e && e.message || e).slice(0, 300) }], isError: true }));
+      }
+      continue;
+    }
+    out.push(mcpErr(id, -32601, 'روش پشتیبانی نمی‌شود: ' + method));
+  }
+  if (!out.length) return new Response(null, { status: 202 });
+  return mcpJson(batch ? out : out[0], 200, null, wantsSse);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   قدرت‌های نسل بعد (b43) — رسانه، کنترل کانال، ترجمه، قیمت بازار،
+   خبرخوان RSS، تکرارشونده، رصد، صف تأیید، گزارش هفتگی، ایده، آرشیو، تیتر.
+   همه از دو مسیر: چت/ویس ربات و MCP (جمنای/کلاد).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+var SP_STYLES = {
+  cinematic: 'cinematic film still, dramatic lighting, shallow depth of field, 35mm, highly detailed',
+  neon: 'neon cyberpunk lighting, glowing accents, night city, vivid colors, high contrast',
+  minimal: 'minimalist composition, generous negative space, soft light, clean aesthetic',
+  watercolor: 'watercolor painting, soft washes, paper texture, artistic',
+  '3d': '3d render, octane render, soft studio lighting, polished, depth of field',
+  retro: 'retro vintage look, film grain, 1970s palette, nostalgic',
+  dark: 'moody dark atmosphere, low key lighting, cinematic contrast'
+};
+var SP_MARKET_FA = {
+  dollar: ['price_dollar_rl', 'دلار', '{v} تومان'],
+  usd: ['price_dollar_rl', 'دلار', '{v} تومان'],
+  'دلار': ['price_dollar_rl', 'دلار', '{v} تومان'],
+  euro: ['price_eur', 'یورو', '{v} تومان'],
+  'یورو': ['price_eur', 'یورو', '{v} تومان'],
+  gold: ['geram18', 'طلای ۱۸عیار (گرم)', '{v} تومان'],
+  'طلا': ['geram18', 'طلای ۱۸عیار (گرم)', '{v} تومان'],
+  mesghal: ['mesghal', 'مثقال طلا', '{v} تومان'],
+  coin: ['sekee', 'سکهٔ امامی', '{v} تومان'],
+  'سکه': ['sekee', 'سکهٔ امامی', '{v} تومان'],
+  nim: ['nim', 'سکهٔ نیم', '{v} تومان'],
+  rob: ['rob', 'سکهٔ ربع', '{v} تومان'],
+  btc: ['crypto-bitcoin', 'بیت‌کوین', '{v} دلار'],
+  bitcoin: ['crypto-bitcoin', 'بیت‌کوین', '{v} دلار'],
+  eth: ['crypto-ethereum', 'اتریوم', '{v} دلار'],
+  'اتریوم': ['crypto-ethereum', 'اتریوم', '{v} دلار'],
+  doge: ['crypto-dogecoin', 'دوج‌کوین', '{v} دلار'],
+  'دوج‌کوین': ['crypto-dogecoin', 'دوج‌کوین', '{v} دلار'],
+  xrp: ['crypto-ripple', 'ریپل', '{v} دلار'],
+  'ریپل': ['crypto-ripple', 'ریپل', '{v} دلار'],
+  sol: ['crypto-solana', 'سولانا', '{v} دلار'],
+  'سولانا': ['crypto-solana', 'سولانا', '{v} دلار'],
+  ton: ['crypto-toncoin', 'تون‌کوین', '{v} دلار'],
+  bnb: ['crypto-binance-coin', 'بایننس‌کوین', '{v} دلار'],
+  'یوان': ['price_cny', 'یوان چین', '{v} تومان'],
+  ethereum: ['crypto-ethereum', 'اتریوم', '{v} دلار'],
+  usdt: ['crypto-tether', 'تتر', '{v} دلار'],
+  'تتر': ['crypto-tether', 'تتر', '{v} دلار'],
+  'تتر تومانی': ['crypto-tether-irr', 'تتر (تومان)', '{v} تومان'],
+  'بیت کوین': ['crypto-bitcoin', 'بیت‌کوین', '{v} دلار'],
+  'بیتكوين': ['crypto-bitcoin', 'بیت‌کوین', '{v} دلار'],
+  gbp: ['price_gbp', 'پوند', '{v} تومان'],
+  'پوند': ['price_gbp', 'پوند', '{v} تومان'],
+  aed: ['price_aed', 'درهم امارات', '{v} تومان'],
+  'درهم': ['price_aed', 'درهم امارات', '{v} تومان'],
+  try_: ['price_try', 'لیر ترکیه', '{v} تومان'],
+  'لیر': ['price_try', 'لیر ترکیه', '{v} تومان'],
+  'یوان': ['price_cny', 'یوان چین', '{v} تومان'],
+  'مثقال': ['mesghal', 'مثقال طلا', '{v} تومان'],
+  'طلا 18': ['geram18', 'طلای ۱۸عیار (گرم)', '{v} تومان'],
+  'گرم طلا': ['geram18', 'طلای ۱۸عیار (گرم)', '{v} تومان'],
+  'سکه امامی': ['sekee', 'سکهٔ امامی', '{v} تومان'],
+  'نیم سکه': ['nim', 'سکهٔ نیم', '{v} تومان'],
+  'ربع سکه': ['rob', 'سکهٔ ربع', '{v} تومان']
+};
+
+function spStripTags(s) {
+  return String(s || '').replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<[^>]+>/g, ' ').replace(/&#(\d+);/g, function (m, d) { return String.fromCharCode(+d); }).replace(/&#x([0-9a-f]+);/gi, function (m, h) { return String.fromCharCode(parseInt(h, 16)); }).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function spInlineMd(md) {
+  return String(md || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\n{3,}/g, '\n\n');
+}
+async function spChannel(env, uid) {
+  var store = new Store(rasaEnv(env), cfg(env));
+  return await store.get('cmd:chan:' + uid, null) || await store.get('cmd:chan:shared', null) || String(env.CMD_CHANNEL || '').trim();
+}
+async function spPublish(env, uid, target, markdown) {
+  var store = new Store(rasaEnv(env), cfg(env));
+  var tg = createTelegram(env, cfg(env));
+  var html = HTML_TAG_RE.test(markdown) ? mixedToHtml(markdown) : mdToHtml(markdown);
+  var out = await publishNow(tg, target, { html: html }, uid, null, store, false);
+  var jr = out && typeof out.json === 'function' ? await out.json() : out;
+  if (jr && jr.ok) await store.put('cmd:last:' + uid, { target: target, message_id: jr.message_id, link: jr.link || '', at: Date.now(), kind: 'text' });
+  return jr || { ok: false, error: 'publish failed' };
+}
+async function spNotify(env, uid, text) { try { return await cmdSay(env, uid, text); } catch (e) { return null; } }
+function spTehran() { return tehranDate(); }
+function spClock(d) { return pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()); }
+
+/* ── رسانهٔ ارسالی مالک (عکس/ویدیو/فایل) ─────────────────────────────────── */
+function spMediaFromMessage(message) {
+  if (message.photo && message.photo.length) {
+    var ps = message.photo[message.photo.length - 1];
+    return { kind: 'photo', fid: ps.file_id, w: ps.width, h: ps.height };
+  }
+  if (message.video) return { kind: 'video', fid: message.video.file_id, w: message.video.width, h: message.video.height };
+  if (message.document) return { kind: 'document', fid: message.document.file_id, name: message.document.file_name || 'file' };
+  return null;
+}
+async function spCaptureMedia(env, message) {
+  var m = spMediaFromMessage(message);
+  if (!m) return null;
+  var store = new Store(rasaEnv(env), cfg(env));
+  var uid = Number(message.from && message.from.id || 0);
+  var box = await store.get('sp:media:' + uid, { items: [] });
+  m.at = Date.now();
+  m.cap = String(message.caption || '').slice(0, 900);
+  box.items = [m].concat(box.items || []).slice(0, 10);
+  await store.put('sp:media:' + uid, box, 30 * 86400);
+  return m;
+}
+
+/* ── RSS ─────────────────────────────────────────────────────────────────── */
+function spXmlItems(xml) {
+  var out = [];
+  var blocks = xml.match(/<item[\s\S]*?<\/item>/gi) || xml.match(/<entry[\s\S]*?<\/entry>/gi) || [];
+  for (var i = 0; i < blocks.length; i += 1) {
+    var b = blocks[i];
+    var t = (b.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || '';
+    var l = (b.match(/<link[^>]*href=["']([^"']+)["'][^>]*>/i) || [])[1] || (b.match(/<link[^>]*>([\s\S]*?)<\/link>/i) || [])[1] || '';
+    var d = (b.match(/<description[^>]*>([\s\S]*?)<\/description>/i) || [])[1] || (b.match(/<summary[^>]*>([\s\S]*?)<\/summary>/i) || [])[1] || '';
+    var g = (b.match(/<guid[^>]*>([\s\S]*?)<\/guid>/i) || [])[1] || l;
+    var title = spStripTags(t);
+    if (!title) continue;
+    out.push({ title: title, link: spStripTags(l) || String(l).trim(), desc: spStripTags(d).slice(0, 800), guid: spStripTags(g).slice(0, 200) || title });
+    if (out.length >= 15) break;
+  }
+  return out;
+}
+async function spFetchText(url, ms) {
+  var ctl = new AbortController();
+  var timer = setTimeout(function () { ctl.abort(); }, ms || 9000);
+  try {
+    var r = await fetch(url, { signal: ctl.signal, headers: { 'user-agent': 'Mozilla/5.0 (compatible; RasaBot/1.0)' } });
+    return { ok: r.ok, status: r.status, text: (await r.text()).slice(0, 400000) };
+  } catch (e) { return { ok: false, status: 0, text: '', error: String(e && e.message || e) }; }
+  finally { clearTimeout(timer); }
+}
+async function spHash(text) {
+  var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(text).slice(0, 100000)));
+  return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('').slice(0, 24);
+}
+
+/* ── ابزارها ─────────────────────────────────────────────────────────────── */
+async function spTool(env, uid, name, args, ctx) {
+  var store = new Store(rasaEnv(env), cfg(env));
+  var tg = ctx.tg || createTelegram(env, cfg(env));
+  var chan = ctx.channel || await spChannel(env, uid);
+
+  /* — عکس با استایل — */
+  if (name === 'make_image') {
+    var st = String(args.style || '').toLowerCase().trim();
+    var prompt = String(args.prompt || '').slice(0, 500);
+    if (st && SP_STYLES[st]) prompt += ', ' + SP_STYLES[st];
+    var b64 = await cmdAiImage(env, prompt);
+    var fid2 = '';
+    try { var up = await cmdSendPhoto(env, ctx.chatId || uid, b64, '🖼 پیش‌نمایش عکس' + (st && SP_STYLES[st] ? ' (استایل: ' + st + ')' : '') + ' — اگر خوبه بگو بذارم تو کانال'); fid2 = up.file_id || ''; } catch (e) {}
+    if (fid2) await store.put('cmd:img:' + uid, { file_id: fid2, at: Date.now(), prompt: prompt.slice(0, 200) });
+    return { ok: true, file_id: fid2, b64: b64, style: st || 'none', prompt: prompt.slice(0, 200) };
+  }
+
+  /* — انتشار رسانهٔ مالک — */
+  if (name === 'publish_media') {
+    if (!chan) return { ok: false, error: 'کانالی تنظیم نشده' };
+    var box = await store.get('sp:media:' + uid, { items: [] });
+    var items = box.items || [];
+    var pick = null;
+    if (args.url && /^https?:\/\//.test(String(args.url))) pick = { kind: 'photo', fid: String(args.url), fromUrl: true };
+    else if (args.index !== undefined) pick = items[Number(args.index) || 0] || null;
+    else pick = items[0] || null;
+    if (!pick) return { ok: false, error: 'رسانه‌ای پیدا نشد؛ اول عکس/ویدیو را در پیوی ربات بفرست' };
+    var caption = String(args.caption || pick.cap || '').trim();
+    var ip = {}; if (caption) { ip.caption = spInlineMd(caption).slice(0, 1000); ip.parse_mode = 'HTML'; }
+    var method = pick.kind === 'video' ? 'sendVideo' : pick.kind === 'document' ? 'sendDocument' : 'sendPhoto';
+    var field = pick.kind === 'video' ? 'video' : pick.kind === 'document' ? 'document' : 'photo';
+    var payload = { chat_id: chan }; payload[field] = pick.fid;
+    Object.assign(payload, ip);
+    var sent = await cmdTg(env, method, payload);
+    await store.put('cmd:last:' + uid, { target: chan, message_id: sent.message_id, at: Date.now(), kind: 'media' });
+    return { ok: true, kind: pick.kind, message_id: sent.message_id, link: 'https://t.me/' + String(chan).replace('@', '') + '/' + sent.message_id };
+  }
+  if (name === 'album') {
+    if (!chan) return { ok: false, error: 'کانالی تنظیم نشده' };
+    var boxA = await store.get('sp:media:' + uid, { items: [] });
+    var list = (boxA.items || []).filter(function (x) { return x.kind !== 'document'; }).slice(0, Number(args.count || 10));
+    var urls = Array.isArray(args.urls) ? args.urls.filter(function (u) { return /^https?:\/\//.test(String(u)); }) : [];
+    var media = urls.length ? urls.map(function (u) { return { type: 'photo', media: u }; })
+      : list.map(function (x) { return { type: x.kind === 'video' ? 'video' : 'photo', media: x.fid }; });
+    if (media.length < 2) return { ok: false, error: 'برای آلبوم حداقل ۲ عکس لازم است (در پیوی ربات بفرست)' };
+    var cap = String(args.caption || '').trim();
+    if (cap) { media[0].caption = spInlineMd(cap).slice(0, 1000); media[0].parse_mode = 'HTML'; }
+    var grp = await cmdTg(env, 'sendMediaGroup', { chat_id: chan, media: media });
+    var firstId = Array.isArray(grp) && grp[0] ? grp[0].message_id : 0;
+    if (firstId) await store.put('cmd:last:' + uid, { target: chan, message_id: firstId, at: Date.now(), kind: 'album' });
+    return { ok: true, count: media.length, message_id: firstId };
+  }
+
+  /* — کنترل کانال — */
+  if (name === 'delete_post') {
+    var mid = Number(args.message_id || (args.last ? ((await store.get('cmd:last:' + uid, {}) || {}).message_id || 0) : 0));
+    if (!mid) return { ok: false, error: 'شمارهٔ پیام لازم است' };
+    await tg.deleteMessage(chan, mid);
+    return { ok: true, deleted: mid };
+  }
+  if (name === 'replace_last') {
+    var last = await store.get('cmd:last:' + uid, null);
+    var md2 = String(args.text || '').trim();
+    if (!md2) return { ok: false, error: 'متن تازه لازم است' };
+    if (last && last.message_id) { try { await tg.deleteMessage(last.target || chan, last.message_id); } catch (e) {} }
+    var img = await store.get('cmd:img:' + uid, null);
+    var html2 = HTML_TAG_RE.test(md2) ? mixedToHtml(md2) : mdToHtml(md2);
+    if (args.keep_image !== false && img && img.file_id) html2 = '<img src="tg://photo?id=' + img.file_id + '"/>' + html2;
+    var out2 = await publishNow(tg, chan, { html: html2 }, uid, null, store, false);
+    var jr2 = out2 && typeof out2.json === 'function' ? await out2.json() : out2;
+    if (jr2 && jr2.ok) await store.put('cmd:last:' + uid, { target: chan, message_id: jr2.message_id, link: jr2.link || '', at: Date.now() });
+    return jr2 || { ok: false, error: 'جایگزینی ناموفق' };
+  }
+  if (name === 'pin_post') {
+    var pmid = Number(args.message_id || ((await store.get('cmd:last:' + uid, {}) || {}).message_id || 0));
+    if (!pmid) return { ok: false, error: 'شمارهٔ پیام لازم است' };
+    await cmdTg(env, 'pinChatMessage', { chat_id: chan, message_id: pmid, disable_notification: args.silent === true });
+    return { ok: true, pinned: pmid };
+  }
+  if (name === 'unpin_post') {
+    var umid = Number(args.message_id || ((await store.get('cmd:last:' + uid, {}) || {}).message_id || 0));
+    if (umid) await cmdTg(env, 'unpinChatMessage', { chat_id: chan, message_id: umid });
+    else await cmdTg(env, 'unpinAllChatMessages', { chat_id: chan });
+    return { ok: true };
+  }
+  if (name === 'mute_user') {
+    if (!chan) return { ok: false, error: 'کانالی تنظیم نشده' };
+    var tuid = Number(args.user_id || 0);
+    if (!tuid) return { ok: false, error: 'user_id لازم است' };
+    var mins = Number(args.minutes || 60);
+    await cmdTg(env, 'restrictChatMember', {
+      chat_id: chan, user_id: tuid,
+      permissions: { can_send_messages: false, can_send_audios: false, can_send_documents: false, can_send_photos: false, can_send_videos: false, can_send_polls: false, can_send_other_messages: false, can_add_web_page_previews: false },
+      until_date: Math.floor(Date.now() / 1000) + mins * 60
+    });
+    return { ok: true, user_id: tuid, minutes: mins };
+  }
+  if (name === 'ban_user') {
+    if (!chan) return { ok: false, error: 'کانالی تنظیم نشده' };
+    var buid = Number(args.user_id || 0);
+    if (!buid) return { ok: false, error: 'user_id لازم است' };
+    await cmdTg(env, 'banChatMember', { chat_id: chan, user_id: buid, revoke_messages: args.delete_messages === true });
+    return { ok: true, banned: buid };
+  }
+  if (name === 'unban_user') {
+    if (!chan) return { ok: false, error: 'کانالی تنظیم نشده' };
+    await cmdTg(env, 'unbanChatMember', { chat_id: chan, user_id: Number(args.user_id || 0), only_if_banned: true });
+    return { ok: true };
+  }
+
+  /* — ترجمه — */
+  if (name === 'translate') {
+    var txt = String(args.text || '').slice(0, 4000);
+    if (!txt) return { ok: false, error: 'متن خالی است' };
+    var to = ({ fa: 'fa', farsi: 'fa', فارسی: 'fa', en: 'en', english: 'en', انگلیسی: 'en', ar: 'ar', عربی: 'ar', tr: 'tr', ru: 'ru', de: 'de', fr: 'fr' })[String(args.to || 'fa').toLowerCase()] || 'fa';
+    var src = ({ fa: 'fa', en: 'en' })[String(args.from || '').toLowerCase()] || 'en';
+    var tr = null;
+    try {
+      if (env.AI && typeof env.AI.run === 'function') tr = await env.AI.run('@cf/meta/m2m100-1.2b', { text: txt, source_lang: src, target_lang: to });
+      else if (cmdConfig(env).brain) {
+        var g = await fetch(cmdConfig(env).brain + '/run?k=' + encodeURIComponent(cmdConfig(env).brainKey), {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ model: '@cf/meta/m2m100-1.2b', payload: { text: txt, source_lang: src, target_lang: to } })
+        });
+        var gj = await g.json();
+        if (gj.ok) { try { tr = JSON.parse(gj.text); } catch (e2) { tr = { translated_text: String(gj.text) }; } }
+      }
+    } catch (e) { tr = null; }
+    var outTxt = tr && (tr.translated_text || tr.response || (typeof tr === 'string' ? tr : '')) || '';
+    if (!outTxt) return { ok: false, error: 'ترجمه در دسترس نبود' };
+    return { ok: true, to: to, from: src, text: String(outTxt).slice(0, 4000) };
+  }
+
+  /* — قیمت بازار — */
+  if (name === 'market') {
+    var want = String(args.asset || 'دلار').trim().toLowerCase();
+    var g2 = await spFetchText('https://call1.tgju.org/ajax.json', 9000);
+    if (!g2.ok || !g2.text) return { ok: false, error: 'منبع قیمت در دسترس نیست' };
+    var data = null; try { data = JSON.parse(g2.text); } catch (e) { data = null; }
+    if (!data || !data.current) return { ok: false, error: 'پاسخ منبع قیمت ناخوانا بود' };
+    function pick2(key) {
+      var row = data.current[key];
+      if (row && row.p) return { raw: String(row.p), at: String(row.t_en || row.t || '') };
+      var alt = data.current[key + '-sell'] || data.current[key + '-buy'];
+      return alt && alt.p ? { raw: String(alt.p), at: String(alt.t_en || alt.t || '') } : null;
+    }
+    if (want === 'all' || want === 'همه') {
+      var many = ['price_dollar_rl', 'price_eur', 'geram18', 'sekee', 'crypto-bitcoin', 'crypto-ethereum', 'crypto-tether', 'mesghal', 'nim', 'rob', 'price_gbp', 'price_aed'];
+      var rows = [];
+      for (var i2 = 0; i2 < many.length; i2 += 1) {
+        var p2 = pick2(many[i2]);
+        if (p2) rows.push({ asset: many[i2], value: p2.raw, at: p2.at });
+      }
+      return { ok: true, updated_at: (rows[0] && rows[0].at) || '', rows: rows, source: 'tgju.org' };
+    }
+    var map = SP_MARKET_FA[want];
+    if (!map) {
+      var nrm = function (x) { return String(x || '').replace(/[\u200c\u200e\u200f\sـ]/g, '').replace(/ي/g, 'ی').replace(/ك/g, 'ک').toLowerCase(); };
+      var nw = nrm(want);
+      for (var kk in SP_MARKET_FA) { if (nrm(kk) === nw) { map = SP_MARKET_FA[kk]; break; } }
+      if (!map) {
+        var cands = [nw, nw.replace(/^قیمت/, ''), nw.replace(/^(قیمت|نرخ)/, '')];
+        for (var ci = 0; ci < cands.length && !map; ci += 1) {
+          for (var kk2 in SP_MARKET_FA) { if (nrm(kk2).indexOf(cands[ci]) > -1 && cands[ci].length > 2) { map = SP_MARKET_FA[kk2]; break; } }
+        }
+      }
+    }
+    var key2 = map ? map[0] : String(args.asset || '').trim();
+    var hit = pick2(key2) || pick2('crypto-' + want) || pick2(want + '-irr') || pick2('price_' + want);
+    if (!hit) return { ok: false, error: 'برای «' + args.asset + '» قیمتی پیدا نکردم (مثل: دلار، طلا، سکه، یورو، بیتکوین)' };
+    var label = map ? map[1] : want;
+    var fmt = map ? map[2] : '{v}';
+    var nice = String(hit.raw).replace(/\B(?=(\d{3})+(?!\d))/g, '٬');
+    return { ok: true, asset: label, value: String(hit.raw), text: fmt.replace('{v}', nice), updated_at: hit.at, source: 'tgju.org' };
+  }
+
+  /* — صدا (انگلیسی) — */
+  if (name === 'make_voice') {
+    var vt = String(args.text || '').slice(0, 600);
+    if (!vt) return { ok: false, error: 'متن خالی است' };
+    var audioB64 = '';
+    try {
+      var vr = null;
+      if (env.AI && typeof env.AI.run === 'function') vr = await env.AI.run('@cf/myshell-ai/melotts', { prompt: vt, lang: 'en' });
+      else if (cmdConfig(env).brain) {
+        var vg = await fetch(cmdConfig(env).brain + '/run?k=' + encodeURIComponent(cmdConfig(env).brainKey), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: '@cf/myshell-ai/melotts', payload: { prompt: vt, lang: 'en' } }) });
+        var vj = await vg.json();
+        if (vj.ok) { try { vr = JSON.parse(vj.text); } catch (e3) { vr = { audio: vj.text }; } }
+      }
+      audioB64 = vr && (vr.audio || '') || '';
+    } catch (e) { audioB64 = ''; }
+    if (!audioB64) return { ok: false, error: 'ساخت صدا در دسترس نبود' };
+    var bytes = Uint8Array.from(atob(audioB64), function (c) { return c.charCodeAt(0); });
+    var fd2 = new FormData();
+    fd2.append('chat_id', String(ctx.chatId || uid));
+    if (args.caption) fd2.append('caption', String(args.caption).slice(0, 900));
+    fd2.append('voice', new Blob([bytes], { type: 'audio/ogg' }), 'voice.ogg');
+    await fetch('https://api.telegram.org/bot' + env.BOT_TOKEN + '/sendVoice', { method: 'POST', body: fd2 });
+    return { ok: true, note: 'صدا ساخته و به پیوی فرستاده شد (فقط انگلیسی)' };
+  }
+
+  /* — صف تأیید — */
+  if (name === 'draft_post') {
+    if (!chan) return { ok: false, error: 'کانالی تنظیم نشده' };
+    var dtext = String(args.text || '').trim();
+    if (!dtext) return { ok: false, error: 'متن خالی است' };
+    var did = 'd' + Date.now().toString(36);
+    var useImg = args.with_image === true;
+    await store.put('sp:draft:' + uid + ':' + did, { text: dtext, target: chan, with_image: useImg, at: Date.now() }, 3 * 86400);
+    var preview = await cmdSay(env, ctx.chatId || uid, '📝 <b>پیش‌نویس آماده است</b>\n\n' + spInlineMd(dtext).slice(0, 3000));
+    try {
+      await cmdTg(env, 'editMessageReplyMarkup', { chat_id: ctx.chatId || uid, message_id: preview.message_id, reply_markup: { inline_keyboard: [[{ text: '✅ تأیید و انتشار', callback_data: 'sp:ok:' + did }, { text: '❌ رد', callback_data: 'sp:no:' + did }]] } });
+    } catch (e) { /* دکمه لازم نیست؛ brain می‌تواند publish_post بزند */ }
+    return { ok: true, draft_id: did, note: 'پیش‌نویس به پیوی مالک رفت؛ با دکمهٔ ✅ منتشر می‌شود (اگر دکمه نبود، بگو منتشر کن)' };
+  }
+  if (name === 'publish_draft') {
+    var pid = String(args.draft_id || '');
+    var d2 = pid ? await store.get('sp:draft:' + uid + ':' + pid, null) : null;
+    if (!d2) return { ok: false, error: 'پیش‌نویس پیدا نشد' };
+    var img2 = await store.get('cmd:img:' + uid, null);
+    var htmlD = HTML_TAG_RE.test(d2.text) ? mixedToHtml(d2.text) : mdToHtml(d2.text);
+    if (d2.with_image && img2 && img2.file_id) htmlD = '<img src="tg://photo?id=' + img2.file_id + '"/>' + htmlD;
+    var outD = await publishNow(tg, d2.target || chan, { html: htmlD }, uid, null, store, false);
+    var jrD = outD && typeof outD.json === 'function' ? await outD.json() : outD;
+    if (jrD && jrD.ok) await store.put('sp:draft:' + uid + ':' + pid, null);
+    return jrD || { ok: false, error: 'انتشار ناموفق' };
+  }
+
+  /* — گزارش هفتگی — */
+  if (name === 'weekly_report') {
+    if (!chan) return { ok: false, error: 'کانالی تنظیم نشده' };
+    var username = String(chan).replace('@', '');
+    var st2 = await channelDayStats(env, tg, chan, username);
+    var posts = await tgPublicPosts(username, 3);
+    var week = (posts || []).filter(function (p) { return Date.now() - (p.at || 0) < 7 * 864e5; });
+    var totalViews = week.reduce(function (a, p) { return a + (p.views || 0); }, 0);
+    var best = week.slice().sort(function (a, b) { return (b.views || 0) - (a.views || 0); })[0] || null;
+    var byHour = {};
+    week.forEach(function (p) { var h = new Date((p.at || 0) + 126e5).getUTCHours(); byHour[h] = (byHour[h] || 0) + (p.views || 0); });
+    var bestHour = Object.keys(byHour).sort(function (a, b) { return byHour[b] - byHour[a]; })[0];
+    var cnt = (st2 && (st2.postsY || 0)) + (st2 && (st2.postsYY || 0)) || 0;
+    return {
+      ok: true, channel: chan, week_posts: week.length, week_views: totalViews, scan_limit: (posts || []).length,
+      best_post: best ? { id: best.id, views: best.views, title: String(best.title || best.snippet || '').slice(0, 90) } : null,
+      best_hour_tehran: bestHour !== undefined ? bestHour + ':00' : null,
+      yesterday: st2 ? { posts: st2.postsY, views: st2.viewsY } : null,
+      tip: bestHour !== undefined ? 'بهترین ساعت انتشار ~' + bestHour + ':00 به وقت تهران است' : 'هنوز داده کافی نیست'
+    };
+  }
+
+  /* — ایده — */
+  if (name === 'suggest') {
+    var topic = String(args.topic || '').slice(0, 120);
+    var occ = await occasionsFor(env, jalaliOf(tehranDate()));
+    var ranked = occRank(occ, 3).map(function (e) { return e.d; });
+    var prompt = 'برای کانال تلگرامی من ' + (topic ? 'با موضوع «' + topic + '» ' : '') + 'پنج ایدهٔ پست بده. ' +
+      (ranked.length ? 'مناسبت امروز: ' + ranked.join('، ') + '. ' : '') +
+      'هر ایده: یک تیتر جذاب + یک خط توضیح + نوع پست (متنی/عکس‌دار). فارسی، خلاصه، شماره‌دار. بدون مقدمه.';
+    var ideas = await cmdBrain(env, [{ role: 'user', content: prompt }], 700);
+    return { ok: true, ideas: String(ideas).slice(0, 3000), occasions: ranked };
+  }
+
+  /* — جست‌وجو در آرشیو — */
+  if (name === 'search_archive') {
+    if (!chan) return { ok: false, error: 'کانالی تنظیم نشده' };
+    var q = String(args.query || '').trim();
+    if (!q) return { ok: false, error: 'عبارت جست‌وجو لازم است' };
+    var posts2 = await tgPublicPosts(String(chan).replace('@', ''), 4);
+    var hits = (posts2 || []).filter(function (p) { return (p.snippet || '').indexOf(q) > -1; }).slice(0, 5);
+    return { ok: true, query: q, found: hits.length, results: hits.map(function (p) { return { id: p.id, views: p.views, text: String(p.snippet || '').slice(0, 140) }; }) };
+  }
+
+  /* — خبرخوان RSS — */
+  if (name === 'rss_add') {
+    var url = String(args.url || '').trim();
+    if (!/^https?:\/\//.test(url)) return { ok: false, error: 'آدرس فید نامعتبر' };
+    var tgt = String(args.target || chan || '').trim();
+    if (!tgt) return { ok: false, error: 'کانال مقصد لازم است' };
+    var rb = await store.get('sp:rss:' + uid, { items: [] });
+    var item = {
+      id: 'r' + Date.now().toString(36), url: url, target: tgt,
+      every: Math.max(10, Math.min(1440, Number(args.every_minutes || 120))),
+      rewrite: args.rewrite !== false, max: Math.max(1, Math.min(3, Number(args.max_per_run || 2))),
+      lastRun: 0, lastErr: '', seen: 0
+    };
+    rb.items = [item].concat((rb.items || []).filter(function (x) { return x.url !== url; })).slice(0, 10);
+    await store.put('sp:rss:' + uid, rb, 400 * 86400);
+    var idx = await store.get('sp:ids', { uids: [] });
+    idx.uids = Array.from(new Set((idx.uids || []).concat([uid]))).slice(0, 200);
+    await store.put('sp:ids', idx, 400 * 86400);
+    return { ok: true, id: item.id, every_minutes: item.every, rewrite: item.rewrite, note: 'از این به بعد هر ' + item.every + ' دقیقه خبرهای تازه منتشر می‌شود' };
+  }
+  if (name === 'rss_list') {
+    var rl = await store.get('sp:rss:' + uid, { items: [] });
+    return { ok: true, feeds: (rl.items || []).map(function (x) { return { id: x.id, url: x.url, every_minutes: x.every, rewrite: x.rewrite, lastErr: x.lastErr || null }; }) };
+  }
+  if (name === 'rss_remove') {
+    var rr = await store.get('sp:rss:' + uid, { items: [] });
+    var before = (rr.items || []).length;
+    rr.items = (rr.items || []).filter(function (x) { return x.id !== String(args.id || ''); });
+    await store.put('sp:rss:' + uid, rr);
+    return { ok: true, removed: before - rr.items.length };
+  }
+
+  /* — تکرارشونده — */
+  if (name === 'recurring_add') {
+    var at = String(args.at || '07:00');
+    if (!/^\d{1,2}:\d{2}$/.test(at)) return { ok: false, error: 'ساعت را مثل 07:30 بده' };
+    var kind = args.kind === 'ai' ? 'ai' : 'text';
+    var bodyT = String(args.text || args.prompt || '').trim();
+    if (!bodyT) return { ok: false, error: 'متن یا پرامپت لازم است' };
+    var rc = await store.get('sp:rec:' + uid, { items: [] });
+    var ritem = { id: 'c' + Date.now().toString(36), at: at, kind: kind, text: bodyT.slice(0, 2000), target: String(args.target || chan || '').trim(), lastDay: '' };
+    rc.items = [ritem].concat(rc.items || []).slice(0, 10);
+    await store.put('sp:rec:' + uid, rc, 400 * 86400);
+    var idx2 = await store.get('sp:ids', { uids: [] });
+    idx2.uids = Array.from(new Set((idx2.uids || []).concat([uid]))).slice(0, 200);
+    await store.put('sp:ids', idx2, 400 * 86400);
+    return { ok: true, id: ritem.id, at: at, kind: kind, note: kind === 'ai' ? 'هر روز آن ساعت یک پست تازه با هوش مصنوعی نوشته و منتشر می‌شود' : 'هر روز آن ساعت همان متن منتشر می‌شود' };
+  }
+  if (name === 'recurring_list') {
+    var rcl = await store.get('sp:rec:' + uid, { items: [] });
+    return { ok: true, items: rcl.items || [] };
+  }
+  if (name === 'recurring_remove') {
+    var rcr = await store.get('sp:rec:' + uid, { items: [] });
+    var b2 = (rcr.items || []).length;
+    rcr.items = (rcr.items || []).filter(function (x) { return x.id !== String(args.id || ''); });
+    await store.put('sp:rec:' + uid, rcr);
+    return { ok: true, removed: b2 - rcr.items.length };
+  }
+
+  /* — رصد — */
+  if (name === 'watch_add') {
+    var wurl = String(args.url || '').trim();
+    if (!/^https?:\/\//.test(wurl)) return { ok: false, error: 'آدرس نامعتبر' };
+    var wkind = args.kind === 'contains' ? 'contains' : 'changed';
+    var wb = await store.get('sp:watch:' + uid, { items: [] });
+    var witem = { id: 'w' + Date.now().toString(36), url: wurl, kind: wkind, value: String(args.value || '').slice(0, 200), note: String(args.note || '').slice(0, 400), post: args.post === true, target: String(args.target || chan || '').trim(), hash: '', lastRun: 0, hits: 0 };
+    wb.items = [witem].concat(wb.items || []).slice(0, 10);
+    await store.put('sp:watch:' + uid, wb, 400 * 86400);
+    var idx3 = await store.get('sp:ids', { uids: [] });
+    idx3.uids = Array.from(new Set((idx3.uids || []).concat([uid]))).slice(0, 200);
+    await store.put('sp:ids', idx3, 400 * 86400);
+    return { ok: true, id: witem.id, kind: wkind, note: 'هر ~۱۰ دقیقه چک می‌شود و اگر تغییر/شرط رخ داد خبرت می‌کنم' };
+  }
+  if (name === 'watch_list') {
+    var wl = await store.get('sp:watch:' + uid, { items: [] });
+    return { ok: true, items: (wl.items || []).map(function (x) { return { id: x.id, url: x.url, kind: x.kind, value: x.value, hits: x.hits, post: x.post }; }) };
+  }
+  if (name === 'watch_remove') {
+    var wr = await store.get('sp:watch:' + uid, { items: [] });
+    var b3 = (wr.items || []).length;
+    wr.items = (wr.items || []).filter(function (x) { return x.id !== String(args.id || ''); });
+    await store.put('sp:watch:' + uid, wr);
+    return { ok: true, removed: b3 - wr.items.length };
+  }
+
+  /* — خوش‌آمد — */
+  if (name === 'welcome_set') {
+    var wtext = String(args.text || '').trim();
+    if (!wtext && args.off !== true) return { ok: false, error: 'متن خوش‌آمد لازم است' };
+    var wchat = String(args.chat || chan || '').trim();
+    if (!wchat) return { ok: false, error: 'کانال/گروه لازم است' };
+    if (args.off === true) {
+      await store.put('sp:welcome:' + wchat, null);
+      return { ok: true, off: true };
+    }
+    await store.put('sp:welcome:' + wchat, { text: wtext.slice(0, 1500), at: Date.now() }, 400 * 86400);
+    return { ok: true, chat: wchat, note: 'از این به بعد عضو جدید که بیاید، این پیام فرستاده می‌شود ({name} = اسم عضو)' };
+  }
+
+  return null;
+}
+
+/* — دکمه‌های تأیید در پیوی مالک — */
+async function spCallback(env, cb) {
+  var data = String(cb && cb.data || '');
+  if (data.indexOf('sp:') !== 0) return false;
+  var parts = data.split(':');
+  var action = parts[1], did = parts[2] || '';
+  var uid = Number(cb.from && cb.from.id || 0);
+  var store = new Store(rasaEnv(env), cfg(env));
+  try {
+    if (action === 'ok') {
+      var d = await store.get('sp:draft:' + uid + ':' + did, null);
+      if (!d) { await cmdTg(env, 'answerCallbackQuery', { callback_query_id: cb.id, text: 'پیش‌نویس منقضی شد' }); return true; }
+      var tg = createTelegram(env, cfg(env));
+      var img = await store.get('cmd:img:' + uid, null);
+      var html = HTML_TAG_RE.test(d.text) ? mixedToHtml(d.text) : mdToHtml(d.text);
+      if (d.with_image && img && img.file_id) html = '<img src="tg://photo?id=' + img.file_id + '"/>' + html;
+      var out = await publishNow(tg, d.target, { html: html }, uid, null, store, false);
+      var jr = out && typeof out.json === 'function' ? await out.json() : out;
+      await store.put('sp:draft:' + uid + ':' + did, null);
+      await cmdTg(env, 'answerCallbackQuery', { callback_query_id: cb.id, text: jr && jr.ok ? 'منتشر شد ✅' : 'خطا در انتشار' });
+      try { await cmdTg(env, 'editMessageText', { chat_id: uid, message_id: cb.message && cb.message.message_id, text: (jr && jr.ok ? '✅ منتشر شد: ' + (jr.link || '') : '⚠️ انتشار ناموفق') }); } catch (e) {}
+      if (jr && jr.ok) await store.put('cmd:last:' + uid, { target: d.target, message_id: jr.message_id, link: jr.link || '', at: Date.now() });
+      return true;
+    }
+    if (action === 'no') {
+      await store.put('sp:draft:' + uid + ':' + did, null);
+      await cmdTg(env, 'answerCallbackQuery', { callback_query_id: cb.id, text: 'رد شد' });
+      try { await cmdTg(env, 'editMessageText', { chat_id: uid, message_id: cb.message && cb.message.message_id, text: '❌ پیش‌نویس رد شد.' }); } catch (e) {}
+      return true;
+    }
+  } catch (e) {
+    try { await cmdTg(env, 'answerCallbackQuery', { callback_query_id: cb.id, text: 'خطا: ' + String(e.message || e).slice(0, 60) }); } catch (e2) {}
+    return true;
+  }
+  return false;
+}
+
+/* — ورود عضو جدید — */
+async function spChatMember(env, cm) {
+  try {
+    var st = cm && cm.new_chat_member && cm.new_chat_member.status;
+    var old = cm && cm.old_chat_member && cm.old_chat_member.status;
+    if (!st || (st !== 'member' && st !== 'restricted')) return false;
+    if (old && old !== 'left' && old !== 'kicked') return false;
+    var chat = cm.chat || {};
+    var key = chat.username ? '@' + chat.username : String(chat.id);
+    var store = new Store(rasaEnv(env), cfg(env));
+    var cfgW = await store.get('sp:welcome:' + key, null) || await store.get('sp:welcome:' + chat.id, null);
+    if (!cfgW || !cfgW.text) return false;
+    var name = (cm.new_chat_member.user && (cm.new_chat_member.user.first_name || cm.new_chat_member.user.username)) || 'دوست تازه';
+    await cmdTg(env, 'sendMessage', { chat_id: chat.id, text: spInlineMd(cfgW.text.replace(/\{name\}/g, name)) });
+    return true;
+  } catch (e) { return false; }
+}
+
+/* — تیک هر دقیقه: تکرارشونده + RSS + رصد ─────────────────────────────── */
+async function spTick(env) {
+  var store = new Store(rasaEnv(env), cfg(env));
+  var idx = await store.get('sp:ids', { uids: [] });
+  var uids = (idx.uids || []).slice(0, 200);
+  if (!uids.length) return;
+  var now = spTehran();
+  var clock = spClock(now);
+  var dayKey = now.getUTCFullYear() + '-' + pad2(now.getUTCMonth() + 1) + '-' + pad2(now.getUTCDate());
+
+  for (var u = 0; u < uids.length; u += 1) {
+    var uid = uids[u];
+    var chan = await spChannel(env, uid);
+    var tg = createTelegram(env, cfg(env));
+
+    /* تکرارشونده‌ها */
+    try {
+      var rc = await store.get('sp:rec:' + uid, { items: [] });
+      var touched = false;
+      for (var i = 0; i < (rc.items || []).length; i += 1) {
+        var it = rc.items[i];
+        if (!it.on === false) continue;
+        if (it.lastDay === dayKey) continue;
+        if (it.at !== clock) continue;
+        var target = it.target || chan;
+        if (!target) continue;
+        var text = it.text;
+        if (it.kind === 'ai') {
+          var occ2 = await occasionsFor(env, jalaliOf(now));
+          var ranked2 = occRank(occ2, 3).map(function (e) { return e.d; });
+          text = await cmdBrain(env, [{ role: 'user', content: 'برای کانال تلگرامی من یک پست بنویس: ' + it.text + (ranked2.length ? '\nمناسبت امروز: ' + ranked2.join('، ') : '') + '\nفارسی، ۵۰۰ تا ۹۰۰ کاراکتر، حداکثر ۳ ایموجی، پایان با یک جمع‌بندی. فقط متن پست.' }], 900);
+        }
+        var jr = await spPublish(env, uid, target, String(text));
+        it.lastDay = dayKey;
+        touched = true;
+        await spNotify(env, uid, (jr && jr.ok ? '⏰ پست زمان‌بندی‌شدهٔ ' + it.at + ' منتشر شد' + (jr.link ? ': ' + jr.link : '') : '⚠️ انتشار زمان‌بندی‌شده ناموفق: ' + ((jr && jr.error) || '')));
+      }
+      if (touched) await store.put('sp:rec:' + uid, rc, 400 * 86400);
+    } catch (e) { /* نگذار تیک بخوابد */ }
+
+    /* RSS */
+    try {
+      var rb = await store.get('sp:rss:' + uid, { items: [] });
+      var rTouched = false;
+      for (var j = 0; j < (rb.items || []).length; j += 1) {
+        var f = rb.items[j];
+        if (!f.url || (f.target || chan) === '') continue;
+        if (Date.now() - (f.lastRun || 0) < (f.every || 120) * 60000) continue;
+        f.lastRun = Date.now();
+        rTouched = true;
+        var got = await spFetchText(f.url, 9000);
+        if ((!got.ok && !(got.text && got.text.indexOf('<') > -1)) || !got.text) { f.lastErr = 'HTTP ' + got.status + (got.error ? ' ' + got.error.slice(0, 60) : ''); continue; }
+        var items = spXmlItems(got.text);
+        if (!items.length) { f.lastErr = 'فید خالی یا ناخوانا'; continue; }
+        var seenBox = await store.get('sp:rss:seen:' + f.id, { guids: [] });
+        var seen = seenBox.guids || [];
+        if (!seen.length) { // اولین اجرا: فقط علامت بزن، چیزی منتشر نکن
+          seenBox.guids = items.slice(0, 12).map(function (x) { return x.guid; });
+          await store.put('sp:rss:seen:' + f.id, seenBox, 200 * 86400);
+          f.seen = seenBox.guids.length;
+          f.lastErr = '';
+          continue;
+        }
+        var fresh = items.filter(function (x) { return seen.indexOf(x.guid) < 0; }).slice(0, f.max || 2);
+        for (var k = 0; k < fresh.length; k += 1) {
+          var news = fresh[k];
+          var postText;
+          if (f.rewrite) {
+            try {
+              postText = await cmdBrain(env, [{ role: 'user', content: 'این خبر را برای کانال تلگرامی من به فارسیِ روان بازنویسی کن (نه کپی):\nعنوان: ' + news.title + '\nخلاصه: ' + news.desc + '\n\nقواعد: ۴۰۰ تا ۷۰۰ کاراکتر، لحن خبری-خودمانی، حداکثر ۲ ایموجی، ته پست منبع را به شکل «منبع: ' + news.link + '» بگذار. فقط متن پست.' }], 700);
+            } catch (e) { postText = null; }
+          }
+          if (!postText) postText = '📰 **' + news.title + '**\n\n' + (news.desc ? news.desc.slice(0, 400) + '\n\n' : '') + 'منبع: ' + news.link;
+          var jr2 = await spPublish(env, uid, f.target || chan, String(postText));
+          seenBox.guids = Array.from(new Set([news.guid].concat(seenBox.guids))).slice(0, 60);
+          if (jr2 && jr2.ok) await spNotify(env, uid, '📰 خبر تازه منتشر شد' + (jr2.link ? ': ' + jr2.link : ''));
+        }
+        await store.put('sp:rss:seen:' + f.id, seenBox, 200 * 86400);
+        f.seen = (seenBox.guids || []).length;
+        f.lastErr = '';
+      }
+      if (rTouched) await store.put('sp:rss:' + uid, rb, 400 * 86400);
+    } catch (e) { /* ادامه */ }
+
+    /* رصد */
+    try {
+      var wb2 = await store.get('sp:watch:' + uid, { items: [] });
+      var wTouched = false;
+      for (var w = 0; w < (wb2.items || []).length; w += 1) {
+        var wi = wb2.items[w];
+        if (Date.now() - (wi.lastRun || 0) < 10 * 60000) continue;
+        wi.lastRun = Date.now();
+        wTouched = true;
+        var page = await spFetchText(wi.url, 9000);
+        if (!page.text || page.text.length < 40) continue;
+        if (wi.kind === 'contains') {
+          var has = wi.value && page.text.indexOf(wi.value) > -1;
+          if (has) {
+            wi.hits = (wi.hits || 0) + 1;
+            var msg = '👁 در «' + wi.url + '» عبارت «' + wi.value + '» پیدا شد.' + (wi.note ? '\n' + wi.note : '');
+            if (wi.post && wi.target) { var jr3 = await spPublish(env, uid, wi.target, (wi.note || 'به‌روزرسانی: ' + wi.url)); if (jr3 && jr3.link) msg += '\nمنتشر شد: ' + jr3.link; }
+            await spNotify(env, uid, msg);
+            wi.url = wi.url; // ماندگار
+          }
+        } else {
+          var h = await spHash(page.text);
+          if (!wi.hash) { wi.hash = h; }
+          else if (wi.hash !== h) {
+            wi.hash = h;
+            wi.hits = (wi.hits || 0) + 1;
+            var msg2 = '🔔 صفحه عوض شد: ' + wi.url + (wi.note ? '\n' + wi.note : '');
+            if (wi.post && wi.target) { var jr4 = await spPublish(env, uid, wi.target, (wi.note || 'به‌روزرسانی: ' + wi.url)); if (jr4 && jr4.link) msg2 += '\nمنتشر شد: ' + jr4.link; }
+            await spNotify(env, uid, msg2);
+          }
+        }
+      }
+      if (wTouched) await store.put('sp:watch:' + uid, wb2, 400 * 86400);
+    } catch (e) { /* ادامه */ }
+  }
+}
+
 async function applyLiveTick(env, job) {
   const id = job.liveId;
   if (!id) return { ok: false, description: "tick without liveId" };
@@ -6155,10 +8101,11 @@ async function handleCommunityCallback(cb, env, origin) {
 /* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 three-state posts: one message, three depths \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
 function deepKeyboard(st) {
   const levels = st.levels || {};
-  return { inline_keyboard: Object.keys(levels).map((k) => ([{
-    text: (levels[k].label || k) + (k === st.level ? " \u2022" : ""),
-    callback_data: `deep:${st.id}:${k}`
-  }])) };
+  const rows = Object.keys(levels).map((k) => ([{
+    text: (levels[k].label || k) + (k === st.level ? " •" : ""),
+    callback_data: "deep:" + st.id + ":" + k
+  }]));
+  return pickedButtons({ inline_keyboard: rows }, st.icons || st.picks || {});
 }
 async function handleDeepCallback(cb, env, origin) {
   const qId = cb.id;
@@ -6169,14 +8116,24 @@ async function handleDeepCallback(cb, env, origin) {
   const level = parts[2] || "";
   const st = await getJson(env, `deep:${id}`, null);
   if (!st || !st.levels || !st.levels[level]) return answerCallback(env, qId, "\u0627\u06CC\u0646 \u0646\u0633\u062E\u0647 \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A.", true);
+  if (!st.owner) { if (await healChannelOwner(env, st, id, chatId, cb.message?.chat?.type)) await setJson(env, `deep:${id}`, st, 30 * 86400); }
+  if (!st.icons) st.icons = await levelIcons(env, st.picks || {}, Object.keys(st.levels || {}).map((k) => (st.levels[k] || {}).label || ""));
   st.chatId = chatId;
   st.msgId = msgId;
   st.level = level;
   st.updatedAt = Date.now();
   await setJson(env, `deep:${id}`, st, 30 * 86400);
-  await editPostMessage(env, chatId, msgId, { html: st.levels[level].html, replyMarkup: deepKeyboard(st), rich: true, plain: true }).catch((e) => {
-    console.warn("deep edit failed", e?.message);
-  });
+  let movedDeep = null;
+  if (st.owner && st.chan) movedDeep = await republishPremium(env, st.owner, chatId, msgId, st.levels[level].html, deepKeyboard(st), st.picks || {}, true);
+  if (movedDeep && movedDeep.message_id) {
+    st.msgId = movedDeep.message_id;
+    await setJson(env, `deep:${id}`, st, 30 * 86400);
+    await retargetListItem(env, st.owner, st.id, movedDeep.message_id);
+  } else {
+    await editPostMessage(env, chatId, msgId, { html: st.levels[level].html, replyMarkup: deepKeyboard(st), rich: true, emojiSubs: st.picks || {} }).catch((e) => {
+      console.warn("deep edit failed", e?.message);
+    });
+  }
   return answerCallback(env, qId, `\u062D\u0627\u0644\u062A: ${st.levels[level].label || level}`);
 }
 
@@ -6184,13 +8141,406 @@ async function handleDeepCallback(cb, env, origin) {
    An interactive post: one message whose bars move as people vote. Votes arrive
    through callback queries from ordinary channel subscribers, so they are
    handled before anything that assumes the caller is the operator. */
+/* کش جیبی برای فهرست اموجی‌های پرمیوم ربات (۶۰ ثانیه). */
+let EMOJI_REG_CACHE = { at: 0, map: null, rev: {} };
+async function emojiRegistryCached(env) {
+  const now = Date.now();
+  if (EMOJI_REG_CACHE.map && now - EMOJI_REG_CACHE.at < 60000) return EMOJI_REG_CACHE;
+  let map = {};
+  try { map = (await emojiReadMerged(env, null, 0)) || {}; } catch { map = {}; }
+  const rev = {};
+  for (const k of Object.keys(map)) { const v = map[k]; if (v) rev[String(v)] = k; }
+  EMOJI_REG_CACHE = { at: now, map, rev };
+  return EMOJI_REG_CACHE;
+}
+__name(emojiRegistryCached, "emojiRegistryCached");
+/* اموجی‌های داخل کد و فرمول دست‌نخورده می‌مانند؛ بقیه آرت پیش‌فرض ربات را می‌گیرند. */
+function premiumizeSafe(html, picks, map) {
+  const keep = [];
+  const zoned = String(html == null ? "" : html).replace(/<(pre|code|tg-math|tg-math-block|tg-code)[^>]*>[\s\S]*?<\/\1>/gi, (m) => {
+    keep.push(m);
+    return "\u0000" + (keep.length - 1) + "\u0000";
+  });
+  const out = applyEmojiSubs(zoned, picks && typeof picks === "object" ? picks : {}, map || {});
+  return out.replace(/\u0000(\d+)\u0000/g, (_, i) => keep[Number(i)]);
+}
+__name(premiumizeSafe, "premiumizeSafe");
+/* انتخاب کاربر هرجای متن دکمه که باشد آیکن می‌شود؛ بعد بقیهٔ اموجی‌های سرِ متن
+   از پک‌های خود ربات آیکن می‌گیرند — همان قاعدهٔ استودیو. */
+function premiumButtons(markup, picks, map) {
+  if (!markup || !markup.inline_keyboard) return markup;
+  return markerButtons(decorateReplyMarkup(pickedButtons(markup, picks && typeof picks === "object" ? picks : {}), map || {}));
+}
+__name(premiumButtons, "premiumButtons");
+function reverseEmojiMap(picks) {
+  const out = {};
+  const p = picks && typeof picks === "object" ? picks : {};
+  for (const k of Object.keys(p)) if (p[k]) out[String(p[k])] = k;
+  return out;
+}
+__name(reverseEmojiMap, "reverseEmojiMap");
+/* اگر تلگرام آیکن را قبول نکرد، همان اموجی به متن دکمه برمی‌گردد تا چیزی گم نشود. */
+function restoreIconsToText(markup, lookup) {
+  if (!markup || !markup.inline_keyboard) return markup;
+  return { ...markup, inline_keyboard: markup.inline_keyboard.map((row) => row.map((b) => {
+    const icon = b && b.icon_custom_emoji_id;
+    if (!icon) return b;
+    const { icon_custom_emoji_id, ...rest } = b;
+    const ch = lookup ? lookup[String(icon)] : null;
+    return ch ? { ...rest, text: (ch + " " + String(rest.text || "")).trim() } : rest;
+  })) };
+}
+__name(restoreIconsToText, "restoreIconsToText");
+/* پیام را در پیوی خود اپراتور می‌سازیم و همان را داخل کانال کپی می‌کنیم؛
+   آرت پرمیوم همراه کپی می‌ماند و پیام موقت پیوی پاک می‌شود. */
+/* ردیابیِ مسیر کانال: هر گام (پیوی، کپی، دکمه‌ها) با پاسخ تلگرام در KV
+   ذخیره می‌شود تا اگر آرت نرسید، دقیقاً بدانیم کجا رد شده. */
+async function dbgChan(env, events) {
+  try {
+    const kv = env?.KV_FRESH || env?.KV;
+    if (!kv || typeof kv.put !== "function") return;
+    let box = [];
+    try {
+      const raw = await kv.get("dbg:chan");
+      if (raw) box = JSON.parse(raw);
+    } catch { box = []; }
+    if (!Array.isArray(box)) box = [];
+    box = box.concat(events).slice(-24);
+    await kv.put("dbg:chan", JSON.stringify(box).slice(0, 6000), { expirationTtl: 2 * 86400 });
+  } catch {
+  }
+}
+__name(dbgChan, "dbgChan");
+/* ساخت پیام در پیوی و کپیِ آن به کانال.
+   نکتهٔ مهم (با آزمون زندهٔ تلگرام ثابت شد): کپیِ همراهِ reply_markup اموجی
+   پرمیوم را به اموجی ساده تبدیل می‌کند؛ پس کپی خالی انجام می‌شود و دکمه‌ها
+   بعد از کپی با editMessageReplyMarkup روی همان پیام می‌نشینند. */
+async function copyIntoChannel(env, owner, chatId, rich, buttons, picks, reg) {
+  const trace = [];
+  const say = (step, ok, desc) => trace.push({ s: step, ok: !!ok, e: String(desc || "").slice(0, 160) });
+  const call = async (method, payload) => {
+    try { return await tgCall(env, method, payload); } catch (e) { return { ok: false, description: String(e?.message || e) }; }
+  };
+  try {
+    const dm = await call("sendRichMessage", { chat_id: owner, rich_message: rich, disable_notification: true });
+    const dmId = dm && dm.ok && dm.result ? dm.result.message_id : null;
+    say("dm", !!dmId, dmId ? "" : (dm?.description || "no message_id"));
+    if (!dmId) {
+      await dbgChan(env, trace);
+      return null;
+    }
+    let copy = null, used = "";
+    const tries = [
+      ["copy", "copyMessage", { chat_id: chatId, from_chat_id: owner, message_id: dmId, disable_notification: true }],
+      ["forward", "forwardMessage", { chat_id: chatId, from_chat_id: owner, message_id: dmId, disable_notification: true }]
+    ];
+    for (const [label, method, payload] of tries) {
+      const res = await call(method, payload);
+      const got = !!(res && res.ok && res.result && res.result.message_id);
+      say(label, got, got ? "" : (res?.description || "no id"));
+      if (got) { copy = res.result; used = label; break; }
+    }
+    await call("deleteMessage", { chat_id: owner, message_id: dmId });
+    if (!copy || !copy.message_id) {
+      await dbgChan(env, trace);
+      return null;
+    }
+    /* دکمه‌ها بعد از کپی: هم آرت متن و هم دکمه‌های اینلاین سرِ جایشان می‌مانند. */
+    if (buttons) {
+      const lookup = { ...(reg && reg.rev ? reg.rev : {}), ...reverseEmojiMap(picks) };
+      const a = await call("editMessageReplyMarkup", { chat_id: chatId, message_id: copy.message_id, reply_markup: buttons });
+      say("markup:icons", !!(a && a.ok), a?.description || "");
+      if (!(a && a.ok)) {
+        const b = await call("editMessageReplyMarkup", { chat_id: chatId, message_id: copy.message_id, reply_markup: restoreIconsToText(buttons, lookup) });
+        say("markup:text", !!(b && b.ok), b?.description || "");
+      }
+    }
+    copy.via = "channel-" + used;
+    say("done", true, "");
+    await dbgChan(env, trace);
+    return copy;
+  } catch (e) {
+    say("throw", false, e?.message);
+    await dbgChan(env, trace);
+    console.warn("channel premium copy failed", e?.message);
+    return null;
+  }
+}
+__name(copyIntoChannel, "copyIntoChannel");
+/* ویرایش‌های کانال: نسخهٔ تازه ساخته و جای پیام قبلی می‌نشیند تا آرت پرمیوم
+   از دست نرود (کانال اجازهٔ اموجی پرمیوم از طرف ربات را نمی‌دهد). */
+/* چند آرت داخل پاسخِ ذخیره‌شدهٔ تلگرام هست؟ (پاسخ ادیت، blocks را برمی‌گرداند) */
+function artCountIn(msg) {
+  const s = JSON.stringify(msg == null ? {} : msg);
+  return (s.match(/custom_emoji/g) || []).length + (s.match(/<tg-emoji/g) || []).length;
+}
+__name(artCountIn, "artCountIn");
+/* پیام «در پاسخ» بساز: لنگرِ کوچک → ارسال در پاسخ به آن → ادیت برای نشاندن آرت
+   → دکمه‌ها → پاک کردن لنگر. اگر تلگرام آرت را نگه نداشت، null برمی‌گردد تا
+   مسیر قدیمیِ کپی از پیوی جایگزین شود. */
+function richEsc(v) {
+  return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+__name(richEsc, "richEsc");
+/* دکمه‌های اینلاین → ردیف‌های دکمهٔ ریچ با آرت پرمیوم در متن دکمه. */
+function richButtonRows(html, markup, picks, map) {
+  const rows = markup && markup.inline_keyboard ? markup.inline_keyboard.filter((r) => Array.isArray(r) && r.length) : [];
+  if (!rows.length) return String(html == null ? "" : html);
+  const reg = map && typeof map === "object" ? map : {};
+  const rev = {};
+  for (const k of Object.keys(reg)) if (reg[k]) rev[String(reg[k])] = k;
+  const chosen = picks && typeof picks === "object" ? picks : {};
+  for (const k of Object.keys(chosen)) if (chosen[k]) rev[String(chosen[k])] = String(k);
+  const rowsHtml = rows.map((row) => "<tg-button-row>" + row.map((b) => {
+    if (!b || typeof b !== "object") return "";
+    const id = b.icon_custom_emoji_id ? String(b.icon_custom_emoji_id) : "";
+    const ch = id ? rev[id] : "";
+    let label = String(b.text == null ? "" : b.text);
+    /* اگر کاراکتر همان آرت داخل متن دکمه مانده بود، فقط یک‌بار نشان داده شود. */
+    if (ch && label.indexOf(ch) === 0) label = label.slice(ch.length).trim();
+    const icon = ch ? `<tg-emoji emoji-id="${richEsc(id)}">${richEsc(ch)}</tg-emoji> ${richEsc(label)}` : richEsc(label);
+    let action = " disabled";
+    if (b.callback_data) action = ` type="callback_data" data="${richEsc(b.callback_data)}"`;
+    else if (b.url) action = ` type="url" url="${richEsc(b.url)}"`;
+    else if (b.web_app && b.web_app.url) action = ` type="web_app" url="${richEsc(b.web_app.url)}"`;
+    else if (b.copy_text) action = ` type="copy_text" text="${richEsc(b.copy_text.text || b.text || "")}"`;
+    return `<tg-button${action}>${icon || richEsc(label)}</tg-button>`;
+  }).join("") + "</tg-button-row>").join("\n");
+  return String(html == null ? "" : html).replace(/\s+$/, "") + "\n" + rowsHtml;
+}
+__name(richButtonRows, "richButtonRows");
+async function sendPremiumReply(env, chatId, html, media, markup, picks, reg) {
+  const chosen = picks && typeof picks === "object" ? picks : {};
+  const body = premiumizeSafe(ensureRichHtmlStructure(String(html)), chosen, reg.map);
+  const art = /<tg-emoji/.test(body);
+  const buttons = markup ? premiumButtons(markup, chosen, reg.map) : null;
+  const rich = { html: body, ...media && media.length ? { media } : {} };
+  const trace = [];
+  let anchorId = null;
+  try {
+    if (art) {
+      const an = await tgCall(env, "sendMessage", { chat_id: chatId, text: "\u0640", disable_notification: true });
+      anchorId = an && an.ok && an.result ? an.result.message_id : null;
+      trace.push({ s: "anchor", ok: !!anchorId, e: an?.description || "" });
+    }
+    const sent = await tgCall(env, "sendRichMessage", {
+      chat_id: chatId,
+      rich_message: rich,
+      disable_notification: true,
+      ...(anchorId ? { reply_parameters: { chat_id: chatId, message_id: anchorId } } : {})
+    });
+    const sentId = sent && sent.ok && sent.result ? sent.result.message_id : null;
+    trace.push({ s: "send", ok: !!sentId, e: sent?.description || "" });
+    if (!sentId) {
+      if (anchorId) await tgCall(env, "deleteMessage", { chat_id: chatId, message_id: anchorId });
+      await dbgChan(env, trace);
+      return null;
+    }
+    let kept = true;
+    if (art) {
+      const out = await tryEditRich(env, chatId, sentId, rich);
+      /* خطای گذرا یعنی ادیتِ هم‌زمانِ خودمان؛ پیام را دوباره نساز. */
+      kept = out.state === "kept" || out.state === "unchanged" || out.state === "transient";
+      trace.push({ s: "art-edit", ok: kept, e: kept ? out.state : (out.res?.description || "art not kept") });
+    }
+    if (buttons) {
+      const mk = await tgCall(env, "editMessageReplyMarkup", { chat_id: chatId, message_id: sentId, reply_markup: buttons });
+      trace.push({ s: "markup", ok: !!(mk && mk.ok), e: mk?.description || "" });
+    }
+    if (anchorId) await tgCall(env, "deleteMessage", { chat_id: chatId, message_id: anchorId });
+    await dbgChan(env, trace);
+    if (!kept) return { message_id: sentId, rep: false, via: "channel-plain" };
+    return { message_id: sentId, rep: art, via: "channel-native" };
+  } catch (e) {
+    if (anchorId) await tgCall(env, "deleteMessage", { chat_id: chatId, message_id: anchorId }).catch(() => {});
+    trace.push({ s: "throw", ok: false, e: String(e?.message || e).slice(0, 140) });
+    await dbgChan(env, trace);
+    return null;
+  }
+}
+__name(sendPremiumReply, "sendPremiumReply");
+/* به‌روزرسانی در همان پیام. اگر پیام «در پاسخ» نباشد و آرت هم داشته باشیم،
+   تلگرام آرت را می‌خورد و null برمی‌گردانیم تا مسیر بازنشر فعال شود. */
+function sleepMs(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+__name(sleepMs, "sleepMs");
+/* خطای گذرای تلگرام؟ (ادیت هم‌زمان، شلوغی، قطعی موقت) */
+function isTransientTg(res) {
+  const why = String((res && (res.description || res.message)) || "");
+  return /canceled by new edit|too many requests|retry after|retry later|internal server|server error|timed out|timeout|not modified|message is not modified/i.test(why);
+}
+__name(isTransientTg, "isTransientTg");
+/* پیام واقعاً وجود ندارد؟ */
+function isGoneTg(res) {
+  const why = String((res && (res.description || res.message)) || "");
+  return /message to edit not found|message was deleted|message not found|chat not found/i.test(why);
+}
+__name(isGoneTg, "isGoneTg");
+/* ادیتِ آرت‌دار با تلاش دوباره؛ خروجی: "kept" | "unchanged" | "transient" | "lost" | "gone" */
+async function tryEditRich(env, chatId, msgId, rich) {
+  let res = await tgCall(env, "editMessageText", { chat_id: chatId, message_id: msgId, rich_message: rich });
+  let n = 0;
+  /* نه‌که دوباره بزنیم، ولی برای این دو حالت یک بار دیگر تلاش می‌کنیم. */
+  while (res && !res.ok && /canceled by new edit|too many requests|retry after|internal server|timed out|server error/i.test(String(res.description || "")) && n < 2) {
+    await sleepMs(320 * (n + 1));
+    n++;
+    res = await tgCall(env, "editMessageText", { chat_id: chatId, message_id: msgId, rich_message: rich });
+  }
+  if (res && res.ok) return { state: artCountIn(res.result) ? "kept" : "lost", res };
+  if (isGoneTg(res)) return { state: "gone", res };
+  if (/not modified/i.test(String(res?.description || ""))) return { state: "unchanged", res };
+  if (isTransientTg(res)) return { state: "transient", res };
+  return { state: "lost", res };
+}
+__name(tryEditRich, "tryEditRich");
+/* حفاظت ضد اسباب‌کشی: در هر کانال حداکثر یک «پیام تازه جای قبلی» در هر ۲۰ ثانیه.
+   (پست تازه که مینی‌اپ می‌سازد از این حفاظت رد نمی‌شود؛ فقط بازنشرِ به‌روزرسانی‌ها.) */
+async function chanReplaceGuard(env, chatId) {
+  const kv = env?.KV_FRESH || env?.KV;
+  if (!kv || typeof kv.get !== "function") return true;
+  try {
+    const key = `chg:${String(chatId)}`;
+    const last = Number(await kv.get(key)) || 0;
+    const now = Date.now();
+    if (now - last < 20000) return false;
+    await kv.put(key, String(now), { expirationTtl: 3600 });
+    return true;
+  } catch {
+    return true;
+  }
+}
+__name(chanReplaceGuard, "chanReplaceGuard");
+/* به‌روزرسانی در همان پیام، بدون اسباب‌کشی. */
+async function editPremiumRep(env, chatId, msgId, html, media, markup, picks, reg) {
+  const chosen = picks && typeof picks === "object" ? picks : {};
+  const body = premiumizeSafe(ensureRichHtmlStructure(String(html)), chosen, reg.map);
+  const art = /<tg-emoji/.test(body);
+  const buttons = markup ? premiumButtons(markup, chosen, reg.map) : null;
+  const rich = { html: body, ...media && media.length ? { media } : {} };
+  const out = await tryEditRich(env, chatId, msgId, rich);
+  const why = String(out.res?.description || "");
+  if (buttons && out.state !== "gone") {
+    await tgCall(env, "editMessageReplyMarkup", { chat_id: chatId, message_id: msgId, reply_markup: buttons }).catch(() => {});
+  }
+  await dbgChan(env, [{ s: "inplace", ok: out.state === "kept" || out.state === "unchanged" || out.state === "transient", e: out.state + (why ? " · " + why.slice(0, 90) : "") }]);
+  if (out.state === "gone") return null;
+  if (out.state === "kept" || out.state === "unchanged") return { message_id: msgId, via: "channel-inplace", premium: art };
+  if (out.state === "transient") return { message_id: msgId, via: "channel-inplace", premium: art, note: "transient" };
+  return art ? null : { message_id: msgId, via: "channel-inplace", premium: false, note: "plain-ok" };
+}
+__name(editPremiumRep, "editPremiumRep");
+async function republishPremium(env, owner, chatId, oldMsgId, html, markup, picks, embed) {
+  if (!owner || String(owner) === String(chatId)) return null;
+  const reg = await emojiRegistryCached(env);
+  const chosen = picks && typeof picks === "object" ? picks : {};
+  /* نظرسنجیِ کانال: دکمه‌ها داخل پیام (آرت پرمیوم روی دکمه‌ها می‌ماند). */
+  if (embed && markup) {
+    html = richButtonRows(html, markup, chosen, reg.map);
+    markup = null;
+  }
+  const body = premiumizeSafe(ensureRichHtmlStructure(String(html)), chosen, reg.map);
+  const hasArt = /<tg-emoji/.test(body);
+  /* ۱) تغییر در همان پیام — پستِ «در پاسخ» آرت را در ادیت نگه می‌دارد. */
+  if (oldMsgId) {
+    const kept = await editPremiumRep(env, chatId, oldMsgId, html, null, markup, chosen, reg);
+    if (kept) return kept;
+  }
+  /* ۲) فقط وقتی پیام واقعاً از دست رفته: حداکثر هر ۲۰ ثانیه یک جایگزینی. */
+  if (hasArt && !(await chanReplaceGuard(env, chatId))) {
+    await dbgChan(env, [{ s: "republish", ok: false, e: "guard: replacement too soon" }]);
+    return oldMsgId ? { message_id: oldMsgId, via: "channel-inplace", premium: true, note: "guarded" } : null;
+  }
+  if (hasArt) {
+    const fresh = await sendPremiumReply(env, chatId, html, null, markup, chosen, reg);
+    if (fresh && fresh.message_id && fresh.rep) {
+      if (oldMsgId) await tgCall(env, "deleteMessage", { chat_id: chatId, message_id: oldMsgId }).catch(() => {});
+      return fresh;
+    }
+    if (fresh && fresh.message_id) await tgCall(env, "deleteMessage", { chat_id: chatId, message_id: fresh.message_id }).catch(() => {});
+  }
+  /* ۳) آخرین راه: کپی از پیوی (آرت تضمینی، ولی پیام تازه). */
+  const buttons = markup ? premiumButtons(markup, chosen, reg.map) : null;
+  const moved = await copyIntoChannel(env, owner, chatId, { html: body }, buttons, chosen, reg);
+  if (moved && moved.message_id) {
+    if (oldMsgId) await tgCall(env, "deleteMessage", { chat_id: chatId, message_id: oldMsgId });
+    return moved;
+  }
+  await dbgChan(env, [{ s: "republish", ok: false, e: "inplace+native+copy missed, plain edit next" }]);
+  return null;
+}
+__name(republishPremium, "republishPremium");
+/* شناسهٔ پیام تازه در فهرست مینی‌اپ هم به‌روز می‌شود. */
+async function retargetListItem(env, owner, id, msgId) {
+  try {
+    const kv = env?.RASA_KV;
+    if (!kv || !owner || !id || !msgId) return;
+    const key = `intx:${owner}`;
+    const raw = await kv.get(key);
+    const box = raw ? JSON.parse(raw) : { items: [] };
+    let hit = false;
+    for (const it of box.items || []) {
+      if (String(it.id) === String(id)) { it.msg = msgId; hit = true; }
+    }
+    if (hit) await kv.put(key, JSON.stringify(box), { expirationTtl: 120 * 86400 });
+  } catch {
+  }
+}
+__name(retargetListItem, "retargetListItem");
+
+/* مقصد کانالی است؟ (شناسهٔ -100… یا @نام‌کاربری) */
+function isChanDest(x) {
+  const v = String(x == null ? "" : x).trim();
+  return /^-\d{6,}$/.test(v) || /^@[A-Za-z0-9_]{4,}$/.test(v);
+}
+__name(isChanDest, "isChanDest");
+/* پست‌های کانالی که پیش از این نسخه منتشر شده‌اند سازنده را در وضعیت ندارند؛
+   از فهرست مینی‌اپ پیدایش می‌کنیم تا آن‌ها هم با اولین تپ آرت پرمیوم بگیرند. */
+async function healChannelOwner(env, state, id, chatId, chatType) {
+  try {
+    if (!state || state.owner) return false;
+    const isChan = chatType === "channel" || isChanDest(chatId);
+    if (!isChan) return false;
+    const kv = env?.RASA_KV;
+    if (!kv || !id || !kv.list) return false;
+    const listing = await kv.list({ prefix: "intx:", limit: 1000 });
+    for (const key of (listing?.keys || [])) {
+      const uid = String(key?.name || "").slice(5);
+      if (!uid) continue;
+      const raw = await kv.get(key.name);
+      if (!raw) continue;
+      let box = null;
+      try { box = JSON.parse(raw); } catch { continue; }
+      for (const it of (box?.items || [])) {
+        if (String(it?.id) !== String(id)) continue;
+        if (!isChanDest(it?.chat)) continue;
+        state.owner = String(uid);
+        state.chan = true;
+        return true;
+      }
+    }
+  } catch {
+  }
+  return false;
+}
+__name(healChannelOwner, "healChannelOwner");
 async function editLivePost(env, chatId, msgId, state) {
   const clean = plainEmojisDeep(state);
+  /* پست کانالی: نسخهٔ تازه با همان آرت پرمیوم جای پیام قبلی می‌نشیند. */
+  if (clean.owner && clean.chan) {
+    const moved = await republishPremium(env, clean.owner, chatId, msgId, renderLivePost(clean), liveKeyboard(clean), clean.picks || {}, true);
+    if (moved && moved.message_id) {
+      state.msgId = moved.message_id;
+      try { await setJson(env, `live:${state.id}`, state, 30 * 86400); } catch {}
+      await retargetListItem(env, clean.owner, state.id, moved.message_id);
+      return moved;
+    }
+  }
   return await editPostMessage(env, chatId, msgId, {
     html: renderLivePost(clean),
     replyMarkup: liveKeyboard(clean),
     rich: true,
-    plain: true
+    emojiSubs: clean.picks || {}
   }).catch((e) => { console.warn("live edit failed", e?.message); });
 }
 async function handleLiveVote(cb, env, origin) {
@@ -6205,6 +8555,7 @@ async function handleLiveVote(cb, env, origin) {
   const state = await getJson(env, `live:${id}`, null);
   if (!state || (!state.options && action !== "__refresh")) return answerCallback(env, qId, "\u0627\u06cc\u0646 \u0646\u0638\u0631\u0633\u0646\u062c\u06cc \u062f\u0631 \u062f\u0633\u062a\u0631\u0633 \u0646\u06cc\u0633\u062a.", true);
   const now = Date.now();
+  if (!state.owner) { if (await healChannelOwner(env, state, id, chatId, cb.message?.chat?.type)) await setJson(env, `live:${id}`, state, 30 * 86400); }
   const over = !!(state.endsAt && now > state.endsAt);
   if (action === "__refresh") {
     await editLivePost(env, chatId, msgId, state);
@@ -6943,6 +9294,8 @@ __name22(handleMessage, "handleMessage");
 var index_default = {
   async scheduled(event, env, ctx) {
     try {
+      await runAutoPosts(env).catch((e) => console.warn("auto posts", e && e.message));
+      try { await spTick(env); } catch (e) { console.warn("sp tick", e && e.message); }
       const now = Date.now();
       let globalIdx = null;
       try {
@@ -7031,6 +9384,13 @@ var index_default = {
         headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-cache" }
       });
     }
+    if (url.pathname === "/api/mcp" || url.pathname.startsWith("/api/mcp/")) {
+      try {
+        return await mcpHandle(env, request, url);
+      } catch (e) {
+        return new Response(JSON.stringify({ ok: false, error: String(e && e.message || e) }), { status: 500, headers: { "content-type": "application/json" } });
+      }
+    }
     if (url.pathname.startsWith("/api/")) {
       const cors = {
         "Access-Control-Allow-Origin": "*",
@@ -7107,8 +9467,13 @@ var index_default = {
             await handleCallback(update.callback_query, env, origin);
           } else if (update.my_chat_member) {
             await handleBotMembership(update.my_chat_member, env, origin);
+          } else if (update.chat_member) {
+            await spChatMember(env, update.chat_member);
           } else if (update.message) {
-            await handleMessage(update.message, env, origin);
+            const cmdrSeen = update.message.chat && update.message.chat.type === 'private'
+              ? await maybeCommander(env, update.message, update.message.from, origin)
+              : false;
+            if (!cmdrSeen) await handleMessage(update.message, env, origin);
           }
         } catch (err) {
           console.error("Update Handler Error:", err);

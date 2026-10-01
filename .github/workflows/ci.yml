@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# فقط تست و بررسی — هیچ‌جای این ورک‌فلو دیپلوی نمی‌کند.
+# انتشار روی Cloudflare دستی و از سمت خودِ اپراتور انجام می‌شود.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: تست‌ها (Node)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: بررسی سینتکس ورکر
+        run: node --check worker/index.js
+
+      - name: بررسی اینکه ورکر اکسپورت درست دارد
+        run: node -e "import('./worker/index.js').then(m => { if (typeof m.default?.fetch !== 'function') { console.error('default.fetch پیدا نشد'); process.exit(1); } if (typeof m.State !== 'function') { console.error('State export پیدا نشد'); process.exit(1); } console.log('exports ok'); })"
+
+      - name: اجرای تست‌ها
+        run: node tests/run.mjs worker/index.js
+
+      - name: اندازهٔ فایل‌ها (گزارش)
+        run: |
+          echo "worker:  $(wc -c < worker/index.js) bytes"
+          echo "miniapp: $(wc -c < miniapp/app.html) bytes"

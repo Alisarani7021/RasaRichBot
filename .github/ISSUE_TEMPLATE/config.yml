@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 🔐 گزارش امنیتی (خصوصی)
+    url: https://github.com/Alisarani7021/RasaRichBot/security/advisories/new
+    about: آسیب‌پذیری یا لو رفتن کلید را هرگز در Issue عمومی ننویس — از این مسیر خصوصی استفاده کن.
+  - name: 🤖 ربات در تلگرام
+    url: https://t.me/RasaRichBot
+    about: تست رفتار ربات، دستور /help و ارتباط با نگهدارنده.
+  - name: 📚 راهنمای مشارکت
+    url: https://github.com/Alisarani7021/RasaRichBot/blob/main/CONTRIBUTING.md
+    about: چطور محیط را بالا بیاوری، تست بنویسی و پول‌ریکوئست بزنی.

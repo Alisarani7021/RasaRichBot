@@ -1,0 +1,49 @@
+name: 💡 پیشنهاد قابلیت
+description: چه چیزی کارِ کانال را ساده‌تر می‌کند؟
+title: "[پیشنهاد] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        هدف این پروژه «کاربردی بودن» است، نه پر بودن فهرست قابلیت‌ها. پیشنهادی که مسئلهٔ واقعی را حل کند زودتر پذیرفته می‌شود.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: چه مسئله‌ای داری؟
+      description: الان چه کاری سخت/کند/دستی است؟
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: ایده‌ات چیست؟
+      description: اگر نمونه یا تصویری از ربات/کانال دیگری داری که خوب انجامش داده، لینک بده.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: مربوط به کدام بخش است؟
+      multiple: true
+      options:
+        - مینی‌اپ (استودیو/ادیتور)
+        - اموجی پرمیوم
+        - قالب‌های تعاملی (نظرسنجی/سه‌حالته/اسلایدشو)
+        - کانال و انتشار
+        - هوش مصنوعی
+        - دعوت و اعتبار
+        - مستندات و تجربهٔ توسعه
+    validations:
+      required: true
+
+  - type: textarea
+    id: alt
+    attributes:
+      label: جایگزین‌ها
+      description: الان این کار را چطور انجام می‌دهی؟ چرا کافی نیست؟
+    validations:
+      required: false

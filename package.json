@@ -1,0 +1,23 @@
+{
+  "name": "rasa-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "رِسا — استودیوی پست ریچ تلگرام روی Cloudflare Workers (Robot + Mini App + Premium Emoji Engine)",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/run.mjs",
+    "check": "node --check worker/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "telegram",
+    "telegram-bot",
+    "rich-messages",
+    "cloudflare-workers",
+    "mini-app",
+    "premium-emoji"
+  ],
+  "license": "MIT"
+}
