@@ -128,7 +128,7 @@ async function spSelfInstall(env, body, ipHash) {
     { type: 'plain_text', name: 'CMD_CHANNEL', text: chan || '' },
     { type: 'plain_text', name: 'COMMANDER_OWNERS', text: String(body.owner_id || '') }
   ];
-  var meta = { main_module: 'index.js', compatibility_date: '2026-09-28', bindings: bindings, migrations: { new_tag: 'v1', new_classes: ['State'] } };
+  var meta = { main_module: 'index.js', compatibility_date: '2026-09-28', bindings: bindings, migrations: { new_tag: 'v1', new_sqlite_classes: ['State'] } };
   async function upload(metadata) {
     var fd = new FormData();
     fd.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }), 'metadata.json');
@@ -150,6 +150,9 @@ async function spSelfInstall(env, body, ipHash) {
   }
   if (!up.ok) return { ok: false, log: log, error: 'آپلود ورکر نشد: ' + up.error };
   note('ورکر «' + name + '» ساخته و آپلود شد');
+  var subEn = await spCf(cfT, 'POST', '/accounts/' + account.id + '/workers/scripts/' + name + '/subdomain', { enabled: true, previews_enabled: false });
+  if (subEn.ok) note('آدرس workers.dev فعال شد');
+  else note('فعال‌سازی آدرس: ' + subEn.error, false);
 
   /* ۷) درج مقادیر اولیه */
   async function kvPut(nsId, key, value) {
@@ -209,7 +212,7 @@ async function spSelfInstall(env, body, ipHash) {
     var tj = await tr.json();
     alive = !!(tj && tj.result && tj.result.serverInfo);
   } catch (e) { /* آزمون نشد */ }
-  note(alive ? 'آزمون زندهٔ MCP موفق ✅' : 'آزمون MCP انجام نشد (چند لحظه بعد خودت امتحان کن)', alive);
+  note(alive ? 'آزمون زندهٔ MCP موفق ✅' : 'لینک ساخته شد (آزمون خودکار از داخل حساب ممکن نشد؛ چند لحظه بعد خودت امتحان کن)', alive);
 
   /* ثبت در دفتر نصب (بدون توکن) */
   try {

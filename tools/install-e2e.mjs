@@ -116,14 +116,26 @@ check('فایل ربات از گیت‌هاب گرفته شد', bundleFetched >=
 check('متادیتای آپلود: ۳ KV + STATE + AI', uploadedMeta && uploadedMeta.bindings.filter((b) => b.type === 'kv_namespace').length === 3 && uploadedMeta.bindings.some((b) => b.name === 'STATE' && b.type === 'durable_object_namespace') && uploadedMeta.bindings.some((b) => b.type === 'ai'));
 check('متادیتا: توکن‌ها به‌صورت secret', uploadedMeta.bindings.filter((b) => b.type === 'secret_text').map((b) => b.name).sort().join(',') === 'BOT_TOKEN,MCP_SECRET,WEBHOOK_SECRET');
 check('متادیتا: TENANT=1 و PUBLIC_BASE', uploadedMeta.bindings.some((b) => b.name === 'TENANT' && b.text === '1') && uploadedMeta.bindings.some((b) => b.name === 'PUBLIC_BASE' && /test-sub/.test(b.text)));
-check('مهاجرت Durable Object', !!(uploadedMeta.migrations && uploadedMeta.migrations.new_classes && uploadedMeta.migrations.new_classes[0] === 'State'));
+check('مهاجرت Durable Object (SQLite برای پلن رایگان)', !!(uploadedMeta.migrations && uploadedMeta.migrations.new_sqlite_classes && uploadedMeta.migrations.new_sqlite_classes[0] === 'State'));
 check('باندل واقعی آپلود شد (>2.5MB)', (uploadedMeta.__bundleSize || 0) > 2500000, (uploadedMeta.__bundleSize || 0) + ' bytes');
 check('وب‌هوک روی ورکر مستأجر تنظیم شد', webhookSet && webhookSet.url === 'https://rasa-mybot.test-sub.workers.dev/telegram/webhook' && !!webhookSet.secret_token);
 check('دستورات ربات ثبت شد', tgCalls.some((c) => c.method === 'setMyCommands'));
+check('آدرس workers.dev خودکار فعال شد', cfCalls.some((c) => c.path.endsWith('/workers/scripts/rasa-mybot/subdomain') && c.method === 'POST'));
 check('زمان‌بند هر دقیقه فعال شد', JSON.stringify(schedulesSet) === JSON.stringify([{ cron: '* * * * *' }]));
 check('کانال در KV مستأجر نوشته شد', kvValues['cmd:chan:shared'] === JSON.stringify('@mychannel'), kvValues['cmd:chan:shared'] || '-');
 check('آزمون زندهٔ MCP ✅ در لاگ', (res.log || []).some((x) => /MCP/.test(x.t) && x.ok));
 check('ثبت در دفتر نصب میزبان', (kvGet('installs') || {}).items?.length >= 1, 'bot=' + ((kvGet('installs') || {}).items?.[0] || {}).bot);
+
+/* ۳ب) مستأجر بدون کانال: ابزارهای غیرانتشاری باید کار کنند */
+const tenv0 = { BOT_TOKEN: '9:T', KV: makeKV(), KV_FRESH: makeKV(), RASA_KV: makeKV(), MCP_SECRET: 'NOKEY123' };
+const mc0 = async (name, args) => {
+  const r = await worker.fetch(new Request('https://rasa-mybot.test-sub.workers.dev/api/mcp/NOKEY123', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) }), tenv0, {});
+  return JSON.parse((await r.json()).result.content[0].text);
+};
+const mk0 = await mc0('market', { asset: 'دلار' });
+check('بدون کانال → market کار می‌کند', mk0.ok === true && !!mk0.value, mk0.value || mk0.error || '');
+const pub0 = await mc0('publish_post', { text: 'تست' });
+check('بدون کانال → ابزار انتشار خطای راهنما می‌دهد', pub0.ok === false && /set_channel|channel/.test(pub0.error), (pub0.error || '').slice(0, 50));
 
 /* ۴) نصب با owner مشخص */
 const res2 = await jpost({ consent: 'yes', cf_token: 'cf-' + 'y'.repeat(30), bot_token: BOT, owner_id: 555000111, name: 'rasa-second' });

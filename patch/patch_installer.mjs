@@ -56,5 +56,11 @@ must(count(CALL) === 1, 'owner call anchor');
 src = src.replace(CALL, `  { const spTen = await spTenantHook(env, message); if (spTen && spTen.stop) return true; }
   if ((await cmdOwners(env)).indexOf(uid) < 0) return false;`);
 
+/* ۵) بدون کانال هم همهٔ ابزارهای غیرانتشاری باید کار کنند */
+const GATE = `  if (!chan) return { ok: false, error: 'کانال پیش‌فرض تنظیم نشده؛ از ابزار set_channel استفاده کن.' };`;
+must(count(GATE) === 1, 'mcp channel gate anchor');
+src = src.replace(GATE, `  var SP_NEED_CHAN = ['publish_post', 'publish_media', 'album', 'delete_post', 'delete_last', 'replace_last', 'pin_post', 'unpin_post', 'publish_draft'];
+  if (!chan && SP_NEED_CHAN.indexOf(name) > -1) return { ok: false, error: 'کانال پیش‌فرض تنظیم نشده؛ اول ابزار set_channel را صدا بزن (یا در پیوی ربات بنویس /channel @نام‌کانال).' };`);
+
 fs.writeFileSync(target, src);
 console.log('✅ patched: ' + target + ' (installer)');
