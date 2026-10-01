@@ -411,8 +411,10 @@ body.mn{-webkit-font-smoothing:antialiased;background-image:radial-gradient(520p
 .hm-st i{flex:none;width:7px;height:7px;border-radius:50%;background:#FFB020;box-shadow:0 0 10px #FFB020;animation:hmBl 1.8s ease-in-out infinite}
 @media(prefers-reduced-motion:reduce){#v-home *{animation:none!important}}
 </style>
+<script id="bootFailGuard">window.addEventListener('error',function(){try{var d=document.getElementById('bootFail');if(!d){d=document.createElement('div');d.id='bootFail';document.body.appendChild(d)}d.style.cssText='position:fixed;inset:auto 12px 24px 12px;z-index:99999;background:#2a1b1b;border:1px solid #a3423a;color:#ffe1de;padding:12px 14px;border-radius:16px;font:13px Tahoma;line-height:2;text-align:center;box-shadow:0 12px 30px rgba(0,0,0,.5)';d.innerHTML='⚠️ یک خطای غیرمنتظره پیش آمد.<br><button onclick="location.reload()" style="margin-top:8px;padding:9px 16px;border-radius:12px;border:0;background:#e9b949;color:#111;font-weight:700">تلاش دوباره</button>'}catch(x){}});</script>
 </head>
 <body data-view="home">
+<noscript><div style="position:fixed;inset:0;z-index:9999;background:#0b0e14;color:#eef2f7;font:14px Tahoma;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;line-height:2">جاوااسکریپت در دسترس نیست یا صفحه کامل بار نشده.<br>ربات را ببند و دوباره باز کن.</div></noscript>
 <header class="top">
   <button class="brand" id="brand" aria-label="صفحهٔ اصلی"><span class="logo">ر</span><span>رِسا</span></button>
   <span class="pill" id="status"><i></i><span>…</span></span>
@@ -449,6 +451,116 @@ body.mn{-webkit-font-smoothing:antialiased;background-image:radial-gradient(520p
 
 <section class="view" id="v-library"></section>
 <section class="view" id="v-channels"><div id="pubBox"></div></section>
+
+<section class="view" id="v-dedicated">
+  <div class="card">
+    <h2>⚡ نسخهٔ اختصاصی من</h2>
+    <p style="color:var(--mu);line-height:1.9">
+      ربات همان <b>رِسا</b> می‌ماند — هیچ ربات جدیدی نمی‌سازی و توکن ربات نمی‌خواهد.
+      این نسخه یک <b>ورکر شخصی روی حساب کلادفلر خودت</b> می‌سازد تا هوش مصنوعی و ابزارها با
+      <b>سهمیهٔ خودت</b> اجرا شوند؛ انتشار پست‌ها هم مثل همیشه از <b>ربات رسا</b> انجام می‌شود.
+    </p>
+    <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:6px">
+      <span class="pill" style="font-size:11px">🔒 توکن‌ها ذخیره نمی‌شوند</span>
+      <span class="pill" style="font-size:11px">🧠 سهمیهٔ AI خودت</span>
+      <span class="pill" style="font-size:11px">🤖 بدون ربات جدید</span>
+    </div>
+  </div>
+
+  <div class="card hide" id="dedMyCard" style="margin-top:12px;border:1px solid rgba(61,242,192,.35)">
+    <h3>🔗 لینک شخصی من</h3>
+    <p style="color:var(--mu);font-size:13px;line-height:1.9">
+      این لینک مال خودت است و همیشه اینجا می‌ماند — هر وقت خواستی برش دار.
+      آن را در <b>کلاد / جمنای / گروک</b> به‌عنوان MCP اضافه کن؛ هر چه از آن بفرستند به
+      <b>پیوی خودت</b> می‌آید (مگر بگویی به کانال برود).
+    </p>
+    <textarea id="dedMyLink" rows="2" readonly dir="ltr"
+      style="width:100%;margin-top:10px;background:var(--s2,#12161f);color:inherit;border:1px solid var(--ln,#232a39);border-radius:12px;padding:10px;font-family:monospace;font-size:12px"></textarea>
+    <div class="row" style="margin-top:8px;flex-wrap:wrap">
+      <button class="btn pri" id="dedMyCopy">📋 کپی لینک</button>
+      <button class="btn" id="dedMyOpen">🌐 باز کردن</button>
+      <button class="btn" id="dedMyAgain">🧭 راهنمای اتصال</button>
+    </div>
+    <small id="dedMyMeta" style="color:var(--mu);display:block;margin-top:8px;line-height:1.9"></small>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <h3>۱) توکن کلادفلر بساز <span style="font-size:11px;color:var(--mu)">(فقط یک‌بار)</span></h3>
+    <p style="color:var(--mu);font-size:13px">دکمه را بزن؛ صفحهٔ کلادفلر با دسترسی‌های درست از قبل پر می‌شود. فقط
+      <b>Continue to summary</b> → <b>Create Token</b> → کپی کن.</p>
+    <button class="btn pri" id="dedTokBtn" style="width:100%">🔑 ساخت توکن آماده در کلادفلر</button>
+    <small style="color:var(--mu);display:block;margin-top:6px">دسترسی‌های لازم: Workers Scripts (Edit) + Workers KV Storage (Edit) — همین دو کافی است.</small>
+    <small style="color:var(--mu);display:block;margin-top:4px">لینک ساخت توکن ذخیره می‌شود؛ اگر توکنت بعداً منقضی شد، همین دکمه را دوباره بزن.</small>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <h3>۲) توکن را بچسبان و نصب کن</h3>
+    <textarea id="dedTok" rows="2" placeholder="cf token…" spellcheck="false" dir="ltr"
+      style="width:100%;background:var(--s2,#12161f);color:inherit;border:1px solid var(--ln,#232a39);border-radius:12px;padding:10px;font-family:monospace"></textarea>
+    <div class="row" style="margin-top:10px;flex-wrap:wrap">
+      <input id="dedChan" placeholder="@mychannel (اختیاری)" dir="ltr"
+        style="flex:1;min-width:160px;background:var(--s2,#12161f);color:inherit;border:1px solid var(--ln,#232a39);border-radius:12px;padding:10px">
+      <input id="dedName" placeholder="rasa-mybot (اختیاری)" dir="ltr"
+        style="flex:1;min-width:160px;background:var(--s2,#12161f);color:inherit;border:1px solid var(--ln,#232a39);border-radius:12px;padding:10px">
+    </div>
+    <label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;color:var(--mu);font-size:13px">
+      <input type="checkbox" id="dedOk" style="margin-top:3px">
+      <span>موافقم روی حساب خودم ورکر ساخته شود. توکن‌ها فقط برای همین نصب استفاده می‌شوند و جایی ذخیره نمی‌شوند.</span>
+    </label>
+    <button class="btn pri" id="dedGo" style="width:100%;margin-top:12px">🚀 نصب کن</button>
+    <small id="dedHint" style="color:var(--mu);display:block;margin-top:6px"></small>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <h3>۳) آیدی عددی من</h3>
+    <p style="color:var(--mu);font-size:13px;line-height:1.9">
+      همین‌که لینک شخصی‌ات ساخته شود، <b>آیدی عددی خودت خودکار ذخیره می‌شود</b> — لازم نیست چیزی تایپ کنی.
+      از آن به بعد کلاد / جمنای / گروک که به این لینک وصل‌اند، هر چیزی بفرستند به
+      <b>پیوی خودت در ربات رسا</b> می‌آید و <b>فقط خودت می‌بینی</b>.
+    </p>
+    <div id="dedPeerState" style="margin-top:10px;padding:10px;border-radius:12px;background:var(--s2,#12161f);border:1px solid var(--ln,#232a39);font-size:13px;line-height:1.9">
+      ⏳ در حال خواندن وضعیت…
+    </div>
+    <div class="row" style="margin-top:10px;flex-wrap:wrap;align-items:stretch">
+      <button class="btn pri" id="dedPeerPv" style="flex:1;min-width:130px">📥 پیوی خودم</button>
+      <button class="btn" id="dedPeerCh" style="flex:1;min-width:130px">📢 کانال من</button>
+    </div>
+    <details style="margin-top:10px">
+      <summary style="color:var(--mu);font-size:13px;cursor:pointer">تغییر دستی: بفرست به پیوی شخص دیگری</summary>
+      <div class="row" style="margin-top:8px;flex-wrap:wrap;align-items:stretch">
+        <input id="dedPeer" placeholder="مثل 123456789" dir="ltr" inputmode="numeric"
+          style="flex:1;min-width:150px;width:100%;background:var(--s2,#12161f);color:inherit;border:1px solid var(--ln,#232a39);border-radius:12px;padding:10px;font-family:monospace">
+        <button class="btn" id="dedPeerSave">💾 ثبت این عدد</button>
+      </div>
+      <small style="color:var(--mu);display:block;margin-top:6px;line-height:1.9">
+        فقط رقم انگلیسی. آن شخص باید یک‌بار ربات رسا را استارت کرده باشد.
+      </small>
+    </details>
+    <small id="dedPeerMsg" style="color:var(--mu);display:block;margin-top:8px;line-height:1.9">
+      پیشنهاد: «پیوی خودم» تا پست‌های شخصی‌ات فقط برای خودت بیاید.
+    </small>
+  </div>
+
+  <div class="card hide" id="dedLogCard" style="margin-top:12px">
+    <h3>گزارش نصب</h3>
+    <div id="dedLog" style="font-size:13px;line-height:2"></div>
+  </div>
+
+  <div class="card hide" id="dedOutCard" style="margin-top:12px">
+    <h3>✅ آماده است</h3>
+    <p style="color:var(--mu);font-size:13px">این لینک شخصی توست؛ آن را به هوش مصنوعی خودت وصل کن:</p>
+    <textarea id="dedMcp" rows="3" readonly dir="ltr"
+      style="width:100%;background:var(--s2,#12161f);color:inherit;border:1px solid var(--ln,#232a39);border-radius:12px;padding:10px;font-family:monospace;font-size:12px"></textarea>
+    <div class="row" style="margin-top:8px;flex-wrap:wrap">
+      <button class="btn" id="dedCopy">📋 کپی لینک</button>
+      <button class="btn" id="dedOpenApp">🌐 باز کردن آدرس</button>
+    </div>
+    <div class="seg" id="dedTabs" role="tablist" style="margin-top:14px">
+      <button data-c="gem" class="on">جمنای</button><button data-c="claude">کلاد</button><button data-c="grok">گروک</button>
+    </div>
+    <div id="dedConn" style="font-size:13px;color:var(--mu);line-height:2;margin-top:8px"></div>
+  </div>
+</section>
 
 <section class="view" id="v-friends">
   <div class="card">
@@ -1207,12 +1319,127 @@ function emAddHTML(){return '<h3 style="margin-top:18px">اموجی پرمیوم
 function emAddInit(){emMount($('#sheet'),function(id,em){closeSheet();var b=find(D.active),ta=b?document.querySelector('.blk[data-id="'+b.id+'"] textarea[data-f="t"]'):null;
   if(ta){var p=ta.selectionStart==null?ta.value.length:ta.selectionStart;emInsert(ta,p,ta.selectionEnd==null?p:ta.selectionEnd,id,em)}else{var nk=mk('text');nk.t=emTag(id,em);insertBlock(nk)}})}
 /* ── views ── */
-var VIEWS=['home','build','preview','library','channels','conn','friends','brand','schedule','ai','import','about','inter'];
+var VIEWS=['home','build','preview','library','channels','conn','friends','brand','schedule','ai','import','about','inter','dedicated'];
+/* ── نسخهٔ اختصاصی (b48) ── */
+function dedTokUrl(){var perms=[{key:'workers_scripts',type:'edit'},{key:'workers_kv_storage',type:'edit'}];
+  return 'https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys='+encodeURIComponent(JSON.stringify(perms))+'&accountId=*&zoneId=all&name='+encodeURIComponent('Rasa Bot — نصب اختصاصی')}
+var DED={busy:false,mcp:''};
+function dedRow(t,ok){var el=$('#dedLog');if(!el)return;el.innerHTML+=(ok===false?'❌ ':ok===true?'✅ ':'• ')+esc(t)+'<br>';$('#dedLogCard').classList.remove('hide')}
+function dedConnText(c){
+  if(c==='claude')return 'کلاد: Settings → Connectors → Add custom connector → نام: Rasa → آدرس لینک بالا را بچسبان → Save. (یا دستور: <code dir="ltr">claude mcp add --transport http rasa LINK</code>)';
+  if(c==='grok')return 'گروک: grok.com/connectors → New Connector → Custom → آدرس لینک بالا. (حساب پرداختی لازم دارد)';
+  return 'جمنای: Settings → Connected Apps → Add connection → Custom MCP → آدرس لینک بالا → Save (فیلدهای OAuth را خالی بگذار).';
+}
+function paintDedicated(){try{
+  var hint=$('#dedHint');
+  if(hint)hint.textContent=initData?'':'برای نصب باید این صفحه را از داخل ربات رسا باز کنی (کاربر شناسایی نشد).';
+  var c=$('#dedConn'); if(c)c.innerHTML=dedConnText('gem');
+  var t=$('#dedTabs'); if(t&&!t.dataset.on){t.dataset.on='1';
+    t.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;hap('pick');
+      $$('#dedTabs button').forEach(function(x){x.classList.toggle('on',x===b)});$('#dedConn').innerHTML=dedConnText(b.dataset.c)})}
+  var g=$('#dedGo'); if(g&&!g.dataset.on){g.dataset.on='1';g.onclick=dedInstall}
+  var tb=$('#dedTokBtn'); if(tb&&!tb.dataset.on){tb.dataset.on='1';tb.onclick=function(e){e.preventDefault();var u=dedTokUrl();try{if(tg&&tg.openLink){tg.openLink(u);return false}}catch(x){}window.open(u,'_blank');return false}}
+  var cp=$('#dedCopy'); if(cp&&!cp.dataset.on){cp.dataset.on='1';cp.onclick=function(){var v=$('#dedMcp').value;try{navigator.clipboard.writeText(v);toast('لینک کپی شد')}catch(e){$('#dedMcp').select();document.execCommand&&document.execCommand('copy');toast('لینک کپی شد')}}}
+  var ps=$('#dedPeerSave'); if(ps&&!ps.dataset.on){ps.dataset.on='1';ps.onclick=function(){dedPeerSave(($('#dedPeer').value||'').trim())}}
+  var pp=$('#dedPeerPv'); if(pp&&!pp.dataset.on){pp.dataset.on='1';pp.onclick=function(){dedPeerMode('pv')}}
+  var pc=$('#dedPeerCh'); if(pc&&!pc.dataset.on){pc.dataset.on='1';pc.onclick=function(){dedPeerMode('channel')}}
+  var mc=$('#dedMyCopy'); if(mc&&!mc.dataset.on){mc.dataset.on='1';mc.onclick=function(){var v=($('#dedMyLink').value||'');try{navigator.clipboard.writeText(v);toast('لینک کپی شد ✅')}catch(e){$('#dedMyLink').select();document.execCommand&&document.execCommand('copy');toast('لینک کپی شد ✅')}}}
+  var mo=$('#dedMyOpen'); if(mo&&!mo.dataset.on){mo.dataset.on='1';mo.onclick=function(){var u=($('#dedMyLink').value||'').replace(/\/api\/mcp\/.*$/,'');try{if(u&&tg&&tg.openLink)tg.openLink(u);else if(u)window.open(u,'_blank')}catch(e){}}}
+  var ma=$('#dedMyAgain'); if(ma&&!ma.dataset.on){ma.dataset.on='1';ma.onclick=function(){var c=$('#dedConn');if(c)c.scrollIntoView({block:'center'});toast('راهنمای اتصال پایین همین صفحه است')}}
+  dedMyPaint();
+  dedPeerRefresh();
+  var oa=$('#dedOpenApp'); if(oa&&!oa.dataset.on){oa.dataset.on='1';oa.onclick=function(){try{if(tg&&tg.openLink)tg.openLink($('#dedMcp').value.replace(/\/api\/mcp\/.*$/,''));else window.open($('#dedMcp').value.replace(/\/api\/mcp\/.*$/,''),'_blank')}catch(e){}}}
+}catch(e){} }
+function dedPeerSave(peer){
+  if(!initData){toast('از داخل ربات رسا باز کن');hap('err');return}
+  var msg=$('#dedPeerMsg'); if(msg)msg.textContent='⏳ در حال ثبت…';
+  api('/api/peer',{initData:initData,peer:peer}).then(function(r){
+    if(!r||!r.ok){if(msg)msg.textContent=(r&&r.error)||'خطا در ثبت';toast((r&&r.error)||'خطا');hap('err');return}
+    var inp=$('#dedPeer');
+    if(r.peer){if(inp)inp.value=r.peer;if(msg)msg.textContent='✅ '+r.peer+' ثبت شد — پست‌ها به پیوی همین نفر می‌رود (فقط خودش می‌بیند)';}
+    else{if(inp)inp.value='';if(msg)msg.textContent='✅ برداشته شد — پست‌ها به کانال برمی‌گردد';}
+    hap('ok');toast('ثبت شد ✅');
+  });
+}
+function dedMyPaint(st){
+  st=st||DED.mywork||{}; var card=$('#dedMyCard'); if(!card)return;
+  if(st.installed&&st.mcp){
+    card.classList.remove('hide');
+    var box=$('#dedMyLink'); if(box)box.value=st.mcp;
+    var meta=$('#dedMyMeta');
+    if(meta)meta.textContent='نام ورکر: '+(st.worker||'—')+' • از '+(st.since?new Date(st.since).toLocaleDateString('fa-IR'):'—')+' — این لینک همیشه همین‌جا می‌ماند.';
+  } else {
+    card.classList.add('hide');
+  }
+}
+function dedPeerPaint(st){
+  var box=$('#dedPeerState'); if(!box)return;
+  st=st||DED.peer||{};
+  var uid=st.uid||'', peer=st.peer||'', chan=st.channel||'';
+  var num=String(peer||uid||'—');
+  if(peer && String(peer)===String(uid)){
+    box.innerHTML='✅ <b>فعال:</b> پست‌های این لینک به <b>پیوی خودت</b> می‌رود (آیدی عددی '+num+') — فقط خودت می‌بینی.';
+  }else if(peer){
+    box.innerHTML='✅ <b>فعال:</b> پست‌های این لینک به پیوی <b>'+peer+'</b> می‌رود (فقط همان شخص).';
+  }else if(chan){
+    box.innerHTML='📢 <b>مقصد فعلی:</b> کانال <span dir="ltr">'+chan+'</span> — اگر می‌خواهی فقط برای خودت باشد، «پیوی خودم» را بزن.';
+  }else{
+    box.innerHTML='📢 هنوز کانالی تنظیم نشده و مقصد پست‌ها کانال است. «پیوی خودم» را بزن تا فقط برای خودت بیاید.';
+  }
+}
+function dedPeerRefresh(){
+  if(!initData){var b=$('#dedPeerState');if(b)b.innerHTML='برای دیدن وضعیت، این صفحه را از داخل ربات رسا باز کن.';return}
+  api('/api/peer',{initData:initData}).then(function(r){
+    if(r&&r.ok){DED.peer=r;dedPeerPaint(r);DED.mywork=r;dedMyPaint(r)}
+    else{var b=$('#dedPeerState');if(b)b.innerHTML='وضعیت خوانده نشد؛ چند لحظه بعد دوباره تلاش کن.'}
+  });
+}
+function dedPeerMode(mode){
+  if(!initData){toast('از داخل ربات رسا باز کن');hap('err');return}
+  var msg=$('#dedPeerMsg');
+  if(msg)msg.textContent='⏳ در حال ثبت…';
+  api('/api/peer',{initData:initData,mode:mode}).then(function(r){
+    if(!r||!r.ok){if(msg)msg.textContent=(r&&r.error)||'خطا در ثبت';toast((r&&r.error)||'خطا');hap('err');return}
+    DED.peer=r;dedPeerPaint(r);
+    if(msg)msg.textContent=(mode==='pv')?'✅ ثبت شد — از این به بعد فقط خودت می‌بینی':'✅ به کانال برگشت';
+    hap('ok');toast(mode==='pv'?'پیوی خودم ✅':'کانال من ✅');
+  });
+}
+function dedPeerSave(peer){
+  if(!initData){toast('از داخل ربات رسا باز کن');hap('err');return}
+  var msg=$('#dedPeerMsg'); if(msg)msg.textContent='⏳ در حال ثبت…';
+  api('/api/peer',{initData:initData,peer:peer}).then(function(r){
+    if(!r||!r.ok){if(msg)msg.textContent=(r&&r.error)||'خطا در ثبت';toast((r&&r.error)||'خطا');hap('err');return}
+    DED.peer=r;dedPeerPaint(r);
+    if(r.peer){if(msg)msg.textContent='✅ '+r.peer+' ثبت شد — پست‌ها به پیوی همین نفر می‌رود (فقط خودش می‌بیند)';}
+    else{if(msg)msg.textContent='✅ برداشته شد — پست‌ها به کانال برمی‌گردد';}
+    hap('ok');toast('ثبت شد ✅');
+  });
+}
+function dedInstall(){
+  if(DED.busy)return;
+  if(!initData){toast('از داخل ربات رسا باز کن');hap('err');return}
+  var tok=($('#dedTok').value||'').trim();
+  if(tok.length<20){toast('توکن کلادفلر را بچسبان');hap('err');return}
+  if(!$('#dedOk').checked){toast('تأیید شرایط لازم است');hap('err');return}
+  DED.busy=true;$('#dedLog').innerHTML='';$('#dedLogCard').classList.remove('hide');
+  var b=$('#dedGo');b.disabled=true;b.textContent='⏳ در حال ساخت...';
+  dedRow('شروع نصب…');
+  api('/api/selfinstall',{consent:'yes',cf_token:tok,channel:($('#dedChan').value||'').trim(),name:($('#dedName').value||'').trim(),peer_id:($('#dedPeer')&&$('#dedPeer').value||'').trim(),initData:initData}).then(function(r){
+    DED.busy=false;b.disabled=false;b.textContent='🚀 نصب کن';
+    if(!r||!r.ok){dedRow((r&&r.error)||'خطای نامشخص',false);toast((r&&r.error)||'خطا');hap('err');return}
+    (r.log||[]).forEach(function(x){dedRow(x.t+(x.x?(' — '+x.x):''),x.ok)});
+    DED.mcp=r.mcp_url||'';$('#dedMcp').value=DED.mcp;$('#dedOutCard').classList.remove('hide');
+    DED.peer={peer:r.peer||'',uid:r.peer||'',channel:($('#dedChan').value||'').trim()};dedPeerPaint(DED.peer);
+    DED.mywork={installed:true,mcp:r.mcp_url||'',worker:r.name||'',since:Date.now()};dedMyPaint(DED.mywork);
+    hap('ok');toast('نسخهٔ اختصاصی ساخته شد ✅',2600);
+  });
+}
 function setView(v){V=v;VIEWS.forEach(function(x){var el=$('#v-'+x); if(el) el.classList.toggle('on',x===v)});$$('.nav button').forEach(function(b){b.classList.toggle('on',b.dataset.v===v)});document.body.dataset.view=v;
-  if(v==='home')paintHome();if(v==='library')paintLib();if(v==='channels')paintPub();if(v==='conn')paintConn();if(v==='friends')paintFriends();if(v==='brand')paintBrand();if(v==='schedule')paintSchedule();if(v==='ai')paintAI();if(v==='import')paintImport();if(v==='inter')paintInter();if(v==='build'||v==='preview')paintPV();
+  if(v==='home')paintHome();if(v==='library')paintLib();if(v==='channels')paintPub();if(v==='conn')paintConn();if(v==='friends')paintFriends();if(v==='brand')paintBrand();if(v==='schedule')paintSchedule();if(v==='ai')paintAI();if(v==='import')paintImport();if(v==='inter')paintInter();if(v==='dedicated')paintDedicated();if(v==='build'||v==='preview')paintPV();
   $('#fab').classList.toggle('hide',v!=='build'||D.mode!=='visual');window.scrollTo(0,0)}
 var MAIN_NAV=[['build','ساخت','spark'],['preview','پیش‌نمایش','eye'],['library','کتابخانه','grid'],['channels','انتشار','send']];
-var EXTRA_NAV=[['inter','قالب‌های تعاملی','spark'],['conn','کانال‌ها','channel'],['brand','برند','box'],['schedule','زمان‌بندی','send'],['ai','هوش مصنوعی','spark'],['import','واردات','link'],['friends','دوستان','users'],['about','درباره','box'],['home','خانه','home']];
+var EXTRA_NAV=[['dedicated','نسخهٔ اختصاصی','bolt'],['inter','قالب‌های تعاملی','spark'],['conn','کانال‌ها','channel'],['brand','برند','box'],['schedule','زمان‌بندی','send'],['ai','هوش مصنوعی','spark'],['import','واردات','link'],['friends','دوستان','users'],['about','درباره','box'],['home','خانه','home']];
 var NAV=MAIN_NAV;
 $('.nav').innerHTML=MAIN_NAV.map(function(n){return '<button data-v="'+n[0]+'">'+ic(n[2],22)+n[1]+'</button>'}).join('');
 $('.nav').addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;hap('pick');if(b.dataset.v==='build'&&!D.blocks.length&&V==='home'){newDoc()}else setView(b.dataset.v)});
@@ -2108,6 +2335,7 @@ function boot(){bindGalleryInput();setStatus();setView('home');
   var wantView=(location.hash||'').replace(/^#/,'');
   if(!wantView){var mv=/[?&]view=([a-zA-Z]+)/.exec(location.search);wantView=mv?mv[1]:''}
   if(wantView&&VIEWS.indexOf(wantView)>=0)setView(wantView);
+  if(location.hash==='#dedicated')setView('dedicated');
   if(!initData){S.offlineWhy='آفلاین — حالت نمایشی';setStatus();paintHome();return}
   api('/api/session',{initData:initData}).then(function(r){
     if(!r.ok){S.offlineWhy='سرور در دسترس نیست';setStatus();paintHome();return}

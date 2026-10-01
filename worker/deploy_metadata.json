@@ -1,0 +1,59 @@
+{
+ "main_module": "index.js",
+ "compatibility_date": "2026-09-28",
+ "keep_bindings": [
+  "secret_text"
+ ],
+ "bindings": [
+  {
+   "name": "KV",
+   "type": "kv_namespace",
+   "namespace_id": "8eff5bd6b33a4a79ba3d869ef373065a"
+  },
+  {
+   "name": "KV_FRESH",
+   "type": "kv_namespace",
+   "namespace_id": "32075883d0054d95ad579888f58ff613"
+  },
+  {
+   "name": "RASA_KV",
+   "type": "kv_namespace",
+   "namespace_id": "f7714cd6f0e74ae0b55d73107fa8d88e"
+  },
+  {
+   "name": "STATE",
+   "type": "durable_object_namespace",
+   "class_name": "State",
+   "namespace_id": "c191ec2162cc449f876b8b4005cc1fdb"
+  },
+  {
+   "name": "WEBHOOK_PATH",
+   "type": "plain_text",
+   "text": "/telegram/webhook"
+  },
+  {
+   "name": "AI",
+   "type": "ai"
+  },
+  {
+   "name": "COMMANDER_ON",
+   "type": "plain_text",
+   "text": "1"
+  },
+  {
+   "name": "MCP_SECRET",
+   "type": "plain_text",
+   "text": "516dd0b15a89d4b98df6f7a63c306190"
+  },
+  {
+   "name": "CMD_CHANNEL",
+   "type": "plain_text",
+   "text": "@xjjsjsjsjji"
+  },
+  {
+   "type": "plain_text",
+   "name": "HOST_ACCOUNT",
+   "text": "ab05b8b5f2822a491ec407585327eb8f"
+  }
+ ]
+}

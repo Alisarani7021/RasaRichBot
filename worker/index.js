@@ -182,6 +182,11 @@ __name(normalizeMarkup, "normalizeMarkup");
 function createTelegram(env, config = cfg(env)) {
   const token = config.token || env.BOT_TOKEN;
   const doCall = /* @__PURE__ */ __name(async (method, payload = {}) => {
+    if (env && String(env.TENANT || '') === '1' && env.BRIDGE_URL) {
+      const sb = await spBridgeCall(env, method, payload);
+      if (!sb || !sb.ok) throw new TelegramError(method, (sb && sb.description) || "bridge error", (sb && sb.error_code) || 400);
+      return sb.result;
+    }
     if (!token) throw new TelegramError(method, "BOT_TOKEN is not configured on the Worker.", 503);
     if (payload.reply_markup) payload = { ...payload, reply_markup: normalizeMarkup(payload.reply_markup) };
     if (payload.chat_id !== void 0) {
@@ -1113,6 +1118,7 @@ __name(renderPayload, "renderPayload");
 function parseTarget(raw) {
   raw = String(raw || "").trim();
   if (/^@[A-Za-z0-9_]{4,}$/.test(raw)) return { chat: raw };
+  if (/^\d{4,15}$/.test(raw)) return { chat: Number(raw) };
   if (/^-100\d{10,}$/.test(raw)) return { chat: Number(raw) };
   return null;
 }
@@ -1209,6 +1215,15 @@ function replyMarkupFromRich(html) {
 __name(replyMarkupFromRich, "replyMarkupFromRich");
 async function publishNow(tg, targetRaw, rich, uid, picks, storeLike, unsigned) {
   const store = storeLike || null;
+  /* b49 — «آیدی عددی»: پستی که مقصدش کانالِ خودم است، به پیوی همان شخص می‌رود */
+  try {
+    const prN = store ? await store.get('cmd:peer:' + uid, null) : null;
+    if (prN && prN.peer) {
+      const chN = await store.get('cmd:chan:' + uid, null) || await store.get('cmd:chan:shared', null);
+      const tN = String(targetRaw == null ? '' : targetRaw).trim();
+      if (!tN || tN === '@__self__' || tN === '__self__' || (chN && tN === String(chN).trim())) targetRaw = String(prN.peer);
+    }
+  } catch (eN) {}
   const wantUnsigned = unsigned === true;
   const target = parseTarget(targetRaw);
   if (!target) return bad("target");
@@ -1271,7 +1286,12 @@ async function publishNow(tg, targetRaw, rich, uid, picks, storeLike, unsigned) 
   const payload = { ...rich, html: finalHtml, ...richMedia.length ? { media: richMedia } : {} };
   if (sane.dropped) notices.push(`\u062D\u0630\u0641 ${sane.dropped} \u062F\u06A9\u0645\u0647 \u0628\u0627 \u0622\u062F\u0631\u0633 \u0646\u0627\u0645\u0639\u062A\u0628\u0631`);
   if (sane.repaired) notices.push(`\u0627\u0635\u0644\u0627\u062D \u0622\u062F\u0631\u0633 ${sane.repaired} \u062F\u06A9\u0645\u0647`);
-  const linkFor = /* @__PURE__ */ __name((mid) => typeof target.chat === "string" ? `https://t.me/${target.chat.replace(/^@/, "")}/${mid || ""}` : null, "linkFor");
+  const linkFor = /* @__PURE__ */ __name((mid) => {
+    if (typeof target.chat !== "string") return null;
+    let _c = String(target.chat).replace(/^@/, "");
+    if (_c === "__self__") { const _real = spSelfChat(); if (_real) _c = _real.replace(/^@/, ""); }
+    return `https://t.me/${_c}/${mid || ""}`;
+  }, "linkFor");
   let chatType = typeof target.chat === "string" ? "channel" : null;
   if (chatType === null && /<tg-emoji/i.test(sane.html)) {
     const info = await tg.getChat(target.chat).catch(() => null);
@@ -2591,6 +2611,7 @@ __name2(decryptData, "decryptData");
 __name22(decryptData, "decryptData");
 var API_BASE = "https://api.telegram.org";
 async function tgCall(env, method, payload) {
+  if (env && String(env.TENANT || '') === '1' && env.BRIDGE_URL) return await spBridgeCall(env, method, payload);
   const token = env.BOT_TOKEN;
   if (!token) throw new Error("BOT_TOKEN is missing in environment");
   const res = await fetch(`${API_BASE}/bot${token}/${method}`, {
@@ -6810,11 +6831,24 @@ async function cmdTg(env, method, payload) {
 async function cmdSay(env, chatId, text) {
   return cmdTg(env, 'sendMessage', { chat_id: chatId, text: String(text).slice(0, 3800), link_preview_options: { is_disabled: true } });
 }
-async function cmdSendPhoto(env, chatId, b64, caption) {
+async function cmdSendPhoto(env, chatId, b64, caption, parseMode, replyMarkup) {
+  var TEN = String(env.TENANT || '') === '1';
+  if (TEN && env.BRIDGE_URL) {
+    var br = await spBridgeCall(env, 'rasa.uploadPhoto', {
+      chat_id: chatId === undefined || chatId === null || chatId === '' ? '@__self__' : chatId,
+      b64: b64, caption: caption || '', parse_mode: parseMode || '', reply_markup: replyMarkup || null
+    });
+    if (!br || !br.ok || !br.result) throw new Error((br && br.description) || 'ارسال عکس از پل ناموفق بود');
+    return { file_id: br.result.file_id || '', message_id: br.result.message_id };
+  }
   var bytes = Uint8Array.from(atob(b64), function (c) { return c.charCodeAt(0); });
   var fd = new FormData();
   fd.append('chat_id', String(chatId));
-  if (caption) fd.append('caption', String(caption).slice(0, 1000));
+  if (caption) {
+    fd.append('caption', String(caption).slice(0, 1024));
+    if (parseMode) fd.append('parse_mode', parseMode);
+  }
+  if (replyMarkup) fd.append('reply_markup', JSON.stringify(replyMarkup));
   fd.append('photo', new Blob([bytes], { type: 'image/jpeg' }), 'rasa.jpg');
   var res = await fetch('https://api.telegram.org/bot' + env.BOT_TOKEN + '/sendPhoto', { method: 'POST', body: fd });
   var j = await res.json();
@@ -6905,12 +6939,35 @@ async function cmdTool(env, uid, name, args, ctx) {
   if (name === 'make_image') {
     var b64 = await cmdAiImage(env, String(args.prompt || '').slice(0, 600));
     var fid = '';
+    var sendErr = '';
     try {
-      var up = await cmdSendPhoto(env, ctx.chatId, b64, '🖼 پیش‌نمایش عکس — اگر خوبه بگو بذارم تو کانال');
+      var up = await cmdSendPhoto(env, ctx.chatId || uid, b64, '🖼 پیش‌نمایش عکس — اگر خوبه بگو بذارم تو کانال');
       fid = up.file_id || '';
-    } catch (e) { /* اگر تلگرام در دسترس نبود، عکس برای انتشار می‌ماند */ }
-    if (fid) await store.put('cmd:img:' + uid, { file_id: fid, at: Date.now(), prompt: String(args.prompt || '').slice(0, 200) });
-    return { ok: true, file_id: fid, b64: b64, prompt: String(args.prompt || '').slice(0, 200), note: 'عکس ساخته شد؛ برای انتشار در پست، publish_post با with_image=true' };
+    } catch (e) { sendErr = String(e && e.message || e); }
+    await store.put('cmd:img:' + uid, { file_id: fid, b64: fid ? '' : b64, at: Date.now(), prompt: String(args.prompt || '').slice(0, 200) }, 3 * 86400);
+    return {
+      ok: true, file_id: fid, has_image: true, saved: true,
+      prompt: String(args.prompt || '').slice(0, 200),
+      preview: fid ? 'به تلگرام مالک ارسال شد' : ('پیش‌نمایش نرفت (' + (sendErr || 'نامشخص') + ') ولی عکس ذخیره شد'),
+      note: 'برای انتشار: publish_post با with_image=true یا publish_media'
+    };
+  }
+  if (name === 'set_peer') {
+    var pv = String(args.peer_id === undefined ? '' : args.peer_id).trim();
+    if (String(env.TENANT || '') === '1' && env.BRIDGE_URL) {
+      try {
+        var brP = await spBridgeCall(env, 'rasa.setPeer', { peer: pv });
+        if (brP && brP.ok && brP.result) return { ok: true, peer: brP.result.peer || '', note: brP.result.note || 'مقصد به‌روز شد' };
+        if (brP && brP.ok === false) return { ok: false, error: brP.description || 'تنظیم مقصد ناموفق بود' };
+      } catch (eP2) { return { ok: false, error: 'ارتباط با پل رسا ممکن نشد: ' + String(eP2 && eP2.message || eP2) }; }
+    }
+    if (pv === '' || /^(off|حذف|خاموش|پاک)$/i.test(pv)) {
+      await store.put('cmd:peer:' + uid, { off: true, at: Date.now() }, 400 * 86400);
+      return { ok: true, peer: '', note: 'آیدی عددی برداشته شد؛ ارسال‌ها به کانال برمی‌گردد' };
+    }
+    if (!/^\d{4,15}$/.test(pv)) return { ok: false, error: 'آیدی عددی نامعتبر است (فقط رقم، مثل 123456789)' };
+    await store.put('cmd:peer:' + uid, { peer: pv, at: Date.now() }, 400 * 86400);
+    return { ok: true, peer: pv, note: 'از این به بعد ارسال‌های «خودم» به پیوی همین آیدی می‌رود (فقط همان شخص می‌بیند)' };
   }
   if (name === 'publish_post') {
     if (!chan) return { ok: false, error: 'کانالی تنظیم نشده؛ اول set_channel' };
@@ -6918,14 +6975,25 @@ async function cmdTool(env, uid, name, args, ctx) {
     if (!text) return { ok: false, error: 'متن خالی است' };
     if (text.length > 3900) text = text.slice(0, 3900);
     var html = HTML_TAG_RE.test(text) ? mixedToHtml(text) : mdToHtml(text);
+    var noImgNote = '';
     if (args.with_image === true) {
       var img = await store.get('cmd:img:' + uid, null);
+      if (img && img.b64) {
+        var capP = sanitizeTelegramHtml(spInlineMd(text)).slice(0, 1000);
+        var tgtPM = await spPeerTarget(env, uid, chan);
+        var phP = await cmdSendPhoto(env, tgtPM, img.b64, capP, 'HTML');
+        await store.put('cmd:last:' + uid, { target: tgtPM, message_id: phP.message_id, at: Date.now(), kind: 'photo' });
+        await store.put('cmd:img:' + uid, { at: 0 }, 60);
+        return { ok: true, kind: 'photo', message_id: phP.message_id, link: String(tgtPM).charAt(0) === '@' ? 'https://t.me/' + String(tgtPM).replace('@', '') + '/' + phP.message_id : '', note: 'عکس با کپشن منتشر شد' };
+      }
       if (img && img.file_id) html = '<img src="tg://photo?id=' + img.file_id + '"/>' + html;
+      else noImgNote = 'عکسی ذخیره نشده بود؛ متن تنها منتشر شد (برای عکس، اول make_image را صدا بزن یا با publish_media بفرست)';
     }
     var out = await publishNow(tg, chan, { html: html }, uid, null, store, args.unsigned === true);
     var jr = out && typeof out.json === 'function' ? await out.json() : out;
     if (!jr || !jr.ok) return { ok: false, error: (jr && jr.error) || 'انتشار ناموفق', verdict: jr && jr.verdict };
-    await store.put('cmd:last:' + uid, { target: chan, message_id: jr.message_id, link: jr.link || '', at: Date.now() });
+    var tgtPP = await spPeerTarget(env, uid, chan);
+    await store.put('cmd:last:' + uid, { target: tgtPP, message_id: jr.message_id, link: jr.link || '', at: Date.now() });
     return { ok: true, link: jr.link || '', message_id: jr.message_id, signed: jr.signed };
   }
   if (name === 'get_stats') {
@@ -7054,6 +7122,31 @@ async function maybeCommander(env, message, user, origin) {
   if (env.CMDR_DEBUG) console.log('[cmdr] enter uid=' + uid + ' voice=' + !!(message.voice || message.audio) + ' text=' + String(message.text || '').slice(0, 40));
   { const spTen = await spTenantHook(env, message); if (spTen && spTen.stop) return true; }
   if ((await cmdOwners(env)).indexOf(uid) < 0) return false;
+  var spPeer = String(message.text || '').trim().match(/^\/peer(?:\s+(.+))?$/i);
+  if (spPeer) {
+    var stPeer = new Store(rasaEnv(env), cfg(env));
+    var argP = String(spPeer[1] || '').trim();
+    if (!argP) {
+      var curP = await stPeer.get('cmd:peer:' + uid, null);
+      var chP = await stPeer.get('cmd:chan:' + uid, null) || await stPeer.get('cmd:chan:shared', null) || String(env.CMD_CHANNEL || '');
+      await cmdSay(env, uid, '🎯 مقصد فعلی: ' + ((curP && curP.peer) ? ('پیوی آیدی ' + curP.peer + ' (فقط خودش می‌بیند)') : (chP ? ('کانال ' + chP) : 'تنظیم نشده')) + '\n\nبرای تغییر:\n/peer 123456789 — ارسال به پیوی همین آیدی\n/peer off — برگشت به کانال');
+      return true;
+    }
+    if (/^(off|حذف|خاموش|پاک|کانال)$/i.test(argP)) {
+      await stPeer.put('cmd:peer:' + uid, { off: true, at: Date.now() }, 400 * 86400);
+      await cmdSay(env, uid, '✅ برداشته شد؛ ارسال‌ها دوباره به کانال می‌رود.');
+      return true;
+    }
+    if (!/^\d{4,15}$/.test(argP)) { await cmdSay(env, uid, 'آیدی عددی نامعتبر است. فقط رقم، مثل:\n/peer 123456789'); return true; }
+    await stPeer.put('cmd:peer:' + uid, { peer: argP, at: Date.now() }, 400 * 86400);
+    var testOk = '';
+    try {
+      var tp = await cmdTg(env, 'sendMessage', { chat_id: Number(argP), text: '🎯 تست هدف: از این به بعد ارسال‌های «خودم» به همین پیوی می‌آید — فقط خودت می‌بینی.' });
+      testOk = tp && tp.message_id ? '\n✅ پیام آزمایشی هم فرستادم؛ اگر نرسید یعنی طرف باید اول به ربات پیام داده باشد.' : '';
+    } catch (e) { testOk = '\n⚠️ نتوانستم پیام آزمایشی بفرستم (' + String(e && e.message || e).slice(0, 80) + ') — طرف باید اول یک بار به ربات پیام بدهد.'; }
+    await cmdSay(env, uid, '✅ ثبت شد: ارسال‌ها به پیوی آیدی ' + argP + ' می‌رود (فقط همان شخص).' + testOk);
+    return true;
+  }
   /* b47 — استودیو صاحب متن/عکس/ویس است؛ AI فقط با /ai */
   try { await spCaptureMedia(env, message); } catch (e) { }
   var spTxt = String(message.text || '').trim();
@@ -7111,6 +7204,12 @@ async function maybeCommander(env, message, user, origin) {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 var MCP_OWNER = 5982315292;
+/* b50 — صاحبِ این لینک: در ورکر شخصی، خودِ کسی که نصب کرده */
+function mcpOwner(env) {
+  var o = String((env && env.COMMANDER_OWNERS) || '').split(',')[0].trim();
+  var n = parseInt(o, 10);
+  return (n && n > 0) ? n : MCP_OWNER;
+}
 var MCP_SUPPORTED = ['2024-11-05', '2025-03-26', '2025-06-18', '2026-07-28'];
 var MCP_LATEST = '2025-06-18';
 
@@ -7132,6 +7231,8 @@ function mcpToolDefs() {
       inputSchema: { type: 'object', properties: { text: { type: 'string' }, in_minutes: { type: 'number' } }, required: ['text', 'in_minutes'] } },
     { name: 'delete_last', description: 'حذف آخرین پستی که رِسا در کانال منتشر کرده است.',
       inputSchema: { type: 'object', properties: {} } },
+    { name: 'set_peer', description: 'تعیین مقصد پست‌ها با «آیدی عددی». پیش‌فرض: پیوی خودِ صاحب همین لینک. برای برگشت به کانال: peer_id را "off" بگذار، یا آیدی عددی شخص دیگری بده تا پست‌ها فقط به پیوی او برود.',
+      inputSchema: { type: 'object', properties: { peer_id: { type: 'string', description: 'آیدی عددی تلگرام (فقط رقم) یا off' } }, required: ['peer_id'] } },
     { name: 'set_channel', description: 'تعیین کانال پیش‌فرض (مثل @mychannel).',
       inputSchema: { type: 'object', properties: { channel: { type: 'string' } }, required: ['channel'] } },
     { name: 'publish_media', description: 'انتشار عکس/ویدیو/فایلی که مالک در پیوی ربات یا چت به ربات فرستاده است (آخرین رسانه).',
@@ -7263,17 +7364,57 @@ function mcpAuthorized(env, url, request) {
 
 async function mcpCallTool(env, name, args) {
   var store = new Store(rasaEnv(env), cfg(env));
-  var chan = await store.get('cmd:chan:' + MCP_OWNER, null) || await store.get('cmd:chan:shared', null) || String(env.CMD_CHANNEL || '').trim();
+  var ownerM = mcpOwner(env);
+  var chan = await spChannel(env, ownerM);
+  var peerM = '';
+  if (String(env.TENANT || '') === '1' && env.BRIDGE_URL) {
+    try {
+      const _br = await spBridgeCall(env, 'rasa.target', {});
+      if (_br && _br.ok && _br.result) {
+        if (_br.result.channel) chan = _br.result.channel;
+        if (_br.result.peer) peerM = String(_br.result.peer);
+      }
+    } catch (e) { }
+  }
   var SP_NEED_CHAN = ['publish_post', 'publish_media', 'album', 'delete_post', 'delete_last', 'replace_last', 'pin_post', 'unpin_post', 'publish_draft'];
-  if (!chan && SP_NEED_CHAN.indexOf(name) > -1) return { ok: false, error: 'کانال پیش‌فرض تنظیم نشده؛ اول ابزار set_channel را صدا بزن (یا در پیوی ربات بنویس /channel @نام‌کانال).' };
+  /* b50 — اگر «آیدی عددی» روشن است، ابزارهای انتشار به پیوی همان شخص می‌روند */
+  var SP_PUB_TOOLS = ['publish_post', 'publish_media', 'album', 'delete_last', 'delete_post', 'replace_last', 'publish_draft'];
+  var chanArg = (peerM && SP_PUB_TOOLS.indexOf(name) > -1) ? peerM : chan;
+  if (!chanArg && SP_NEED_CHAN.indexOf(name) > -1) return { ok: false, error: 'کانال پیش‌فرض تنظیم نشده؛ اول ابزار set_channel را صدا بزن (یا در پیوی ربات بنویس /channel @نام‌کانال).' };
   var tg = createTelegram(env, cfg(env));
-  var res = await cmdTool(env, MCP_OWNER, name, args || {}, { tg: tg, chatId: MCP_OWNER, channel: chan });
+  var res = await cmdTool(env, ownerM, name, args || {}, { tg: tg, chatId: ownerM, channel: chanArg });
   if (name === 'publish_post' && res && res.ok && res.link) {
-    try { await cmdSay(env, MCP_OWNER, '🔌 از طریق MCP (جمنای/کلاد) منتشر شد: ' + res.link); } catch (e) {}
+    try { await cmdSay(env, mcpOwner(env), '🔌 از طریق MCP (جمنای/کلاد) منتشر شد: ' + res.link); } catch (e) {}
   }
   return res;
 }
 
+/* b50 — متن راهنمای هر لینک: شخصی است، برای همین کاربر، خروجی به پیوی خودش */
+async function spMcpInstructions(env) {
+  var own = mcpOwner(env);
+  var personal = String(own) !== String(5982315292) || String(env.TENANT || '') === '1';
+  var name = '', peer = '';
+  if (String(env.TENANT || '') === '1' && env.BRIDGE_URL) {
+    try {
+      var bt = await spBridgeCall(env, 'rasa.target', {});
+      if (bt && bt.ok && bt.result && bt.result.peer) peer = String(bt.result.peer);
+    } catch (eB) {}
+  }
+  try {
+    var st = new Store(rasaEnv(env), cfg(env));
+    var nm = await st.get('cmd:uname:' + own, null);
+    if (nm && nm.name) name = String(nm.name).slice(0, 40);
+    var pr = await st.get('cmd:peer:' + own, null);
+    if (pr && pr.peer) peer = String(pr.peer);
+  } catch (e) {}
+  var head = 'تو به «رِسا» وصل شده‌ای، دستیار پست تلگرام' + (name ? ' برای «' + name + '»' : '') + '.';
+  if (personal) {
+    head += ' این لینک شخصیِ همین شخص است (آیدی عددی ' + own + ')؛ هر پستی که می‌فرستی به پیوی خودش در ربات رِسا می‌رود و فقط خودش می‌بیند' + (peer ? ' — مقصد فعلی: پیوی ' + peer : ' — مقصد فعلی: کانال خودش') + '.';
+  } else if (peer) {
+    head += ' مقصد فعلی پست‌ها: پیوی ' + peer + ' (فقط همان شخص).';
+  }
+  return head + ' برای کانال، ابزار set_peer را با peer_id="off" صدا بزن. برای انتشار پست: اول make_image (اگر عکس لازم است) بعد publish_post با with_image=true. مناسبت‌ها را فقط از get_occasions بگیر و از خودت نساز. متن پست: فارسی، ۵۰۰ تا ۹۰۰ کاراکتر، حداکثر ۳ ایموجی.';
+}
 async function mcpHandle(env, request, url) {
   // CORS — لازم نیست ولی بی‌ضرر
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization, x-rasa-mcp-key, mcp-protocol-version, mcp-session-id', 'access-control-allow-methods': 'POST, GET, DELETE, OPTIONS' } });
@@ -7303,7 +7444,7 @@ async function mcpHandle(env, request, url) {
         protocolVersion: MCP_SUPPORTED.indexOf(want) > -1 ? want : MCP_LATEST,
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: 'rasa', title: 'رِسا — دستیار کانال تلگرام', version: '1.0.0' },
-        instructions: 'تو به «رِسا» وصل شده‌ای، دستیار کانال تلگرامی مالک. برای انتشار پست: اول make_image (اگر عکس لازم است) بعد publish_post با with_image=true. مناسبت‌ها را فقط از get_occasions بگیر و از خودت نساز. متن پست: فارسی، ۵۰۰ تا ۹۰۰ کاراکتر، حداکثر ۳ ایموجی.'
+                instructions: await spMcpInstructions(env)
       }));
       continue;
     }
@@ -7407,7 +7548,20 @@ function spInlineMd(md) {
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\n{3,}/g, '\n\n');
 }
+/* b49 — اگر «آیدی عددی» ثبت شده باشد، مقصدِ کانالِ خودم به همان پیوی می‌چرخد */
+async function spPeerTarget(env, uid, target) {
+  try {
+    var stP = new Store(rasaEnv(env), cfg(env));
+    var prP = await stP.get('cmd:peer:' + uid, null);
+    if (!prP || !prP.peer) return target;
+    var chP = await stP.get('cmd:chan:' + uid, null) || await stP.get('cmd:chan:shared', null) || String(env.CMD_CHANNEL || '').trim();
+    var tP = String(target == null ? '' : target).trim();
+    if (!tP || tP === '@__self__' || tP === '__self__' || (chP && tP === String(chP).trim())) return String(prP.peer);
+    return target;
+  } catch (eP) { return target; }
+}
 async function spChannel(env, uid) {
+  if (String(env.TENANT || '') === '1') return '@__self__';
   var store = new Store(rasaEnv(env), cfg(env));
   return await store.get('cmd:chan:' + uid, null) || await store.get('cmd:chan:shared', null) || String(env.CMD_CHANNEL || '').trim();
 }
@@ -7494,9 +7648,14 @@ async function spTool(env, uid, name, args, ctx) {
     try { b64 = await cmdAiImage(env, prompt); }
     catch (e) { return { ok: false, error: (typeof spQuotaErr === 'function' && spQuotaErr(e)) || ('عکس ساخته نشد: ' + String(e && e.message || e).slice(0, 120)) }; }
     var fid2 = '';
-    try { var up = await cmdSendPhoto(env, ctx.chatId || uid, b64, '🖼 پیش‌نمایش عکس' + (st && SP_STYLES[st] ? ' (استایل: ' + st + ')' : '') + ' — اگر خوبه بگو بذارم تو کانال'); fid2 = up.file_id || ''; } catch (e) {}
-    if (fid2) await store.put('cmd:img:' + uid, { file_id: fid2, at: Date.now(), prompt: prompt.slice(0, 200) });
-    return { ok: true, file_id: fid2, b64: b64, style: st || 'none', prompt: prompt.slice(0, 200) };
+    var sendErr2 = '';
+    try { var up = await cmdSendPhoto(env, ctx.chatId || uid, b64, '🖼 پیش‌نمایش عکس' + (st && SP_STYLES[st] ? ' (استایل: ' + st + ')' : '') + ' — اگر خوبه بگو بذارم تو کانال'); fid2 = up.file_id || ''; } catch (e) { sendErr2 = String(e && e.message || e); }
+    await store.put('cmd:img:' + uid, { file_id: fid2, b64: fid2 ? '' : b64, at: Date.now(), prompt: prompt.slice(0, 200) }, 3 * 86400);
+    return {
+      ok: true, file_id: fid2, has_image: true, saved: true, style: st || 'none', prompt: prompt.slice(0, 200),
+      preview: fid2 ? 'به تلگرام مالک ارسال شد' : ('پیش‌نمایش نرفت (' + (sendErr2 || 'نامشخص') + ') ولی عکس ذخیره شد'),
+      note: 'برای انتشار عکس: تصویر با publish_media یا publish_post با with_image=true در کانال می‌رود'
+    };
   }
 
   /* — انتشار رسانهٔ مالک — */
@@ -7508,15 +7667,28 @@ async function spTool(env, uid, name, args, ctx) {
     if (args.url && /^https?:\/\//.test(String(args.url))) pick = { kind: 'photo', fid: String(args.url), fromUrl: true };
     else if (args.index !== undefined) pick = items[Number(args.index) || 0] || null;
     else pick = items[0] || null;
-    if (!pick) return { ok: false, error: 'رسانه‌ای پیدا نشد؛ اول عکس/ویدیو را در پیوی ربات بفرست' };
+    if (!pick) {
+      var aiImg = await store.get('cmd:img:' + uid, null);
+      if (aiImg && aiImg.b64) pick = { kind: 'photo', b64: aiImg.b64, ai: true };
+      else if (aiImg && aiImg.file_id) pick = { kind: 'photo', fid: aiImg.file_id, ai: true };
+    }
+    if (!pick) return { ok: false, error: 'رسانه‌ای پیدا نشد؛ اول make_image را صدا بزن یا عکس را در پیوی ربات بفرست' };
     var caption = String(args.caption || pick.cap || '').trim();
     var ip = {}; if (caption) { ip.caption = spInlineMd(caption).slice(0, 1000); ip.parse_mode = 'HTML'; }
     var method = pick.kind === 'video' ? 'sendVideo' : pick.kind === 'document' ? 'sendDocument' : 'sendPhoto';
     var field = pick.kind === 'video' ? 'video' : pick.kind === 'document' ? 'document' : 'photo';
-    var payload = { chat_id: chan }; payload[field] = pick.fid;
+    if (pick.b64) {
+      var tgtM = await spPeerTarget(env, uid, chan);
+      var ph2 = await cmdSendPhoto(env, tgtM, pick.b64, ip.caption || '', ip.parse_mode || '', null);
+      await store.put('cmd:last:' + uid, { target: tgtM, message_id: ph2.message_id, at: Date.now(), kind: 'photo' });
+      await store.put('cmd:img:' + uid, { at: 0 }, 60);
+      return { ok: true, kind: 'photo', message_id: ph2.message_id, source: pick.ai ? 'ai' : 'media', link: String(tgtM).charAt(0) === '@' ? 'https://t.me/' + String(tgtM).replace('@', '') + '/' + ph2.message_id : '' };
+    }
+    var tgtM2 = await spPeerTarget(env, uid, chan);
+    var payload = { chat_id: tgtM2 }; payload[field] = pick.fid;
     Object.assign(payload, ip);
     var sent = await cmdTg(env, method, payload);
-    await store.put('cmd:last:' + uid, { target: chan, message_id: sent.message_id, at: Date.now(), kind: 'media' });
+    await store.put('cmd:last:' + uid, { target: tgtM2, message_id: sent.message_id, at: Date.now(), kind: 'media' });
     return { ok: true, kind: pick.kind, message_id: sent.message_id, link: 'https://t.me/' + String(chan).replace('@', '') + '/' + sent.message_id };
   }
   if (name === 'album') {
@@ -8386,7 +8558,7 @@ async function spExtraTools(env) {
   var out = [];
   try {
     var store = new Store(rasaEnv(env), cfg(env));
-    var box = await store.get('sp:api:' + MCP_OWNER, { items: [] });
+    var box = await store.get('sp:api:' + mcpOwner(env), { items: [] });
     (box.items || []).forEach(function (d) {
       out.push({
         name: 'api_' + d.name,
@@ -8702,10 +8874,11 @@ function spAskPage(name, slug) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   b45 — «نصب اختصاصی»: هر کس ورکر خودش، سهمیهٔ هوش مصنوعی خودش، کانال خودش
-   • صفحهٔ /go  →  فرم نصب
-   • POST /api/selfinstall  →  ساخت ورکر شخصی روی حساب کلادفلر کاربر
-   • spTenantHook  →  مالکیت، /mcp ، /channel در ورکرهای مستأجر
+   b48 — «رسا پل است»: نصب اختصاصی بدون ربات تازه
+   • هر کس ورکر شخصی خودش را روی حساب کلادفلر خودش می‌سازد (سهمیهٔ AI خودش)
+   • ربات رسا تنها ربات می‌ماند؛ ورکر شخصی برای کارهای تلگرامی از پل رسا رد می‌شود
+   • POST /api/selfinstall  →  {cf_token, channel?, name?, consent, initData}
+   • POST /api/bridge       →  اجرای متدهای تلگرام با ربات رسا برای ورکرهای شخصی
    ═══════════════════════════════════════════════════════════════════════════ */
 
 var SP_CF_API = 'https://api.cloudflare.com/client/v4';
@@ -8714,7 +8887,7 @@ var SP_BUNDLE_URLS = [
   'https://cdn.jsdelivr.net/gh/Alisarani7021/RasaRichBot@main/worker/index.js'
 ];
 var SP_REPO = 'https://github.com/Alisarani7021/RasaRichBot';
-var SP_BUILD = 'b47'; /* مهر نسخه — هنگام هر تغییر این را یکی جلو ببر تا نصب‌ها نسخهٔ تازه بگیرند */
+var SP_BUILD = 'b48'; /* مهر نسخه — هنگام هر تغییر این را یکی جلو ببر تا نصب‌ها نسخهٔ تازه بگیرند */
 
 function spRandHex(n) {
   var b = new Uint8Array(Math.ceil(n / 2));
@@ -8742,23 +8915,34 @@ async function spCf(token, method, path, body) {
   }
 }
 function spSleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
-async function spFetchBundle() {
+async function spFetchBundle(env) {
   var stale = false;
+  /* ۱) مستقیم از انبار دادهٔ خودمان (سریع‌ترین و همیشه تازه) */
+  try {
+    var kvBun = await env.RASA_KV.get('asset:bundle', 'text');
+    if (kvBun && kvBun.length > 2500000 && kvBun.indexOf('mcpHandle') > -1) {
+      if (kvBun.indexOf("var SP_BUILD = '" + SP_BUILD + "'") > -1) return { ok: true, text: kvBun, from: 'kv' };
+      stale = true;
+    }
+  } catch (e) { /* بعدی */ }
+  /* ۲) پشتیبان: گیت‌هاب (اگر روزی انبار خالی بود) */
+  var hosts = SP_BUNDLE_URLS.slice();
   for (var attempt = 0; attempt < 3; attempt += 1) {
-    for (var i = 0; i < SP_BUNDLE_URLS.length; i += 1) {
+    for (var i = 0; i < hosts.length; i += 1) {
+      var SP_BUNDLE_URLS_I = hosts[i];
       try {
-        var r = await fetch(SP_BUNDLE_URLS[i] + '?v=' + Date.now(), { headers: { 'user-agent': 'RasaInstaller/1.0', 'cache-control': 'no-cache' } });
+        var r = await fetch(SP_BUNDLE_URLS_I + '?v=' + Date.now(), { headers: { 'user-agent': 'RasaInstaller/1.0', 'cache-control': 'no-cache' } });
         if (!r.ok) continue;
         var t = await r.text();
         if (t && t.length > 2500000 && t.indexOf('mcpHandle') > -1) {
-          if (t.indexOf("var SP_BUILD = '" + SP_BUILD + "'") > -1) return { ok: true, text: t, from: SP_BUNDLE_URLS[i] };
+          if (t.indexOf("var SP_BUILD = '" + SP_BUILD + "'") > -1) return { ok: true, text: t, from: SP_BUNDLE_URLS_I };
           stale = true;
         }
       } catch (e) { /* مسیر بعدی */ }
     }
     if (attempt < 2) await spSleep(15000);
   }
-  return { ok: false, error: stale ? 'نسخهٔ تازهٔ فایل ربات هنوز در گیت‌هاب منتشر نشده؛ ۲ دقیقه بعد دوباره نصب را بزن' : 'دریافت فایل ربات ناموفق بود (اینترنت یا مخزن در دسترس نبود)' };
+  return { ok: false, error: stale ? 'نسخهٔ تازهٔ فایل ربات هنوز منتشر نشده؛ ۲ دقیقه بعد دوباره نصب را بزن' : 'دریافت فایل ربات ناموفق بود (اینترنت یا مخزن در دسترس نبود)' };
 }
 function spWorkerName(x) {
   var n = String(x || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
@@ -8766,18 +8950,152 @@ function spWorkerName(x) {
   return n;
 }
 
-/* ── نصب: همهٔ مراحل ─────────────────────────────────────────────────────── */
-async function spSelfInstall(env, body, ipHash) {
+/* ── تأیید هویت مینی‌اپ (initData) ───────────────────────────────────────── */
+async function spUidFromInitData(env, initData) {
+  try {
+    var raw = String(initData || '').trim();
+    if (!raw || !env.BOT_TOKEN) return null;
+    var params = new URLSearchParams(raw);
+    var hash = params.get('hash') || '';
+    if (!hash) return null;
+    params.delete('hash');
+    var pairs = [];
+    params.forEach(function (v, k) { pairs.push(k + '=' + v); });
+    pairs.sort();
+    var dataCheck = pairs.join('\n');
+    var enc = new TextEncoder();
+    var k1 = await crypto.subtle.importKey('raw', enc.encode('WebAppData'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    var sk = await crypto.subtle.sign('HMAC', k1, enc.encode(env.BOT_TOKEN));
+    var k2 = await crypto.subtle.importKey('raw', sk, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    var sig = await crypto.subtle.sign('HMAC', k2, enc.encode(dataCheck));
+    var hex = Array.prototype.map.call(new Uint8Array(sig), function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+    if (hex !== hash) return null;
+    var user = null;
+    try { user = JSON.parse(params.get('user') || 'null'); } catch (e) { user = null; }
+    if (!user || !user.id) return null;
+    return { uid: Number(user.id), name: [user.first_name, user.last_name].filter(Boolean).join(' ') };
+  } catch (e) { return null; }
+}
+
+/* ── پل رسا (سمت میزبان): اجرای متدهای تلگرام برای ورکرهای شخصی ──────────── */
+var SP_BRIDGE_METHODS = [
+  'sendMessage', 'sendRichMessage', 'sendPhoto', 'sendMediaGroup', 'sendDocument',
+  'sendVideo', 'sendAnimation', 'sendAudio', 'sendVoice', 'sendPoll',
+  'editMessageText', 'editMessageReplyMarkup', 'deleteMessage', 'pinChatMessage', 'unpinChatMessage',
+  'getChat', 'getChatMember', 'getChatMemberCount', 'getChatAdministrators',
+  'exportChatInviteLink', 'createChatInviteLink', 'setMessageReaction', 'copyMessage', 'forwardMessage'
+];
+async function spBridgeHost(env, request) {
+  var body = {};
+  try { body = await request.json(); } catch (e) { return Response.json({ ok: false, description: 'JSON نامعتبر' }, { status: 400 }); }
+  var key = String(body.k || '').trim();
+  var method = String(body.m || '').trim();
+  var p = body.p && typeof body.p === 'object' ? body.p : {};
+  if (!key || !method) return Response.json({ ok: false, description: 'درخواست ناقص' }, { status: 400 });
+  var store = new Store(rasaEnv(env), cfg(env));
+  var rec = await store.get('bridge:' + key, null);
+  if (!rec || !rec.uid) return Response.json({ ok: false, description: 'کلید پل نامعتبر است' }, { status: 403 });
+  if (method === 'rasa.channel' || method === 'rasa.target') {
+    var ch0 = await store.get('cmd:chan:' + rec.uid, null) || await store.get('cmd:chan:shared', null);
+    var pr0 = await store.get('cmd:peer:' + rec.uid, null);
+    var peer0 = pr0 && pr0.peer ? String(pr0.peer) : '';
+    return Response.json({ ok: true, result: { channel: ch0 || '', peer: peer0, target: peer0 || ch0 || '' } });
+  }
+  if (method === 'rasa.setPeer') {
+    var pvS = String((p && p.peer) === undefined ? '' : (p && p.peer)).trim();
+    if (pvS === '' || /^(off|حذف|خاموش|پاک)$/i.test(pvS)) {
+      await store.put('cmd:peer:' + rec.uid, { off: true, at: Date.now() }, 400 * 86400);
+      return Response.json({ ok: true, result: { peer: '', note: 'به کانال برگشت' } });
+    }
+    if (!/^\d{4,15}$/.test(pvS)) return Response.json({ ok: false, description: 'آیدی عددی نامعتبر است (فقط رقم، مثل 123456789)' });
+    await store.put('cmd:peer:' + rec.uid, { peer: pvS, auto: pvS === String(rec.uid), at: Date.now() }, 400 * 86400);
+    return Response.json({ ok: true, result: { peer: pvS, note: pvS === String(rec.uid) ? 'پست‌ها به پیوی خودت می‌رود (فقط خودت)' : 'پست‌ها به پیوی این آیدی می‌رود (فقط همان شخص)' } });
+  }
+  if (method === 'rasa.uploadPhoto') {
+    var phB64 = String(p.b64 || '');
+    if (!phB64) return Response.json({ ok: false, description: 'عکسی فرستاده نشد' });
+    var phChat = p.chat_id;
+    if (phChat === '@__self__' || phChat === '__self__' || phChat === undefined || phChat === null || phChat === '') {
+      var prU = await store.get('cmd:peer:' + rec.uid, null);
+      var chU = await store.get('cmd:chan:' + rec.uid, null) || await store.get('cmd:chan:shared', null);
+      phChat = (prU && prU.peer) ? prU.peer : chU;
+      if (!phChat) return Response.json({ ok: false, description: 'مقصدی تنظیم نشده؛ در ربات رسا بگو /channel @نام‌کانال یا آیدی عددی بده', error_code: 400 });
+    }
+    try {
+      var phBytes = Uint8Array.from(atob(phB64), function (c) { return c.charCodeAt(0); });
+      var phFd = new FormData();
+      phFd.append('chat_id', String(phChat));
+      if (p.caption) { phFd.append('caption', String(p.caption).slice(0, 1024)); if (p.parse_mode) phFd.append('parse_mode', String(p.parse_mode)); }
+      if (p.reply_markup) phFd.append('reply_markup', JSON.stringify(p.reply_markup));
+      phFd.append('photo', new Blob([phBytes], { type: 'image/jpeg' }), 'rasa.jpg');
+      var phRes = await fetch('https://api.telegram.org/bot' + env.BOT_TOKEN + '/sendPhoto', { method: 'POST', body: phFd });
+      var phJ = await phRes.json();
+      if (!phJ.ok) return Response.json({ ok: false, description: phJ.description || 'ارسال عکس ناموفق', error_code: phJ.error_code || 400 });
+      var phSizes = (phJ.result && phJ.result.photo) || [];
+      try { await store.put('cmd:last:' + rec.uid, { target: phChat, message_id: phJ.result.message_id, at: Date.now(), kind: 'photo' }, 30 * 86400); } catch (eL) {}
+      return Response.json({ ok: true, result: { file_id: phSizes.length ? phSizes[phSizes.length - 1].file_id : '', message_id: phJ.result.message_id, chat_id: phChat } });
+    } catch (e) {
+      return Response.json({ ok: false, description: String(e && e.message || e) }, { status: 200 });
+    }
+  }
+  if (SP_BRIDGE_METHODS.indexOf(method) < 0) return Response.json({ ok: false, description: 'این متد از پل پشتیبانی نمی‌شود: ' + method });
+  /* کانالِ «خودم» → کانال همین کاربر در رسا */
+  if (p.chat_id === '@__self__' || p.chat_id === '__self__') {
+    var prS = await store.get('cmd:peer:' + rec.uid, null);
+    var chan = await store.get('cmd:chan:' + rec.uid, null) || await store.get('cmd:chan:shared', null);
+    var eff = (prS && prS.peer) ? String(prS.peer) : chan;
+    if (!eff) return Response.json({ ok: false, description: 'مقصدی تنظیم نشده؛ در ربات رسا بگو: /channel @نام‌کانال یا آیدی عددی بده', error_code: 400 });
+    p.chat_id = eff;
+  }
+  if (typeof p.chat_id === 'string' && /^\d+$/.test(p.chat_id)) p.chat_id = Number(p.chat_id);
+  try {
+    var r = await fetch('https://api.telegram.org/bot' + env.BOT_TOKEN + '/' + method, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(p)
+    });
+    var j = await r.json();
+    try { if (j && typeof j === 'object') j.__chat = p.chat_id; } catch (e) { }
+    return Response.json(j, { status: 200 });
+  } catch (e) {
+    return Response.json({ ok: false, description: String(e && e.message || e) }, { status: 200 });
+  }
+}
+/* سمت ورکر شخصی: هر تماس تلگرامی از این‌جا رد می‌شود */
+function spSelfChat() {
+  try { return (typeof globalThis !== 'undefined' && globalThis.__rasaSelfChat) ? String(globalThis.__rasaSelfChat) : ''; } catch (e) { return ''; }
+}
+async function spBridgeCall(env, method, payload) {
+  try {
+    var url = String(env.BRIDGE_URL).replace(/\/+$/, '') + '/api/bridge';
+    var init = {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ k: String(env.BRIDGE_KEY || ''), m: method, p: payload || {} })
+    };
+    var r = (env.RASA_BRIDGE && typeof env.RASA_BRIDGE.fetch === 'function')
+      ? await env.RASA_BRIDGE.fetch(url, init)
+      : await fetch(url, init);
+    var j = await r.json();
+    if (j && typeof j === 'object') {
+      if (j.__chat) { try { globalThis.__rasaSelfChat = j.__chat; } catch (e) { } }
+      return j;
+    }
+    return { ok: false, description: 'پاسخ نامعتبر از پل' };
+  } catch (e) {
+    return { ok: false, description: 'ارتباط با پل رسا ممکن نشد: ' + String(e && e.message || e) };
+  }
+}
+
+/* ── نصب: همهٔ مراحل (بدون ربات تازه) ───────────────────────────────────── */
+async function spSelfInstall(env, body, ipHash, who) {
   var log = [];
   var note = function (t, ok, extra) { log.push({ t: t, ok: ok === undefined ? true : !!ok, x: extra || '' }); };
+  if (!who || !who.uid) return { ok: false, log: log, error: 'برای نصب باید مینی‌اپ را از داخل تلگرام باز کنی (کاربر شناسایی نشد)' };
+  var uid = Number(who.uid);
   var cfT = String(body.cf_token || '').trim();
-  var botT = String(body.bot_token || '').trim();
   var chan = String(body.channel || '').trim().replace(/^https?:\/\/t\.me\//i, '@');
   if (chan && chan.charAt(0) !== '@' && /^[A-Za-z0-9_]{4,}$/.test(chan)) chan = '@' + chan;
   var name = spWorkerName(body.name);
 
   if (cfT.length < 20) return { ok: false, log: log, error: 'توکن کلادفلر خالی یا نامعتبر است' };
-  if (!/^\d{6,}:[A-Za-z0-9_-]{30,}$/.test(botT)) return { ok: false, log: log, error: 'توکن ربات تلگرام نامعتبر است (از @BotFather بگیر: عدد:حروف)' };
   if (chan && !/^@[A-Za-z0-9_]{4,}$/.test(chan)) return { ok: false, log: log, error: 'نام کانال نامعتبر است (مثل @mychannel)' };
 
   /* ۱) بررسی توکن */
@@ -8796,8 +9114,7 @@ async function spSelfInstall(env, body, ipHash) {
   var subdomain = sub.ok && sub.result && sub.result.subdomain ? sub.result.subdomain : '';
   if (!subdomain) {
     for (var s = 0; s < 3 && !subdomain; s += 1) {
-      var tryName = 'rasa-' + spRandHex(6);
-      var made = await spCf(cfT, 'PUT', '/accounts/' + account.id + '/workers/subdomain', { subdomain: tryName });
+      var made = await spCf(cfT, 'PUT', '/accounts/' + account.id + '/workers/subdomain', { subdomain: 'rasa-' + spRandHex(6) });
       if (made.ok && made.result && made.result.subdomain) subdomain = made.result.subdomain;
     }
     if (!subdomain) return { ok: false, log: log, error: 'زیردامنهٔ workers.dev ساخته نشد: ' + (sub.error || 'خطای نامشخص') };
@@ -8817,29 +9134,31 @@ async function spSelfInstall(env, body, ipHash) {
   note('انبارهای داده ساخته شد (۳ عدد)');
 
   /* ۵) فایل ربات */
-  var bun = await spFetchBundle();
+  var bun = await spFetchBundle(env);
   if (!bun.ok) return { ok: false, log: log, error: bun.error };
   note('فایل ربات دریافت شد', true, Math.round(bun.text.length / 1024) + 'KB');
 
-  /* ۶) آپلود ورکر شخصی */
+  /* ۶) آپلود ورکر شخصی — بدون توکن ربات، با پل رسا */
   var secret = spRandHex(32);
-  var hookSecret = spRandHex(24);
+  var bkey = spRandHex(24);
+  var hostBase = spBase(env);
   var bindings = [
     { type: 'kv_namespace', name: 'KV', namespace_id: kvIds[0] },
     { type: 'kv_namespace', name: 'KV_FRESH', namespace_id: kvIds[1] },
     { type: 'kv_namespace', name: 'RASA_KV', namespace_id: kvIds[2] },
     { type: 'durable_object_namespace', name: 'STATE', class_name: 'State' },
     { type: 'ai', name: 'AI' },
-    { type: 'secret_text', name: 'BOT_TOKEN', text: botT },
-    { type: 'secret_text', name: 'WEBHOOK_SECRET', text: hookSecret },
     { type: 'secret_text', name: 'MCP_SECRET', text: secret },
-    { type: 'plain_text', name: 'WEBHOOK_PATH', text: '/telegram/webhook' },
-    { type: 'plain_text', name: 'COMMANDER_ON', text: '1' },
     { type: 'plain_text', name: 'TENANT', text: '1' },
     { type: 'plain_text', name: 'PUBLIC_BASE', text: base },
-    { type: 'plain_text', name: 'CMD_CHANNEL', text: chan || '' },
-    { type: 'plain_text', name: 'COMMANDER_OWNERS', text: String(body.owner_id || '') }
+    { type: 'plain_text', name: 'BRIDGE_URL', text: hostBase },
+    { type: 'plain_text', name: 'BRIDGE_KEY', text: bkey },
+    { type: 'plain_text', name: 'COMMANDER_ON', text: '1' },
+    { type: 'plain_text', name: 'COMMANDER_OWNERS', text: String(uid) },
+    { type: 'plain_text', name: 'CMD_CHANNEL', text: '' }
   ];
+  var sameAcct = String(env.HOST_ACCOUNT || '') && String(env.HOST_ACCOUNT) === String(account.id);
+  if (sameAcct) bindings.push({ type: 'service', name: 'RASA_BRIDGE', service: 'rich-post-bot' });
   var meta = { main_module: 'index.js', compatibility_date: '2026-09-28', bindings: bindings, migrations: { new_tag: 'v1', new_sqlite_classes: ['State'] } };
   async function upload(metadata) {
     var fd = new FormData();
@@ -8856,65 +9175,50 @@ async function spSelfInstall(env, body, ipHash) {
     (nss.result || []).forEach(function (n) { if (!found && (n.class === 'State' || n.class_name === 'State') && (n.script === name || n.script_name === name)) found = n; });
     if (found) {
       var b2 = bindings.map(function (b) { return b.name === 'STATE' ? { type: 'durable_object_namespace', name: 'STATE', class_name: 'State', namespace_id: found.id } : b; });
-      var meta2 = { main_module: 'index.js', compatibility_date: '2026-09-28', bindings: b2 };
-      up = await upload(meta2);
+      up = await upload({ main_module: 'index.js', compatibility_date: '2026-09-28', bindings: b2 });
     }
   }
   if (!up.ok) return { ok: false, log: log, error: 'آپلود ورکر نشد: ' + up.error };
-  note('ورکر «' + name + '» ساخته و آپلود شد');
+  note('ورکر شخصی «' + name + '» ساخته و آپلود شد');
   var subEn = await spCf(cfT, 'POST', '/accounts/' + account.id + '/workers/scripts/' + name + '/subdomain', { enabled: true, previews_enabled: false });
-  if (subEn.ok) note('آدرس workers.dev فعال شد');
-  else note('فعال‌سازی آدرس: ' + subEn.error, false);
+  note(subEn.ok ? 'آدرس workers.dev فعال شد' : ('فعال‌سازی آدرس: ' + subEn.error), !!subEn.ok);
 
-  /* ۷) درج مقادیر اولیه */
+  /* ۷) مقادیر اولیهٔ ورکر شخصی */
   async function kvPut(nsId, key, value) {
     var r = await fetch(SP_CF_API + '/accounts/' + account.id + '/storage/kv/namespaces/' + nsId + '/values/' + encodeURIComponent(key), { method: 'PUT', headers: { authorization: 'Bearer ' + cfT, 'content-type': 'text/plain' }, body: value });
     return r.ok;
   }
-  if (chan) await kvPut(kvIds[2], 'cmd:chan:shared', JSON.stringify(chan));
-  await kvPut(kvIds[2], 'install:info', JSON.stringify({ at: Date.now(), from: 'installer', base: base, name: name, channel: chan || '' }));
-  if (body.owner_id) await kvPut(kvIds[2], 'cmd:owner', JSON.stringify({ uid: Number(body.owner_id), at: Date.now(), name: '' }));
-  note('تنظیمات اولیه نوشته شد' + (chan ? ' (کانال: ' + chan + ')' : ''));
+  await kvPut(kvIds[2], 'install:info', JSON.stringify({ at: Date.now(), base: base, name: name, owner: uid }));
+  await kvPut(kvIds[2], 'cmd:owner', JSON.stringify({ uid: uid, at: Date.now(), name: who.name || '' }));
+  note('تنظیمات ورکر شخصی نوشته شد');
 
-  /* ۸) وب‌هوک ربات خودش */
-  var me = null;
-  try {
-    var mr = await fetch('https://api.telegram.org/bot' + botT + '/getMe');
-    var mj = await mr.json();
-    if (mj && mj.ok) me = mj.result;
-  } catch (e) { /* ادامه */ }
-  if (!me) return { ok: false, log: log, error: 'توکن ربات تلگرام کار نکرد — از @BotFather یک توکن تازه بگیر', partial: { base: base, mcp_url: base + '/api/mcp/' + secret } };
-  note('ربات تأیید شد: @' + me.username);
-  var wh = false;
-  if (body.no_webhook === true) {
-    note('وب‌هوک ثبت نشد (حالت آزمایشی)');
-  } else {
-    try {
-      var wr = await fetch('https://api.telegram.org/bot' + botT + '/setWebhook', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ url: base + '/telegram/webhook', secret_token: hookSecret, allowed_updates: ['message', 'callback_query', 'chat_member', 'my_chat_member'] })
-      });
-      var wj = await wr.json();
-      wh = !!(wj && wj.ok);
-      if (!wh) note('وب‌هوک ثبت نشد: ' + ((wj && wj.description) || 'خطا'), false);
-    } catch (e) { note('وب‌هوک ثبت نشد: ' + String(e && e.message || e), false); }
-    if (wh) note('وب‌هوک ربات روی ورکر شخصی تنظیم شد');
-  }
-  try {
-    await fetch('https://api.telegram.org/bot' + botT + '/setMyCommands', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ commands: [
-        { command: 'start', description: 'شروع · استودیو پست' },
-        { command: 'mcp', description: 'لینک اتصال به جمنای/کلاد/گروک' },
-        { command: 'channel', description: 'تعیین کانال: /channel @mychannel' }
-      ] })
-    });
-  } catch (e) { /* اختیاری */ }
-
-  /* ۹) زمان‌بند هر دقیقه */
+  /* ۸) زمان‌بند هر دقیقه (پست خودکار/RSS/رصد — با سهمیهٔ خودت) */
   var sch = await spCf(cfT, 'PUT', '/accounts/' + account.id + '/workers/scripts/' + name + '/schedules', [{ cron: '* * * * *' }]);
-  if (sch.ok) note('زمان‌بند هر دقیقه فعال شد (پست خودکار/RSS/رصد)');
-  else note('زمان‌بند فعال نشد: ' + sch.error, false);
+  note(sch.ok ? 'زمان‌بند هر دقیقه فعال شد (پست خودکار/RSS/رصد)' : ('زمان‌بند فعال نشد: ' + sch.error), !!sch.ok);
+
+  /* ۹) ثبت پل و کانال در رسا */
+  var store = new Store(rasaEnv(env), cfg(env));
+  await store.put('bridge:' + bkey, { uid: uid, worker: name, base: base, at: Date.now() }, 400 * 86400);
+  if (chan) {
+    await store.put('cmd:chan:' + uid, chan, 400 * 86400);
+    note('کانال برای تو ثبت شد در رسا: ' + chan);
+  }
+  var peerIn = String(body.peer_id || '').trim();
+  if (peerIn && !/^\d{4,15}$/.test(peerIn)) return { ok: false, log: log, error: 'آیدی عددی نامعتبر است (فقط رقم، مثل 123456789)' };
+  var peerAuto = peerIn || String(uid);
+  await store.put('cmd:peer:' + uid, { peer: String(peerAuto), auto: !peerIn, at: Date.now() }, 400 * 86400);
+  await store.put('cmd:uname:' + uid, { name: String(who.name || '').slice(0, 60), at: Date.now() }, 400 * 86400);
+  note(peerIn ? ('آیدی عددی ثبت شد: ارسال‌ها به پیوی ' + peerAuto) : ('آیدی عددی خودت خودکار ثبت شد: ' + peerAuto + ' — هرچه هوش مصنوعیات از این لینک بفرستد، در پیوی خودت می‌آید (فقط خودت)'));
+  note('کانالِ لینک: ' + (chan || 'هنوز تنظیم نشده') + ' — هر وقت خواستی به کانال برگردی، در مینی‌اپ «کانال من» را بزن');
+  await store.put('cmd:owner', { uid: uid, at: Date.now(), name: who.name || '' }, 400 * 86400);
+  await store.put('cmd:mywork:' + uid, { mcp: base + '/api/mcp/' + secret, base: base, name: name, peer: String(peerAuto), channel: chan || '', at: Date.now() }, 400 * 86400);
+  note('لینک شخصی برای همیشه ذخیره شد — هر وقت خواستی از مینی‌اپ برش دار');
+  try {
+    var reg = await store.get('installs', { items: [] });
+    reg.items = [{ at: Date.now(), uid: uid, worker: name, base: base, acc: account.id.slice(0, 8), channel: chan || '', ip: ipHash || '' }].concat(reg.items || []).slice(0, 500);
+    await store.put('installs', reg, 400 * 86400);
+    note('در دفتر نصب رسا ثبت شد');
+  } catch (e) { }
 
   /* ۱۰) آزمون زندهٔ دریچهٔ MCP */
   var mcpUrl = base + '/api/mcp/' + secret;
@@ -8926,38 +9230,29 @@ async function spSelfInstall(env, body, ipHash) {
   } catch (e) { /* آزمون نشد */ }
   note(alive ? 'آزمون زندهٔ MCP موفق ✅' : 'لینک ساخته شد (آزمون خودکار از داخل حساب ممکن نشد؛ چند لحظه بعد خودت امتحان کن)', alive);
 
-  /* ثبت در دفتر نصب (بدون توکن) */
-  try {
-    var store = new Store(rasaEnv(env), cfg(env));
-    var reg = await store.get('installs', { items: [] });
-    reg.items = [{ at: Date.now(), worker: name, base: base, bot: me.username, acc: account.id.slice(0, 8), ip: ipHash || '' }].concat(reg.items || []).slice(0, 500);
-    await store.put('installs', reg, 400 * 86400);
-  } catch (e) { /* مهم نیست */ }
-
   return {
-    ok: true, log: log, name: name, base: base, mcp_url: mcpUrl,
-    bot_username: me.username, account: account.name || account.id,
-    channel: chan || '', tenant: true,
+    ok: true, log: log, name: name, base: base, mcp_url: mcpUrl, peer: String(peerAuto),
+    account: account.name || account.id, channel: chan || '', tenant: true, via: 'rasa-bridge',
     next_steps: [
-      'به ربات خودت در تلگرام پیام بده (/start) تا مالکش شوی و راهنمای اتصال بیاید',
-      'لینک بالا را در جمنای/کلاد/گروک به‌عنوان MCP اضافه کن',
-      chan ? ('کانال ' + chan + ' را ثبت کردم؛ ربات را ادمین کانال کن') : 'در پیوی رباتت بنویس: /channel @نام‌کانال'
+      'لینک بالا را در جمنای (Settings → Connected Apps) یا کلاد (Settings → Connectors) یا گروک (Connectors) به‌عنوان MCP اضافه کن',
+      chan ? ('کانال ' + chan + ' ثبت شد؛ ربات رسا را ادمین کانال کن') : 'برای کانال، در رسا بگو: /channel @نام‌کانال',
+      'همهٔ انتشارها از ربات رسا انجام می‌شود؛ هوش مصنوعی و ابزارها با سهمیهٔ حساب خودت اجرا می‌شوند'
     ]
   };
 }
 
 /* ── مسیرها ─────────────────────────────────────────────────────────────── */
+
 async function spInstallRoute(env, request, url) {
-  if (url.pathname === '/go' || url.pathname === '/install' || url.pathname === '/install/') {
-    if (request.method !== 'GET') return new Response('POST لازم است', { status: 405 });
-    return new Response(spInstallPage(env, url), { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex' } });
-  }
   if (url.pathname === '/api/selfinstall' || url.pathname === '/api/selfinstall/') {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type', 'access-control-allow-methods': 'POST, OPTIONS' } });
-    if (request.method !== 'POST') return spJsonOut({ ok: false, error: 'POST لازم است' }, 405);
+    if (request.method !== 'POST') return Response.json({ ok: false, error: 'POST لازم است' }, { status: 405 });
     var body = {};
-    try { body = await request.json(); } catch (e) { return spJsonOut({ ok: false, error: 'JSON نامعتبر' }, 400); }
-    if (String(body.consent || '') !== 'yes') return spJsonOut({ ok: false, error: 'تأیید شرایط لازم است' }, 400);
+    try { body = await request.json(); } catch (e) { return Response.json({ ok: false, error: 'JSON نامعتبر' }, { status: 400 }); }
+    if (String(body.consent || '') !== 'yes') return Response.json({ ok: false, error: 'تأیید شرایط لازم است' }, { status: 400 });
+    var who = await spUidFromInitData(env, body.initData);
+    if (!who && body.demo_uid && String(env.INSTALL_DEMO || '') === '1') who = { uid: Number(body.demo_uid), name: 'demo' };
+    if (!who) return Response.json({ ok: false, error: 'کاربر شناسایی نشد — مینی‌اپ را از داخل ربات رسا باز کن' }, { status: 401 });
     var ip = String(request.headers.get('cf-connecting-ip') || '0.0.0.0');
     var ipHash = (await spHash(ip + '|rasa')).slice(0, 12);
     try {
@@ -8965,18 +9260,38 @@ async function spInstallRoute(env, request, url) {
       var rl = await store.get('rl:inst:' + ipHash, { hour: '', n: 0 });
       var hr = new Date().toISOString().slice(0, 13);
       if (rl.hour !== hr) rl = { hour: hr, n: 0 };
-      if (rl.n >= 6) return spJsonOut({ ok: false, error: 'تعداد نصب‌های این ساعت زیاد است؛ یک ساعت بعد امتحان کن' }, 429);
+      if (rl.n >= 6) return Response.json({ ok: false, error: 'تعداد نصب‌های این ساعت زیاد است؛ یک ساعت بعد امتحان کن' }, { status: 429 });
       rl.n += 1; await store.put('rl:inst:' + ipHash, rl, 7200);
     } catch (e) { /* بی‌سازمان */ }
-    var out = await spSelfInstall(env, body, ipHash);
-    return spJsonOut(out, out.ok ? 200 : 200);
+    var out = await spSelfInstall(env, body, ipHash, who);
+    return Response.json(out, { status: 200 });
+  }
+  if (url.pathname === '/api/peer' || url.pathname === '/api/peer/') {
+    if (request.method !== 'POST') return Response.json({ ok: false, error: 'POST لازم است' }, { status: 405 });
+    var pb = {};
+    try { pb = await request.json(); } catch (e) { return Response.json({ ok: false, error: 'JSON نامعتبر' }, { status: 400 }); }
+    var whoP = await spUidFromInitData(env, pb.initData);
+    if (!whoP) return Response.json({ ok: false, error: 'کاربر شناسایی نشد — از داخل ربات باز کن' }, { status: 401 });
+    var pv = String(pb.peer || '').trim();
+    var stP = new Store(rasaEnv(env), cfg(env));
+    if (pv === '' || /^(off|حذف|خاموش|پاک)$/i.test(pv)) {
+      await stP.put('cmd:peer:' + whoP.uid, { off: true, at: Date.now() }, 400 * 86400);
+      return Response.json({ ok: true, peer: '', note: 'برداشته شد؛ ارسال‌ها به کانال برمی‌گردد' });
+    }
+    if (!/^\d{4,15}$/.test(pv)) return Response.json({ ok: false, error: 'آیدی عددی نامعتبر است (فقط رقم، مثل 123456789)' }, { status: 400 });
+    await stP.put('cmd:peer:' + whoP.uid, { peer: pv, at: Date.now() }, 400 * 86400);
+    return Response.json({ ok: true, peer: pv, note: 'ثبت شد؛ ارسال‌ها به پیوی همین آیدی می‌رود (فقط همان شخص)' });
+  }
+  if (url.pathname === '/go' || url.pathname === '/install' || url.pathname === '/install/') {
+    return Response.redirect(spBase(env) + '/app#dedicated', 302);
   }
   return null;
 }
 
-/* ── مستأجر: مالکیت، لینک، کانال ─────────────────────────────────────────── */
+/* ── سازگاری با نسخهٔ قدیم: مستأجرهای قبلی که ربات جدا داشتند ─────────────── */
 async function spTenantHook(env, message) {
   if (String(env.TENANT || '') !== '1') return null;
+  if (!env.BOT_TOKEN) return null; /* نسخهٔ جدید: ورکر شخصی ربات ندارد */
   var chat = message.chat || {};
   if (chat.type !== 'private') return null;
   var uid = Number((message.from || {}).id || 0);
@@ -8989,171 +9304,27 @@ async function spTenantHook(env, message) {
   if (!claim || !claim.uid) {
     claim = { uid: uid, at: Date.now(), name: String((message.from || {}).first_name || '') };
     await store.put('cmd:owner', claim, 60 * 60 * 24 * 3650);
-    await cmdSay(env, uid, '🎉 **تو مالک این ربات شدی!**\n\nاین رباتِ اختصاصی خودته: روی حساب کلادفلر خودت، با سهمیهٔ هوش مصنوعی خودت، برای کانال خودت.\n\n' + (link ? '🔗 لینک اتصال به جمنای/کلاد/گروک:\n' + link + '\n\n' : '') + 'قدم‌های بعدی:\n۱) کانال را ثبت کن: /channel @نام‌کانال\n۲) ربات را ادمین کانال کن\n۳) هر کاری خواستی به همین ربات بگو (چه در تلگرام، چه از جمنای/کلاد/گروک).');
+    await cmdSay(env, uid, '🎉 تو مالک این نسخهٔ اختصاصی شدی!\n\n' + (link ? '🔗 لینک اتصال (جمنای/کلاد/گروک):\n' + link + '\n\n' : '') + 'کانال را ثبت کن: /channel @نام‌کانال');
     return { stop: true };
   }
   if (Number(claim.uid) !== uid) return null;
-  if (/^\/mcp\b|^\/link\b|^لینک اتصال$/.test(text)) {
-    await cmdSay(env, uid, link ? ('🔗 لینک اتصال تو (جمنای / کلاد / گروک → MCP):\n' + link + '\n\nراهنما: ' + base + '/go') : 'لینک ساخته نشده؛ یک بار نصب را از ' + base + '/go تکرار کن.');
-    return { stop: true };
-  }
+  if (/^\/mcp\b|^\/link\b/.test(text)) { await cmdSay(env, uid, link ? ('🔗 لینک اتصال تو:\n' + link) : 'لینک ساخته نشده.'); return { stop: true }; }
   var mch = text.match(/^\/channel\s+(\S+)/);
   if (mch) {
     var c = mch[1].replace(/^https?:\/\/t\.me\//i, '@');
     if (c.charAt(0) !== '@') c = '@' + c;
-    if (!/^@[A-Za-z0-9_]{4,}$/.test(c)) { await cmdSay(env, uid, 'نام کانال درست نیست. مثال: /channel @mychannel'); return { stop: true }; }
+    if (!/^@[A-Za-z0-9_]{4,}$/.test(c)) { await cmdSay(env, uid, 'مثال درست: /channel @mychannel'); return { stop: true }; }
     await store.put('cmd:chan:' + uid, c, 60 * 60 * 24 * 3650);
-    await store.put('cmd:chan:shared', c, 60 * 60 * 24 * 3650);
-    await cmdSay(env, uid, '✅ کانال ثبت شد: ' + c + '\nربات را ادمین کانال کن (با اجازهٔ ارسال پست)، بعد بگو: «یک پست تبریک بذار»');
-    return { stop: true };
-  }
-  if (/^\/help\b|^\/راهنما$/.test(text)) {
-    await cmdSay(env, uid, 'کمک سریع:\n/channel @نام‌کانال — ثبت کانال\n/mcp — لینک اتصال به جمنای/کلاد/گروک\n/github — راهنمای رصد گیت‌هاب\n\nبقیهٔ کارها را ساده بگو: «یک پست دربارهٔ ... بذار»، «قیمت دلار چنده؟ پست کن»، «این مخزن را زیر نظر بگیر: ...»');
+    await cmdSay(env, uid, '✅ کانال ثبت شد: ' + c);
     return { stop: true };
   }
   return null;
 }
 
-/* ── صفحهٔ نصب ───────────────────────────────────────────────────────────── */
-function spInstallPage(env, url) {
-  var tokUrl = spTokenTemplateUrl('Rasa Bot — نصب اختصاصی');
-  var repo = SP_REPO;
-  return `<!doctype html>
-<html lang="fa" dir="rtl">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<meta name="robots" content="noindex"/>
-<title>نصب اختصاصی رِسا — ورکر خودت، سهمیهٔ خودت</title>
-<style>
-:root{--bg:#0b0e14;--card:#141924;--line:#232a39;--gold:#e9b949;--txt:#e8ecf4;--dim:#9aa6bd;--ok:#34d399;--bad:#f87171}
-*{box-sizing:border-box}
-body{margin:0;background:linear-gradient(180deg,#0b0e14,#0f141c 55%,#0b0e14);color:var(--txt);font-family:Tahoma,"Segoe UI",sans-serif;line-height:1.9;padding:16px}
-.wrap{max-width:720px;margin:0 auto}
-.hero{text-align:center;padding:22px 10px 6px}
-.badge{display:inline-block;border:1px solid var(--gold);color:var(--gold);border-radius:999px;padding:3px 12px;font-size:12px}
-h1{font-size:24px;margin:.45em 0 .2em}
-.sub{color:var(--dim);font-size:14px;margin:0}
-.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin:14px 0}
-.step{display:flex;gap:10px;align-items:flex-start;margin-bottom:6px}
-.num{flex:0 0 26px;height:26px;border-radius:50%;background:var(--gold);color:#171101;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:14px}
-h3{margin:.1em 0;font-size:16px}
-p.small{color:var(--dim);font-size:13px;margin:.35em 0}
-a.btn,button.btn{display:block;width:100%;text-align:center;text-decoration:none;border:0;border-radius:13px;padding:13px 16px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit}
-a.gold,button.gold{background:var(--gold);color:#171101}
-a.ghost,button.ghost{background:transparent;color:var(--txt);border:1px solid var(--line)}
-label{display:block;font-size:13px;color:var(--dim);margin:10px 0 4px}
-input,textarea{width:100%;background:#0b0d11;color:var(--txt);border:1px solid #2a2f3a;border-radius:11px;padding:11px;font-size:14px;font-family:inherit}
-input.ltr,textarea.ltr{direction:ltr;text-align:left;font-family:ui-monospace,Menlo,monospace}
-.row{display:flex;gap:8px;flex-wrap:wrap}
-.row>*{flex:1 1 140px}
-.chk{display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:13px;color:var(--dim)}
-.chk input{width:auto;margin-top:5px}
-.log{font-size:13px;margin:10px 0 0;padding:0;list-style:none}
-.log li{padding:4px 0;border-bottom:1px dashed var(--line);color:var(--dim)}
-.log li b{color:var(--txt)}
-.ok{color:var(--ok)} .bad{color:var(--bad)}
-.res{display:none}
-.url{background:#0b0d11;border:1px dashed var(--gold);border-radius:12px;padding:11px;direction:ltr;text-align:left;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;word-break:break-all;margin:8px 0}
-.tabs{display:flex;gap:6px;margin:10px 0 4px;flex-wrap:wrap}
-.tabs button{flex:1 1 90px;background:transparent;color:var(--dim);border:1px solid var(--line);border-radius:10px;padding:8px;font-family:inherit;font-size:13px;cursor:pointer}
-.tabs button.on{color:#171101;background:var(--gold);border-color:var(--gold);font-weight:700}
-.tabBody{font-size:13.5px;color:var(--dim)}
-.tabBody b{color:var(--txt)}
-.hide{display:none}
-.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--gold);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px}
-@keyframes sp{to{transform:rotate(360deg)}}
-.warn{border-color:#6b4a12;background:#1c1608}
-.foot{color:#5d6980;font-size:11.5px;text-align:center;margin:22px 0 8px}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <div class="hero">
-    <span class="badge">نسخهٔ اختصاصی · بدون اشتراک</span>
-    <h1>ربات خودت را روی حساب خودت بساز</h1>
-    <p class="sub">۵۹ ابزار هوش مصنوعی، رصد گیت‌هاب، ساخت سایت و اپ — همه روی ورکر خودت؛ سهمیهٔ هوش مصنوعی خودت؛ کانال خودت. هیچ ربطی به حساب من ندارد.</p>
-  </div>
-
-  <div class="card">
-    <div class="step"><div class="num">۱</div><div><h3>توکن کلادفلر بساز</h3><p class="small">دکمه را بزن؛ صفحهٔ کلادفلر با دسترسی‌های لازم از قبل پر می‌شود. فقط <b>Continue to summary</b> → <b>Create Token</b> → کپی.</p></div></div>
-    <a class="btn gold" target="_blank" rel="noopener" href="${tokUrl}">🔑 ساخت توکن آماده در کلادفلر</a>
-    <p class="small">دسترسی‌هایی که لازم است: Workers Scripts (Edit) + Workers KV Storage (Edit) — همین دو کافی است.</p>
-  </div>
-
-  <div class="card">
-    <div class="step"><div class="num">۲</div><div><h3>توکن ربات تلگرام خودت</h3><p class="small">در تلگرام به <b>@BotFather</b> پیام بده → <b>/newbot</b> → نام بده → توکنی مثل <code class="ltr">123456:AAE…</code> می‌دهد.</p></div></div>
-  </div>
-
-  <div class="card">
-    <div class="step"><div class="num">۳</div><div><h3>نصب کن</h3><p class="small">توکن‌ها را بچسبان و دکمه را بزن. همه‌چیز خودکار ساخته می‌شود: ورکر، انبار داده، وب‌هوک، زمان‌بند و لینک اتصال.</p></div></div>
-    <label>توکن کلادفلر</label>
-    <textarea class="ltr" id="cf" rows="2" placeholder="cf token..."></textarea>
-    <label>توکن ربات تلگرام</label>
-    <input class="ltr" id="bt" placeholder="123456:AAE..."/>
-    <div class="row">
-      <div><label>کانال (اختیاری)</label><input class="ltr" id="ch" placeholder="@mychannel"/></div>
-      <div><label>نام ورکر (اختیاری)</label><input class="ltr" id="nm" placeholder="rasa-mybot"/></div>
-    </div>
-    <div class="chk"><input type="checkbox" id="ok"/><label for="ok" style="margin:0">توکن‌ها فقط برای همین نصب استفاده می‌شوند و هیچ‌جا ذخیره نمی‌شوند. موافقم روی حساب خودم ورکر ساخته شود.</label></div>
-    <button class="btn gold" id="go" style="margin-top:12px">🚀 نصب کن</button>
-    <p class="small" id="stat"></p>
-    <ul class="log" id="log"></ul>
-  </div>
-
-  <div class="card res" id="res">
-    <h3 class="ok">✅ نصب شد!</h3>
-    <p class="small">این لینک اختصاصی توست — در جمنای، کلاد یا گروک به‌عنوان MCP اضافه کن:</p>
-    <div class="url" id="mcpurl"></div>
-    <button class="btn ghost" id="copy">📋 کپی لینک</button>
-    <div class="tabs">
-      <button data-t="g" class="on">جمنای</button><button data-t="c">کلاد</button><button data-t="x">گروک</button>
-    </div>
-    <div class="tabBody" id="tg"><b>جمنای:</b> Settings → Connected Apps → Custom apps for Spark → Add → لینک را بچسبان → Client ID/Secret خالی → ذخیره. اسمش را مثلاً «رسا» بگذار.</div>
-    <div class="tabBody hide" id="tc"><b>کلاد:</b> Settings → Connectors → Add custom connector → لینک را بچسبان → Add. (کلاد کد: <span class="ltr">claude mcp add --transport http rasa «لینک»</span>)</div>
-    <div class="tabBody hide" id="tx"><b>گروک:</b> grok.com/connectors → New Connector → Custom → لینک را بچسبان → ذخیره. (نیاز به اشتراک پرداختی گروک دارد.)</div>
-    <p class="small" id="steps"></p>
-  </div>
-
-  <div class="card warn">
-    <h3>صادقانه</h3>
-    <p class="small">سهمیهٔ هوش مصنوعی هر ورکر روی حساب خودِ صاحبش حساب می‌شود؛ سقف رایگان کلادفلر روزانه است و اگر زیاد استفاده کنی باید پلن ۵ دلاری Workers Paid را فعال کنی. توکن‌ها در مرورگر تو می‌مانند و فقط یک‌بار برای ساخت استفاده می‌شوند. اگر جایی گیر کردی، دوباره همین صفحه را باز کن و نصب را تکرار کن (نصب دوباره = به‌روزرسانی).</p>
-  </div>
-
-  <p class="foot">رِسا · <span class="ltr">${repo}</span></p>
-</div>
-<script>
-var $=function(id){return document.getElementById(id)};
-function esc(s){var d=document.createElement('div');d.textContent=String(s);return d.innerHTML}
-$('go').onclick=function(){
-  var cf=$('cf').value.trim(), bt=$('bt').value.trim(), ch=$('ch').value.trim(), nm=$('nm').value.trim();
-  if(cf.length<20){$('stat').innerHTML='<span class="bad">توکن کلادفلر را بچسبان</span>';return}
-  if(bt.indexOf(':')<5){$('stat').innerHTML='<span class="bad">توکن ربات تلگرام را بچسبان</span>';return}
-  if(!$('ok').checked){$('stat').innerHTML='<span class="bad">تیک موافقت را بزن</span>';return}
-  $('go').disabled=true;$('log').innerHTML='';$('res').className='card res hide';
-  $('stat').innerHTML='<span class="spin"></span> در حال نصب… (۳۰ تا ۹۰ ثانیه، صفحه را نبند)';
-  fetch('/api/selfinstall',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({cf_token:cf,bot_token:bt,channel:ch,name:nm,consent:'yes'})})
-  .then(function(r){return r.json()})
-  .then(function(d){
-    var html='';
-    (d.log||[]).forEach(function(x){html+='<li>'+(x.ok?'✅':'⚠️')+' '+esc(x.t+(x.x?(' — '+x.x):''))+'</li>'});
-    $('log').innerHTML=html;
-    if(!d.ok){$('stat').innerHTML='<span class="bad">❌ '+esc(d.error||'نصب نشد')+'</span>';$('go').disabled=false;return}
-    $('stat').innerHTML='<span class="ok">تمام شد.</span>';
-    $('mcpurl').textContent=d.mcp_url;
-    $('steps').innerHTML=(d.next_steps||[]).map(function(s){return '• '+esc(s)}).join('<br>');
-    $('res').className='card res';
-    window.__mcp=d.mcp_url;
-    $('go').disabled=false;
-  })
-  .catch(function(e){$('stat').innerHTML='<span class="bad">خطای شبکه: '+esc(e.message)+'</span>';$('go').disabled=false});
-};
-$('copy').onclick=function(){var u=window.__mcp||$('mcpurl').textContent;var d=document.createElement('textarea');d.value=u;document.body.appendChild(d);d.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(d);this.textContent='✅ کپی شد';var b=this;setTimeout(function(){b.textContent='📋 کپی لینک'},1500)};
-var btns=document.querySelectorAll('.tabs button');
-for(var i=0;i<btns.length;i++){(function(b){b.onclick=function(){for(var j=0;j<btns.length;j++){btns[j].className=''}$('tg').className='tabBody hide';$('tc').className='tabBody hide';$('tx').className='tabBody hide';b.className='on';var map={g:'tg',c:'tc',x:'tx'};$(map[b.getAttribute('data-t')]).className='tabBody'}})(btns[i])}
-</script>
-</body>
-</html>`;
+/* صفحهٔ قدیمی /go برای سازگاری (اگر جایی مستقیم صدا زده شود) */
+function spInstallPage(env) {
+  var u = spBase(env) + '/app#dedicated';
+  return '<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=' + u + '"><body style="background:#0b0e14;color:#eef2f7;font-family:Tahoma;text-align:center;padding:40px">در حال رفتن به مینی‌اپ… <a style="color:#e9b949" href="' + u + '">اینجا بزن</a></body></html>';
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -10641,6 +10812,63 @@ var index_default = {
     if (url.pathname === "/s" || url.pathname.startsWith("/s/") || url.pathname.startsWith("/w/")) {
       try { const spWeb = await spWebServe(env, request, url); if (spWeb) return spWeb; } catch (e) { return new Response("web error: " + String(e && e.message || e), { status: 500 }); }
     }
+    if (url.pathname === "/appnext") {
+      const dataNext = await env.RASA_KV?.get("asset:app_next.html", "arrayBuffer");
+      if (!dataNext) return new Response("app_next missing", { status: 503 });
+      return new Response(dataNext, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store, no-cache, must-revalidate, max-age=0" } });
+    }
+    if (url.pathname === "/bundle.js") {
+      try {
+        const spBun = await env.RASA_KV.get("asset:bundle", "text");
+        if (!spBun) return new Response("bundle asset missing", { status: 503 });
+        return new Response(spBun, { headers: { "content-type": "application/javascript; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" } });
+      } catch (e) { return new Response("bundle error", { status: 500 }); }
+    }
+    if (url.pathname === "/api/peer" || url.pathname === "/api/peer/") {
+      if (request.method !== "POST") return new Response("POST لازم است", { status: 405 });
+      try {
+        const pb2 = await request.json();
+        const whoP2 = await spUidFromInitData(env, pb2.initData);
+        if (!whoP2) return Response.json({ ok: false, error: "کاربر شناسایی نشد — مینی‌اپ را از داخل ربات رسا باز کن" }, { status: 401 });
+        const stP2 = new Store(rasaEnv(env), cfg(env));
+        const chNow = await stP2.get("cmd:chan:" + whoP2.uid, null) || await stP2.get("cmd:chan:shared", null) || "";
+        const readState = async () => {
+          const cur = await stP2.get("cmd:peer:" + whoP2.uid, null);
+          const pvN = cur && cur.peer ? String(cur.peer) : "";
+          const wk = await stP2.get("cmd:mywork:" + whoP2.uid, null);
+          return Response.json({
+            ok: true, peer: pvN, auto: !!(cur && cur.auto), uid: String(whoP2.uid), channel: chNow || "", target: pvN || chNow || "",
+            installed: !!(wk && wk.mcp), mcp: (wk && wk.mcp) || "", base: (wk && wk.base) || "", worker: (wk && wk.name) || "", since: (wk && wk.at) || 0,
+            note: pvN ? "پست‌های این لینک به پیوی می‌رود (فقط خودت می‌بینی)" : "پست‌های این لینک به کانال می‌رود"
+          });
+        };
+        if (pb2.peer === undefined && pb2.mode === undefined) return await readState();
+        if (String(pb2.mode || "") === "pv") {
+          await stP2.put("cmd:peer:" + whoP2.uid, { peer: String(whoP2.uid), auto: true, at: Date.now() }, 400 * 86400);
+          return Response.json({ ok: true, peer: String(whoP2.uid), auto: true, uid: String(whoP2.uid), channel: chNow || "", target: String(whoP2.uid), note: "روشن شد؛ پست‌های این لینک به پیوی خودت می‌آید (فقط خودت)" });
+        }
+        if (String(pb2.mode || "") === "forget") {
+          await stP2.delete("cmd:mywork:" + whoP2.uid);
+          return Response.json({ ok: true, installed: false, note: "رکورد لینک پاک شد (خود ورکر روی حساب خودت دست‌نخورده است)" });
+        }
+        if (String(pb2.mode || "") === "channel") {
+          await stP2.put("cmd:peer:" + whoP2.uid, { off: true, at: Date.now() }, 400 * 86400);
+          return Response.json({ ok: true, peer: "", uid: String(whoP2.uid), channel: chNow || "", target: chNow || "", note: chNow ? ("به کانال برگشت: " + chNow) : "به کانال برگشت؛ اول یک کانال تنظیم کن" });
+        }
+        const pv2 = String(pb2.peer || "").trim();
+        if (pv2 === "" || /^(off|حذف|خاموش|پاک)$/i.test(pv2)) {
+          await stP2.put("cmd:peer:" + whoP2.uid, { off: true, at: Date.now() }, 400 * 86400);
+          return Response.json({ ok: true, peer: "", uid: String(whoP2.uid), channel: chNow || "", target: chNow || "", note: "برداشته شد؛ ارسال‌ها به کانال برمی‌گردد" });
+        }
+        if (!/^\d{4,15}$/.test(pv2)) return Response.json({ ok: false, error: "آیدی عددی نامعتبر است (فقط رقم، مثل 123456789)" }, { status: 400 });
+        await stP2.put("cmd:peer:" + whoP2.uid, { peer: pv2, auto: pv2 === String(whoP2.uid), at: Date.now() }, 400 * 86400);
+        return Response.json({ ok: true, peer: pv2, auto: pv2 === String(whoP2.uid), uid: String(whoP2.uid), channel: chNow || "", target: pv2, note: pv2 === String(whoP2.uid) ? "ثبت شد؛ پست‌های این لینک به پیوی خودت می‌آید (فقط خودت)" : "ثبت شد؛ ارسال‌ها به پیوی همین آیدی می‌رود (فقط همان شخص)" });
+      } catch (e) { return new Response("peer error: " + String(e && e.message || e), { status: 500 }); }
+    }
+    if (url.pathname === "/api/bridge" || url.pathname === "/api/bridge/") {
+      if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type", "access-control-allow-methods": "POST, OPTIONS" } });
+      try { return await spBridgeHost(env, request); } catch (e) { return new Response("bridge error: " + String(e && e.message || e), { status: 500 }); }
+    }
     if (url.pathname === "/go" || url.pathname === "/install" || url.pathname === "/install/" || url.pathname === "/api/selfinstall" || url.pathname === "/api/selfinstall/") {
       try { const spInst = await spInstallRoute(env, request, url); if (spInst) return spInst; } catch (e) { return new Response("install error: " + String(e && e.message || e), { status: 500 }); }
     }
@@ -10798,3 +11026,5 @@ export {
   index_default as default
 };
 //# sourceMappingURL=index.js.map
+
+
