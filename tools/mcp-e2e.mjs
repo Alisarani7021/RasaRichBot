@@ -71,7 +71,8 @@ check('notifications/initialized → 202', notif.status === 202);
 // ۴) tools/list
 let tl = await j(await call('/api/mcp/' + SECRET, rpc('tools/list', {})));
 const tools = (tl.body && tl.body.result && tl.body.result.tools) || [];
-check('tools/list → ۹ ابزار', tools.length === 9, tools.map((t) => t.name).join(', '));
+const CORE9 = ['make_image', 'publish_post', 'get_stats', 'get_occasions', 'web_fetch', 'poll', 'schedule_post', 'delete_last', 'set_channel'];
+check('tools/list → ۹ ابزار پایه + قدرت‌ها', tools.length >= 9 && CORE9.every((n) => tools.map((t) => t.name).includes(n)), 'count=' + tools.length);
 check('schema ابزارها JSON Schema دارند', tools.every((t) => t.inputSchema && t.inputSchema.type === 'object'));
 
 // ۵) tools/call: get_occasions
