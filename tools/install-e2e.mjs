@@ -2,6 +2,7 @@
 /* تست «نصب اختصاصی» (b45): صفحهٔ /go + /api/selfinstall + مالکیت مستأجر
    Usage: node cf/sim/install_test.mjs [bundle.mjs]                                */
 import path from 'node:path';
+import fs from 'node:fs';
 
 const BUNDLE = process.argv[2] || 'cf/sim/bundle_v28.mjs';
 let results = [];
@@ -27,7 +28,9 @@ let uploadedMeta = null;
 let schedulesSet = null;
 let webhookSet = null;
 
-const FAKE_BUNDLE = ('/* bundle */\n' + 'var mcpHandle = 1;\n' + 'x'.repeat(2600000));
+const realBundle = fs.readFileSync(path.resolve(BUNDLE), 'utf8');
+const buildMark = (realBundle.match(/var SP_BUILD = '([^']+)'/) || [])[1] || 'b45';
+const FAKE_BUNDLE = ('/* bundle */\n' + "var SP_BUILD = '" + buildMark + "';\n" + 'var mcpHandle = 1;\n' + 'x'.repeat(2600000));
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, opts = {}) => {
   const u = String(url);

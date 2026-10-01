@@ -11,7 +11,7 @@ var SP_BUNDLE_URLS = [
   'https://cdn.jsdelivr.net/gh/Alisarani7021/RasaRichBot@main/worker/index.js'
 ];
 var SP_REPO = 'https://github.com/Alisarani7021/RasaRichBot';
-var SP_BUILD = 'b45.2'; /* مهر نسخه — هنگام هر تغییر این را یکی جلو ببر تا نصب‌ها نسخهٔ تازه بگیرند */
+var SP_BUILD = 'b46'; /* مهر نسخه — هنگام هر تغییر این را یکی جلو ببر تا نصب‌ها نسخهٔ تازه بگیرند */
 
 function spRandHex(n) {
   var b = new Uint8Array(Math.ceil(n / 2));
