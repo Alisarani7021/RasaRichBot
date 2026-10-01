@@ -48,10 +48,11 @@ const A6 = '    const origin = url.origin;';
 must(count(A6) === 1, 'origin anchor');
 src = src.replace(A6, '    if (url.pathname === "/s" || url.pathname.startsWith("/s/") || url.pathname.startsWith("/w/")) {\n      try { const spWeb = await spWebServe(env, request, url); if (spWeb) return spWeb; } catch (e) { return new Response("web error: " + String(e && e.message || e), { status: 500 }); }\n    }\n' + A6);
 
-/* ۷) تیک گیت‌هاب */
-const A7 = 'try { await spTick(env); } catch (e) { console.warn("sp tick", e && e.message); }';
-must(count(A7) === 1, 'tick anchor');
-src = src.replace(A7, A7 + '\n      try { await spTick2(env); } catch (e) { console.warn("sp tick2", e && e.message); }');
+/* ۷) تیک‌های ب43/ب44 — یک‌بار، و قبل از موتور روزانهٔ قدیمی */
+const A7a = 'await runAutoPosts(env).catch((e) => console.warn("auto posts", e && e.message));';
+const A7b = 'try { await spTick(env); } catch (e) { console.warn("sp tick", e && e.message); }';
+must(count(A7a) === 1 && count(A7b) === 1, 'tick anchors');
+src = src.replace(A7a + '\n      ' + A7b, A7b + '\n      try { await spTick2(env); } catch (e) { console.warn("sp tick2", e && e.message); }\n      ' + A7a);
 
 /* ۸) تعریف ابزارهای تازه در MCP */
 const A8 = "required: ['text'] } }\n  ];";
@@ -77,7 +78,8 @@ const DEFS = [
   { n: 'api_tool_add', d: 'قدرت نامحدود: هر وب‌سرویس https را به ابزار تازهٔ همان لحظه تبدیل کن. بعد از ثبت، با نام api_<name> صدا زده می‌شود و در فهرست ابزارهای جمنای/کلاد هم می‌آید. در url و body از {پارامتر} استفاده کن.', p: { name: { type: 'string' }, url: { type: 'string' }, method: { type: 'string' }, headers: { type: 'string' }, body: { type: 'string' }, desc: { type: 'string' } }, r: ['name', 'url'] },
   { n: 'api_tool_list', d: 'فهرست ابزارهای HTTP سفارشی.', p: {}, r: [] },
   { n: 'api_tool_remove', d: 'حذف ابزار HTTP سفارشی.', p: { name: { type: 'string' } }, r: ['name'] },
-  { n: 'api_tool_call', d: 'صدا زدن ابزار HTTP سفارشی با پارامترها (args).', p: { name: { type: 'string' }, args: { type: 'object' } }, r: ['name'] }
+  { n: 'api_tool_call', d: 'صدا زدن ابزار HTTP سفارشی با پارامترها (args).', p: { name: { type: 'string' }, args: { type: 'object' } }, r: ['name'] },
+  { n: 'state_get', d: 'خواندن وضعیت داخلی ربات (عیب‌یابی): مقدار یک کلید مثل sp:gh:5982315292 یا sp:tick2.', p: { key: { type: 'string' }, limit: { type: 'number' } }, r: ['key'] }
 ];
 const NEW = DEFS.map(function (x) {
   return "    { name: '" + x.n + "', description: '" + x.d.replace(/'/g, "\\'") + "',\n      inputSchema: { type: 'object', properties: " + JSON.stringify(x.p) + ", required: [" + x.r.map(function (q) { return "'" + q + "'"; }).join(', ') + "] } }";

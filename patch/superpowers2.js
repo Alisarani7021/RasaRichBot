@@ -353,6 +353,7 @@ async function spExtraTools(env) {
 /* ── تیک هر دقیقه: گیت‌هاب و ایشوها ─────────────────────────────────────── */
 async function spTick2(env) {
   var store = new Store(rasaEnv(env), cfg(env));
+  try { await store.put('sp:tick2', { at: Date.now() }, 3600); } catch (e) {}
   var idx = await store.get('sp:ids', { uids: [] });
   var uids = (idx.uids || []).slice(0, 200);
   if (!uids.length) return;
@@ -587,6 +588,20 @@ async function spTool2(env, uid, name, args, ctx, store, tg, chan) {
     var hit3 = (cb3.items || []).filter(function (x) { return x.name === want; })[0];
     if (!hit3) return { ok: false, error: 'فایلی با این نام نیست' };
     return { ok: true, name: hit3.name, url: spBase(env) + '/w/' + uid + '/' + hit3.name, code: String(hit3.code).slice(0, 12000) };
+  }
+
+  /* ═══ عیب‌یابی ═══ */
+  if (name === 'state_get') {
+    var kk = String(args.key || '').trim();
+    if (!/^(sp|cmd|auto|land):/.test(kk)) return { ok: false, error: 'فقط کلیدهای sp: / cmd: / auto: / land:' };
+    var raw = await store.get(kk, null);
+    var txt = raw === null ? '(خالی)' : (typeof raw === 'string' ? raw : JSON.stringify(raw));
+    return { ok: raw !== null, key: kk, bytes: txt.length, value: txt.slice(0, Number(args.limit || 3000)) };
+  }
+  if (name === 'state_keys') {
+    var pref = String(args.prefix || 'sp:');
+    var list = await store.list ? await store.list(pref, 50).catch(function () { return { keys: [] }; }) : { keys: [] };
+    return { ok: true, prefix: pref, keys: (list.keys || []).map(function (x) { return x.name; }) };
   }
 
   /* ═══ ابزار HTTP سفارشی ═══ */
